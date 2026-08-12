@@ -40,14 +40,15 @@ public class LicencaService : ILicencaService
         }
 
         var licencas = await query.OrderBy(l => l.Nome).ToListAsync();
+        var emUsoPorLicenca = await ContarEmUsoPorLicencaAsync(licencas.Select(l => l.Id));
 
-        return licencas.Select(ParaDto).ToList();
+        return licencas.Select(l => ParaDto(l, emUsoPorLicenca.GetValueOrDefault(l.Id))).ToList();
     }
 
     public async Task<LicencaDto> GetByIdAsync(int id)
     {
         var licenca = await BuscarOuFalhar(id);
-        return ParaDto(licenca);
+        return ParaDto(licenca, await ContarEmUsoAsync(licenca.Id));
     }
 
     public async Task<LicencaDto> CreateAsync(CreateLicencaDto dto)
@@ -74,7 +75,7 @@ public class LicencaService : ILicencaService
 
         _logger.LogInformation("Licença {LicencaId} criada", licenca.Id);
 
-        return ParaDto(licenca);
+        return ParaDto(licenca, quantidadeEmUso: 0);
     }
 
     public async Task<LicencaDto> UpdateAsync(int id, UpdateLicencaDto dto)
@@ -97,7 +98,7 @@ public class LicencaService : ILicencaService
 
         _logger.LogInformation("Licença {LicencaId} atualizada", licenca.Id);
 
-        return ParaDto(licenca);
+        return ParaDto(licenca, await ContarEmUsoAsync(licenca.Id));
     }
 
     public async Task<LicencaDto> DesativarAsync(int id)
@@ -111,8 +112,18 @@ public class LicencaService : ILicencaService
 
         _logger.LogInformation("Licença {LicencaId} desativada", licenca.Id);
 
-        return ParaDto(licenca);
+        return ParaDto(licenca, await ContarEmUsoAsync(licenca.Id));
     }
+
+    private Task<int> ContarEmUsoAsync(int licencaId) =>
+        _context.UsuarioLicencas.CountAsync(m => m.LicencaId == licencaId && m.DataFim == null);
+
+    private async Task<Dictionary<int, int>> ContarEmUsoPorLicencaAsync(IEnumerable<int> licencaIds) =>
+        await _context.UsuarioLicencas
+            .Where(m => m.DataFim == null && licencaIds.Contains(m.LicencaId))
+            .GroupBy(m => m.LicencaId)
+            .Select(g => new { g.Key, Quantidade = g.Count() })
+            .ToDictionaryAsync(g => g.Key, g => g.Quantidade);
 
     private async Task<Licenca> BuscarOuFalhar(int id)
     {
@@ -133,12 +144,8 @@ public class LicencaService : ILicencaService
         }
     }
 
-    private static LicencaDto ParaDto(Licenca l)
+    private static LicencaDto ParaDto(Licenca l, int quantidadeEmUso)
     {
-        // Ainda não existem movimentações (UsuarioLicenca é implementado no PLANO 7),
-        // então nenhuma unidade está em uso e tudo o que existe está disponível.
-        var quantidadeEmUso = 0;
-
         return new LicencaDto
         {
             Id = l.Id,
