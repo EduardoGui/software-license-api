@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
     }
 
     public DbSet<Usuario> Usuarios => Set<Usuario>();
+    public DbSet<Licenca> Licencas => Set<Licenca>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -19,6 +20,13 @@ public class AppDbContext : DbContext
             entity.Property(u => u.Email).IsRequired().HasMaxLength(200);
             entity.Property(u => u.Observacao).HasMaxLength(1000);
             entity.HasIndex(u => u.Email).IsUnique();
+        });
+
+        modelBuilder.Entity<Licenca>(entity =>
+        {
+            entity.Property(l => l.Nome).IsRequired().HasMaxLength(200);
+            entity.Property(l => l.Descricao).HasMaxLength(1000);
+            entity.Property(l => l.Observacao).HasMaxLength(1000);
         });
     }
 }
