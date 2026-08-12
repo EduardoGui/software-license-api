@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SoftwareLicense.Api.Data;
+using SoftwareLicense.Api.Middleware;
 using SoftwareLicense.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +12,18 @@ var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get
 // Add services to the container.
 
 builder.Services.AddControllers();
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var mensagem = context.ModelState
+            .SelectMany(e => e.Value?.Errors ?? [])
+            .Select(e => e.ErrorMessage)
+            .FirstOrDefault() ?? "Dados inválidos.";
+
+        return new BadRequestObjectResult(new { message = mensagem });
+    };
+});
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -17,6 +31,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IUsuarioService, UsuarioService>();
 
 builder.Services.AddCors(options =>
@@ -33,6 +48,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.UseHttpsRedirection();
 

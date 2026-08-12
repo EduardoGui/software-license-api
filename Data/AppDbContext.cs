@@ -17,6 +17,7 @@ public class AppDbContext : DbContext
         {
             entity.Property(u => u.Nome).IsRequired().HasMaxLength(200);
             entity.Property(u => u.Email).IsRequired().HasMaxLength(200);
+            entity.Property(u => u.Observacao).HasMaxLength(1000);
             entity.HasIndex(u => u.Email).IsUnique();
         });
     }
