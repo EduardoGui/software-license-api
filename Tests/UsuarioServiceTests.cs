@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using SoftwareLicense.Api.Data;
 using SoftwareLicense.Api.DTOs;
+using SoftwareLicense.Api.Entities;
 using SoftwareLicense.Api.Exceptions;
 using SoftwareLicense.Api.Services;
 using Xunit;
@@ -74,5 +75,85 @@ public class UsuarioServiceTests
         var service = CriarService(out _);
 
         await Assert.ThrowsAsync<NotFoundException>(() => service.GetByIdAsync(999));
+    }
+
+    [Fact]
+    public async Task DesativarAsync_DeveEncerrarMovimentacoesAtivasELiberarLicencas()
+    {
+        var service = CriarService(out var context);
+        var inicio = DateOnly.FromDateTime(Agora.Date).AddDays(-30);
+        var usuario = await service.CreateAsync(new CreateUsuarioDto { Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio });
+
+        var licenca = new Licenca
+        {
+            Nome = "Microsoft 365",
+            QuantidadeTotal = 1,
+            DataInicio = inicio,
+            DataTerminoPrevisto = DateOnly.FromDateTime(Agora.Date).AddYears(1),
+            DiasAntecedenciaAviso = 30,
+            Ativa = true,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Licencas.Add(licenca);
+        await context.SaveChangesAsync();
+
+        var movimentacao = new UsuarioLicenca
+        {
+            UsuarioId = usuario.Id,
+            LicencaId = licenca.Id,
+            DataInicio = inicio,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.UsuarioLicencas.Add(movimentacao);
+        await context.SaveChangesAsync();
+
+        await service.DesativarAsync(usuario.Id, new DesativarUsuarioDto());
+
+        var movimentacaoAtualizada = await context.UsuarioLicencas.FindAsync(movimentacao.Id);
+        Assert.NotNull(movimentacaoAtualizada!.DataFim);
+
+        var emUso = await context.UsuarioLicencas.CountAsync(m => m.LicencaId == licenca.Id && m.DataFim == null);
+        Assert.Equal(0, emUso);
+    }
+
+    [Fact]
+    public async Task DesativarAsync_NaoDeveAlterarMovimentacoesJaEncerradasDeOutrosUsuarios()
+    {
+        var service = CriarService(out var context);
+        var inicio = DateOnly.FromDateTime(Agora.Date).AddDays(-30);
+        var usuarioAlvo = await service.CreateAsync(new CreateUsuarioDto { Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio });
+        var outroUsuario = await service.CreateAsync(new CreateUsuarioDto { Nome = "João", Email = "joao@empresa.com", DataInicio = inicio });
+
+        var licenca = new Licenca
+        {
+            Nome = "Microsoft 365",
+            QuantidadeTotal = 2,
+            DataInicio = inicio,
+            DataTerminoPrevisto = DateOnly.FromDateTime(Agora.Date).AddYears(1),
+            DiasAntecedenciaAviso = 30,
+            Ativa = true,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Licencas.Add(licenca);
+        await context.SaveChangesAsync();
+
+        var movimentacaoDoOutro = new UsuarioLicenca
+        {
+            UsuarioId = outroUsuario.Id,
+            LicencaId = licenca.Id,
+            DataInicio = inicio,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.UsuarioLicencas.Add(movimentacaoDoOutro);
+        await context.SaveChangesAsync();
+
+        await service.DesativarAsync(usuarioAlvo.Id, new DesativarUsuarioDto());
+
+        var movimentacaoInalterada = await context.UsuarioLicencas.FindAsync(movimentacaoDoOutro.Id);
+        Assert.Null(movimentacaoInalterada!.DataFim);
     }
 }

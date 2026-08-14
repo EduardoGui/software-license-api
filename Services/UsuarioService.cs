@@ -109,12 +109,28 @@ public class UsuarioService : IUsuarioService
             throw new BusinessRuleException("A data de fim não pode ser anterior à data de início do usuário.");
         }
 
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+
         usuario.DataFim = dataFim;
-        usuario.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+        usuario.DataAtualizacao = agora;
+
+        var movimentacoesAtivas = await _context.UsuarioLicencas
+            .Where(m => m.UsuarioId == id && m.DataFim == null)
+            .ToListAsync();
+
+        foreach (var movimentacao in movimentacoesAtivas)
+        {
+            // Encerra na data de desativação, exceto se a movimentação começou depois dela
+            // (ex.: usuário desativado retroativamente) — nesse caso, encerra no próprio início.
+            movimentacao.DataFim = movimentacao.DataInicio > dataFim ? movimentacao.DataInicio : dataFim;
+            movimentacao.DataAtualizacao = agora;
+        }
 
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Usuário {UsuarioId} desativado", usuario.Id);
+        _logger.LogInformation(
+            "Usuário {UsuarioId} desativado, encerrando {Quantidade} movimentação(ões) ativa(s)",
+            usuario.Id, movimentacoesAtivas.Count);
 
         return ParaDto(usuario, Hoje());
     }
