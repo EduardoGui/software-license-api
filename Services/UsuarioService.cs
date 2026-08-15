@@ -36,8 +36,9 @@ public class UsuarioService : IUsuarioService
         }
 
         var usuarios = await query.OrderBy(u => u.Nome).ToListAsync();
+        var emUsoPorUsuario = await ContarEmUsoPorUsuarioAsync(usuarios.Select(u => u.Id));
 
-        var resultado = usuarios.Select(u => ParaDto(u, hoje));
+        var resultado = usuarios.Select(u => ParaDto(u, hoje, emUsoPorUsuario.GetValueOrDefault(u.Id)));
 
         if (!string.IsNullOrWhiteSpace(filtro.Status))
         {
@@ -50,7 +51,7 @@ public class UsuarioService : IUsuarioService
     public async Task<UsuarioDto> GetByIdAsync(int id)
     {
         var usuario = await BuscarOuFalhar(id);
-        return ParaDto(usuario, Hoje());
+        return ParaDto(usuario, Hoje(), await ContarEmUsoAsync(usuario.Id));
     }
 
     public async Task<UsuarioDto> CreateAsync(CreateUsuarioDto dto)
@@ -75,7 +76,7 @@ public class UsuarioService : IUsuarioService
 
         _logger.LogInformation("Usuário {UsuarioId} criado", usuario.Id);
 
-        return ParaDto(usuario, Hoje());
+        return ParaDto(usuario, Hoje(), licencasEmUso: 0);
     }
 
     public async Task<UsuarioDto> UpdateAsync(int id, UpdateUsuarioDto dto)
@@ -96,7 +97,7 @@ public class UsuarioService : IUsuarioService
 
         _logger.LogInformation("Usuário {UsuarioId} atualizado", usuario.Id);
 
-        return ParaDto(usuario, Hoje());
+        return ParaDto(usuario, Hoje(), await ContarEmUsoAsync(usuario.Id));
     }
 
     public async Task<UsuarioDto> DesativarAsync(int id, DesativarUsuarioDto dto)
@@ -132,8 +133,18 @@ public class UsuarioService : IUsuarioService
             "Usuário {UsuarioId} desativado, encerrando {Quantidade} movimentação(ões) ativa(s)",
             usuario.Id, movimentacoesAtivas.Count);
 
-        return ParaDto(usuario, Hoje());
+        return ParaDto(usuario, Hoje(), licencasEmUso: 0);
     }
+
+    private Task<int> ContarEmUsoAsync(int usuarioId) =>
+        _context.UsuarioLicencas.CountAsync(m => m.UsuarioId == usuarioId && m.DataFim == null);
+
+    private async Task<Dictionary<int, int>> ContarEmUsoPorUsuarioAsync(IEnumerable<int> usuarioIds) =>
+        await _context.UsuarioLicencas
+            .Where(m => m.DataFim == null && usuarioIds.Contains(m.UsuarioId))
+            .GroupBy(m => m.UsuarioId)
+            .Select(g => new { g.Key, Quantidade = g.Count() })
+            .ToDictionaryAsync(g => g.Key, g => g.Quantidade);
 
     private async Task<Usuario> BuscarOuFalhar(int id)
     {
@@ -170,7 +181,7 @@ public class UsuarioService : IUsuarioService
 
     private DateOnly Hoje() => DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
 
-    private static UsuarioDto ParaDto(Usuario u, DateOnly hoje) => new()
+    private static UsuarioDto ParaDto(Usuario u, DateOnly hoje, int licencasEmUso) => new()
     {
         Id = u.Id,
         Nome = u.Nome,
@@ -179,6 +190,7 @@ public class UsuarioService : IUsuarioService
         DataFim = u.DataFim,
         Observacao = u.Observacao,
         Status = UsuarioStatus.Calcular(u, hoje),
+        LicencasEmUso = licencasEmUso,
         DataCriacao = u.DataCriacao,
         DataAtualizacao = u.DataAtualizacao,
     };

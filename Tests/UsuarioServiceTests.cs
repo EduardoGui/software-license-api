@@ -156,4 +156,40 @@ public class UsuarioServiceTests
         var movimentacaoInalterada = await context.UsuarioLicencas.FindAsync(movimentacaoDoOutro.Id);
         Assert.Null(movimentacaoInalterada!.DataFim);
     }
+
+    [Fact]
+    public async Task GetByIdAsync_DeveContarLicencasEmUsoCorretamente()
+    {
+        var service = CriarService(out var context);
+        var inicio = DateOnly.FromDateTime(Agora.Date).AddDays(-30);
+        var usuario = await service.CreateAsync(new CreateUsuarioDto { Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio });
+
+        var licenca = new Licenca
+        {
+            Nome = "Microsoft 365",
+            QuantidadeTotal = 5,
+            DataInicio = inicio,
+            DataTerminoPrevisto = DateOnly.FromDateTime(Agora.Date).AddYears(1),
+            DiasAntecedenciaAviso = 30,
+            Ativa = true,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Licencas.Add(licenca);
+        await context.SaveChangesAsync();
+
+        context.UsuarioLicencas.Add(new UsuarioLicenca
+        {
+            UsuarioId = usuario.Id,
+            LicencaId = licenca.Id,
+            DataInicio = inicio,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        });
+        await context.SaveChangesAsync();
+
+        var encontrado = await service.GetByIdAsync(usuario.Id);
+
+        Assert.Equal(1, encontrado.LicencasEmUso);
+    }
 }

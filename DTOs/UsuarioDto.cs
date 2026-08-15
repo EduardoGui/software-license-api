@@ -9,6 +9,7 @@ public class UsuarioDto
     public DateOnly? DataFim { get; set; }
     public string? Observacao { get; set; }
     public string Status { get; set; } = string.Empty;
+    public int LicencasEmUso { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
 }

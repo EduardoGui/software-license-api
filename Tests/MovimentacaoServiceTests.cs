@@ -160,6 +160,19 @@ public class MovimentacaoServiceTests
     }
 
     [Fact]
+    public async Task EncerrarAsync_DeveRejeitarDataFimAnteriorADataInicio()
+    {
+        var (service, context) = CriarService();
+        var licenca = CriarLicenca(context);
+        var usuario = CriarUsuarioAtivo(context);
+
+        var criada = await service.CreateAsync(new CreateMovimentacaoDto { UsuarioId = usuario.Id, LicencaId = licenca.Id, DataInicio = Hoje });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.EncerrarAsync(criada.Id, new EncerrarMovimentacaoDto { DataFim = Hoje.AddDays(-1) }));
+    }
+
+    [Fact]
     public async Task GetAllAsync_DeveFiltrarPorStatusEPaginar()
     {
         var (service, context) = CriarService();
