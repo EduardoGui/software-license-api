@@ -83,6 +83,7 @@ builder.Services.AddScoped<ILicencaService, LicencaService>();
 builder.Services.AddScoped<IMovimentacaoService, MovimentacaoService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<ITimelineService, TimelineService>();
 
 builder.Services.AddCors(options =>
 {
