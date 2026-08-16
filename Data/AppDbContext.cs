@@ -14,6 +14,11 @@ public class AppDbContext : IdentityDbContext<IdentityUser>
     public DbSet<Usuario> Usuarios => Set<Usuario>();
     public DbSet<Licenca> Licencas => Set<Licenca>();
     public DbSet<UsuarioLicenca> UsuarioLicencas => Set<UsuarioLicenca>();
+    public DbSet<TipoEquipamento> TiposEquipamento => Set<TipoEquipamento>();
+    public DbSet<NotaFiscalEntrada> NotasFiscaisEntrada => Set<NotaFiscalEntrada>();
+    public DbSet<NotaFiscalItem> NotasFiscaisItens => Set<NotaFiscalItem>();
+    public DbSet<Equipamento> Equipamentos => Set<Equipamento>();
+    public DbSet<EquipamentoAlocacao> EquipamentoAlocacoes => Set<EquipamentoAlocacao>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -43,6 +48,58 @@ public class AppDbContext : IdentityDbContext<IdentityUser>
             entity.HasIndex(m => m.DataFim);
             entity.HasOne(m => m.Usuario).WithMany().HasForeignKey(m => m.UsuarioId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(m => m.Licenca).WithMany().HasForeignKey(m => m.LicencaId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<TipoEquipamento>(entity =>
+        {
+            entity.Property(t => t.Nome).IsRequired().HasMaxLength(100);
+            entity.HasIndex(t => t.Nome).IsUnique();
+        });
+
+        modelBuilder.Entity<NotaFiscalEntrada>(entity =>
+        {
+            entity.Property(n => n.Numero).IsRequired().HasMaxLength(50);
+            entity.Property(n => n.FornecedorNome).HasMaxLength(200);
+            entity.Property(n => n.Observacao).HasMaxLength(1000);
+            entity.HasIndex(n => n.Numero);
+        });
+
+        modelBuilder.Entity<NotaFiscalItem>(entity =>
+        {
+            entity.Property(i => i.Descricao).HasMaxLength(300);
+            entity.Property(i => i.ValorUnitario).HasPrecision(18, 2);
+            entity.HasIndex(i => i.NotaFiscalEntradaId);
+            entity.HasOne(i => i.NotaFiscalEntrada).WithMany(n => n.Itens).HasForeignKey(i => i.NotaFiscalEntradaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(i => i.TipoEquipamento).WithMany().HasForeignKey(i => i.TipoEquipamentoId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Equipamento>(entity =>
+        {
+            entity.Property(e => e.Marca).HasMaxLength(100);
+            entity.Property(e => e.Modelo).HasMaxLength(100);
+            entity.Property(e => e.NumeroSerie).HasMaxLength(100);
+            entity.Property(e => e.Patrimonio).HasMaxLength(100);
+            entity.Property(e => e.Origem).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.FornecedorNome).HasMaxLength(200);
+            entity.Property(e => e.ValorMensal).HasPrecision(18, 2);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.Observacao).HasMaxLength(1000);
+            entity.HasIndex(e => e.Patrimonio).IsUnique();
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.TipoEquipamentoId);
+            entity.HasOne(e => e.TipoEquipamento).WithMany().HasForeignKey(e => e.TipoEquipamentoId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.NotaFiscalItem).WithMany(i => i.Equipamentos).HasForeignKey(e => e.NotaFiscalItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<EquipamentoAlocacao>(entity =>
+        {
+            entity.Property(a => a.Observacao).HasMaxLength(1000);
+            entity.HasIndex(a => a.EquipamentoId);
+            entity.HasIndex(a => a.UsuarioId);
+            entity.HasIndex(a => a.DataInicio);
+            entity.HasIndex(a => a.DataFim);
+            entity.HasOne(a => a.Equipamento).WithMany().HasForeignKey(a => a.EquipamentoId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(a => a.Usuario).WithMany().HasForeignKey(a => a.UsuarioId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
