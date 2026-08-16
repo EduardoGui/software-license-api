@@ -85,6 +85,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ITimelineService, TimelineService>();
 builder.Services.AddScoped<ITipoEquipamentoService, TipoEquipamentoService>();
+builder.Services.AddScoped<INotaFiscalEntradaService, NotaFiscalEntradaService>();
 
 builder.Services.AddCors(options =>
 {

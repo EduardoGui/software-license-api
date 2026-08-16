@@ -68,6 +68,7 @@ public class AppDbContext : IdentityDbContext<IdentityUser>
         {
             entity.Property(i => i.Descricao).HasMaxLength(300);
             entity.Property(i => i.ValorUnitario).HasPrecision(18, 2);
+            entity.Property(i => i.Origem).IsRequired().HasMaxLength(20);
             entity.HasIndex(i => i.NotaFiscalEntradaId);
             entity.HasOne(i => i.NotaFiscalEntrada).WithMany(n => n.Itens).HasForeignKey(i => i.NotaFiscalEntradaId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(i => i.TipoEquipamento).WithMany().HasForeignKey(i => i.TipoEquipamentoId).OnDelete(DeleteBehavior.Restrict);
