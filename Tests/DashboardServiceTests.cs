@@ -18,8 +18,42 @@ public class DashboardServiceTests
             .Options;
 
         var context = new AppDbContext(options);
-        var service = new DashboardService(context, new FakeTimeProvider(Agora));
+        var relatorioMensalLocacaoService = new RelatorioMensalLocacaoService(context);
+        var service = new DashboardService(context, new FakeTimeProvider(Agora), relatorioMensalLocacaoService);
         return (service, context);
+    }
+
+    private static TipoEquipamento CriarTipoEquipamento(AppDbContext context, string nome = "Notebook")
+    {
+        var tipo = new TipoEquipamento { Nome = nome, Ativo = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        context.TiposEquipamento.Add(tipo);
+        context.SaveChanges();
+        return tipo;
+    }
+
+    private static Equipamento CriarEquipamento(
+        AppDbContext context,
+        TipoEquipamento tipo,
+        string origem = "Comprado",
+        string status = "Disponivel",
+        decimal? valorMensal = null,
+        DateOnly? dataInicioContrato = null,
+        DateOnly? dataFimContrato = null)
+    {
+        var equipamento = new Equipamento
+        {
+            TipoEquipamentoId = tipo.Id,
+            Origem = origem,
+            Status = status,
+            ValorMensal = valorMensal,
+            DataInicioContrato = dataInicioContrato,
+            DataFimContrato = dataFimContrato,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Equipamentos.Add(equipamento);
+        context.SaveChanges();
+        return equipamento;
     }
 
     private static Usuario CriarUsuario(AppDbContext context, string nome, DateOnly dataInicio, DateOnly? dataFim = null)
@@ -124,5 +158,77 @@ public class DashboardServiceTests
 
         Assert.Single(dashboard.ProximosVencimentos);
         Assert.Equal(-3, dashboard.ProximosVencimentos[0].DiasParaVencer);
+    }
+
+    [Fact]
+    public async Task ObterAsync_DeveContarEquipamentosPorStatusCorretamente()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipoEquipamento(context);
+        var disponivel = CriarEquipamento(context, tipo, status: "Disponivel");
+        var alocado = CriarEquipamento(context, tipo, status: "Disponivel");
+        CriarEquipamento(context, tipo, status: "Manutencao");
+        CriarEquipamento(context, tipo, status: "Baixado");
+
+        var usuario = CriarUsuario(context, "Ana", Hoje.AddDays(-10));
+        context.EquipamentoAlocacoes.Add(new EquipamentoAlocacao
+        {
+            EquipamentoId = alocado.Id,
+            UsuarioId = usuario.Id,
+            DataInicio = Hoje,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        });
+        await context.SaveChangesAsync();
+
+        var dashboard = await service.ObterAsync();
+
+        Assert.Equal(1, dashboard.EquipamentosEmUso);
+        Assert.Equal(1, dashboard.EquipamentosDisponiveis);
+    }
+
+    [Fact]
+    public async Task ObterAsync_DeveContarLocadosAtivosExcluindoBaixados()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipoEquipamento(context);
+        CriarEquipamento(context, tipo, origem: "Locado", status: "Disponivel");
+        CriarEquipamento(context, tipo, origem: "Locado", status: "Baixado");
+        CriarEquipamento(context, tipo, origem: "Comprado", status: "Disponivel");
+
+        var dashboard = await service.ObterAsync();
+
+        Assert.Equal(1, dashboard.EquipamentosLocadosAtivos);
+    }
+
+    [Fact]
+    public async Task ObterAsync_DeveCalcularCustoMensalLocacaoAtualComRateio()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipoEquipamento(context);
+        // Agosto/2026 tem 31 dias; iniciando 16/08 -> 16 dias ativos.
+        CriarEquipamento(context, tipo, origem: "Locado", valorMensal: 310m, dataInicioContrato: new DateOnly(2026, 8, 16));
+
+        var dashboard = await service.ObterAsync();
+
+        Assert.Equal(160m, dashboard.CustoMensalLocacaoAtual);
+    }
+
+    [Fact]
+    public async Task ObterAsync_DeveListarContratosVencendoDentroDoPrazo()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipoEquipamento(context);
+        CriarEquipamento(
+            context, tipo, origem: "Locado", valorMensal: 100m,
+            dataInicioContrato: Hoje.AddYears(-1), dataFimContrato: Hoje.AddDays(10));
+        CriarEquipamento(
+            context, tipo, origem: "Locado", valorMensal: 100m,
+            dataInicioContrato: Hoje.AddYears(-1), dataFimContrato: Hoje.AddDays(200));
+
+        var dashboard = await service.ObterAsync();
+
+        Assert.Single(dashboard.ProximosVencimentosContratos);
+        Assert.Equal(10, dashboard.ProximosVencimentosContratos[0].DiasParaVencer);
     }
 }
