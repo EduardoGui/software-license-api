@@ -142,6 +142,32 @@ public class EquipamentoServiceTests
     }
 
     [Fact]
+    public async Task BaixarAsync_DeveEncerrarContratoDeLocacaoQuandoNaoTinhaDataFim()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        var equipamento = CriarEquipamento(context, tipo, origem: EquipamentoOrigem.Locado, valorMensal: 200m);
+
+        var baixado = await service.BaixarAsync(equipamento.Id);
+
+        Assert.Equal(Hoje, baixado.DataFimContrato);
+    }
+
+    [Fact]
+    public async Task BaixarAsync_NaoDeveAlterarDataFimContratoJaDefinida()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        var equipamento = CriarEquipamento(context, tipo, origem: EquipamentoOrigem.Locado, valorMensal: 200m);
+        equipamento.DataFimContrato = Hoje.AddDays(-10);
+        context.SaveChanges();
+
+        var baixado = await service.BaixarAsync(equipamento.Id);
+
+        Assert.Equal(Hoje.AddDays(-10), baixado.DataFimContrato);
+    }
+
+    [Fact]
     public async Task BaixarAsync_DeveRejeitarQuandoEquipamentoEstaAlocado()
     {
         var (service, context) = CriarService();

@@ -108,8 +108,15 @@ public class EquipamentoService : IEquipamentoService
             throw new BusinessRuleException("Não é possível dar baixa em um equipamento alocado a um usuário. Encerre a alocação antes.");
         }
 
+        var hoje = Hoje();
+
         equipamento.Status = EquipamentoStatus.Baixado;
-        equipamento.DataBaixa = Hoje();
+        equipamento.DataBaixa = hoje;
+        if (equipamento.Origem == EquipamentoOrigem.Locado && equipamento.DataFimContrato is null)
+        {
+            // Encerra o contrato de locação na baixa, para não continuar sendo cobrado no relatório mensal.
+            equipamento.DataFimContrato = hoje;
+        }
         equipamento.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
 
         await _context.SaveChangesAsync();

@@ -88,6 +88,7 @@ builder.Services.AddScoped<ITipoEquipamentoService, TipoEquipamentoService>();
 builder.Services.AddScoped<INotaFiscalEntradaService, NotaFiscalEntradaService>();
 builder.Services.AddScoped<IEquipamentoService, EquipamentoService>();
 builder.Services.AddScoped<IEquipamentoAlocacaoService, EquipamentoAlocacaoService>();
+builder.Services.AddScoped<IRelatorioMensalLocacaoService, RelatorioMensalLocacaoService>();
 
 builder.Services.AddCors(options =>
 {

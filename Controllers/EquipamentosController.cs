@@ -9,10 +9,12 @@ namespace SoftwareLicense.Api.Controllers;
 public class EquipamentosController : ControllerBase
 {
     private readonly IEquipamentoService _equipamentoService;
+    private readonly IRelatorioMensalLocacaoService _relatorioMensalLocacaoService;
 
-    public EquipamentosController(IEquipamentoService equipamentoService)
+    public EquipamentosController(IEquipamentoService equipamentoService, IRelatorioMensalLocacaoService relatorioMensalLocacaoService)
     {
         _equipamentoService = equipamentoService;
+        _relatorioMensalLocacaoService = relatorioMensalLocacaoService;
     }
 
     [HttpGet]
@@ -41,5 +43,20 @@ public class EquipamentosController : ControllerBase
     {
         var equipamento = await _equipamentoService.BaixarAsync(id);
         return Ok(equipamento);
+    }
+
+    [HttpGet("relatorio-mensal")]
+    public async Task<IActionResult> RelatorioMensal([FromQuery] RelatorioMensalLocacaoFiltroDto filtro, [FromQuery] string? formato)
+    {
+        var relatorio = await _relatorioMensalLocacaoService.GerarAsync(filtro);
+
+        if (string.Equals(formato, "xlsx", StringComparison.OrdinalIgnoreCase))
+        {
+            var arquivo = _relatorioMensalLocacaoService.GerarExcel(relatorio);
+            var nomeArquivo = $"relatorio-locacao-{filtro.Ano:D4}-{filtro.Mes:D2}.xlsx";
+            return File(arquivo, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", nomeArquivo);
+        }
+
+        return Ok(relatorio);
     }
 }
