@@ -119,6 +119,45 @@ public class UsuarioServiceTests
     }
 
     [Fact]
+    public async Task DesativarAsync_DeveEncerrarAlocacoesDeEquipamentoAtivas()
+    {
+        var service = CriarService(out var context);
+        var inicio = DateOnly.FromDateTime(Agora.Date).AddDays(-30);
+        var usuario = await service.CreateAsync(new CreateUsuarioDto { Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio });
+
+        var tipo = new TipoEquipamento { Nome = "Notebook", Ativo = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        context.TiposEquipamento.Add(tipo);
+        await context.SaveChangesAsync();
+
+        var equipamento = new Equipamento
+        {
+            TipoEquipamentoId = tipo.Id,
+            Origem = "Comprado",
+            Status = "Disponivel",
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Equipamentos.Add(equipamento);
+        await context.SaveChangesAsync();
+
+        var alocacao = new EquipamentoAlocacao
+        {
+            EquipamentoId = equipamento.Id,
+            UsuarioId = usuario.Id,
+            DataInicio = inicio,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.EquipamentoAlocacoes.Add(alocacao);
+        await context.SaveChangesAsync();
+
+        await service.DesativarAsync(usuario.Id, new DesativarUsuarioDto());
+
+        var alocacaoAtualizada = await context.EquipamentoAlocacoes.FindAsync(alocacao.Id);
+        Assert.NotNull(alocacaoAtualizada!.DataFim);
+    }
+
+    [Fact]
     public async Task DesativarAsync_NaoDeveAlterarMovimentacoesJaEncerradasDeOutrosUsuarios()
     {
         var service = CriarService(out var context);

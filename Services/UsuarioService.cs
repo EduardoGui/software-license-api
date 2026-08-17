@@ -127,11 +127,21 @@ public class UsuarioService : IUsuarioService
             movimentacao.DataAtualizacao = agora;
         }
 
+        var alocacoesAtivas = await _context.EquipamentoAlocacoes
+            .Where(a => a.UsuarioId == id && a.DataFim == null)
+            .ToListAsync();
+
+        foreach (var alocacao in alocacoesAtivas)
+        {
+            alocacao.DataFim = alocacao.DataInicio > dataFim ? alocacao.DataInicio : dataFim;
+            alocacao.DataAtualizacao = agora;
+        }
+
         await _context.SaveChangesAsync();
 
         _logger.LogInformation(
-            "Usuário {UsuarioId} desativado, encerrando {Quantidade} movimentação(ões) ativa(s)",
-            usuario.Id, movimentacoesAtivas.Count);
+            "Usuário {UsuarioId} desativado, encerrando {QuantidadeMovimentacoes} movimentação(ões) e {QuantidadeAlocacoes} alocação(ões) de equipamento ativa(s)",
+            usuario.Id, movimentacoesAtivas.Count, alocacoesAtivas.Count);
 
         return ParaDto(usuario, Hoje(), licencasEmUso: 0);
     }
