@@ -248,4 +248,30 @@ public class EquipamentoServiceTests
 
         await Assert.ThrowsAsync<NotFoundException>(() => service.GetByIdAsync(999));
     }
+
+    [Fact]
+    public async Task GetInventarioAsync_DeveAgruparPorTipoComTotaisPorStatus()
+    {
+        var (service, context) = CriarService();
+        var notebook = CriarTipo(context, "Notebook");
+        var monitor = CriarTipo(context, "Monitor");
+        CriarEquipamento(context, notebook);
+        var notebookBaixado = CriarEquipamento(context, notebook);
+        await service.BaixarAsync(notebookBaixado.Id);
+        CriarEquipamento(context, monitor);
+
+        var inventario = await service.GetInventarioAsync();
+
+        Assert.Equal(3, inventario.TotalGeral);
+        Assert.Equal(2, inventario.Grupos.Count);
+
+        var grupoNotebook = inventario.Grupos.Single(g => g.TipoEquipamentoNome == "Notebook");
+        Assert.Equal(2, grupoNotebook.Itens.Count);
+        Assert.Equal(1, grupoNotebook.TotalDisponivel);
+        Assert.Equal(1, grupoNotebook.TotalBaixado);
+
+        var grupoMonitor = inventario.Grupos.Single(g => g.TipoEquipamentoNome == "Monitor");
+        Assert.Single(grupoMonitor.Itens);
+        Assert.Equal(1, grupoMonitor.TotalDisponivel);
+    }
 }

@@ -126,6 +126,32 @@ public class EquipamentoService : IEquipamentoService
         return ParaDto(equipamento, alocacaoAtivaAtual: null);
     }
 
+    public async Task<InventarioDto> GetInventarioAsync()
+    {
+        var equipamentos = await GetAllAsync(new EquipamentoFiltroDto());
+
+        var grupos = equipamentos
+            .GroupBy(e => new { e.TipoEquipamentoId, e.TipoEquipamentoNome })
+            .Select(g => new InventarioGrupoDto
+            {
+                TipoEquipamentoId = g.Key.TipoEquipamentoId,
+                TipoEquipamentoNome = g.Key.TipoEquipamentoNome,
+                Itens = g.OrderBy(i => i.Patrimonio ?? i.NumeroSerie ?? string.Empty).ToList(),
+                TotalDisponivel = g.Count(i => i.Status == EquipamentoStatus.Disponivel),
+                TotalEmUso = g.Count(i => i.Status == EquipamentoStatus.EmUso),
+                TotalManutencao = g.Count(i => i.Status == EquipamentoStatus.Manutencao),
+                TotalBaixado = g.Count(i => i.Status == EquipamentoStatus.Baixado),
+            })
+            .OrderBy(g => g.TipoEquipamentoNome)
+            .ToList();
+
+        return new InventarioDto
+        {
+            Grupos = grupos,
+            TotalGeral = equipamentos.Count,
+        };
+    }
+
     private DateOnly Hoje() => DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
 
     private async Task<Equipamento> BuscarOuFalhar(int id)

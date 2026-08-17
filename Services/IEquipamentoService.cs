@@ -8,4 +8,5 @@ public interface IEquipamentoService
     Task<EquipamentoDto> GetByIdAsync(int id);
     Task<EquipamentoDto> UpdateAsync(int id, UpdateEquipamentoDto dto);
     Task<EquipamentoDto> BaixarAsync(int id);
+    Task<InventarioDto> GetInventarioAsync();
 }

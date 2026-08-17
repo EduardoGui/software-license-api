@@ -45,6 +45,13 @@ public class EquipamentosController : ControllerBase
         return Ok(equipamento);
     }
 
+    [HttpGet("inventario")]
+    public async Task<ActionResult<InventarioDto>> Inventario()
+    {
+        var inventario = await _equipamentoService.GetInventarioAsync();
+        return Ok(inventario);
+    }
+
     [HttpGet("relatorio-mensal")]
     public async Task<IActionResult> RelatorioMensal([FromQuery] RelatorioMensalLocacaoFiltroDto filtro, [FromQuery] string? formato)
     {
