@@ -192,6 +192,93 @@ public class EquipamentoAlocacaoServiceTests
     }
 
     [Fact]
+    public async Task EditarEncerradaAsync_DeveReativarAlocacaoEncerrada()
+    {
+        var (service, context) = CriarService();
+        var usuario = CriarUsuarioAtivo(context);
+        var equipamento = CriarEquipamento(context);
+        var alocacao = await service.CreateAsync(new CreateEquipamentoAlocacaoDto { EquipamentoId = equipamento.Id, UsuarioId = usuario.Id, DataInicio = Hoje });
+        await service.EncerrarAsync(alocacao.Id, new EncerrarEquipamentoAlocacaoDto { DataFim = Hoje });
+
+        var reativada = await service.EditarEncerradaAsync(alocacao.Id, new EditarEquipamentoAlocacaoEncerradaDto { DataFim = null });
+
+        Assert.Equal(EquipamentoAlocacaoStatus.EmUso, reativada.Status);
+        Assert.Null(reativada.DataFim);
+    }
+
+    [Fact]
+    public async Task EditarEncerradaAsync_DeveAjustarDataFimParaOutraData()
+    {
+        var (service, context) = CriarService();
+        var usuario = CriarUsuarioAtivo(context);
+        var equipamento = CriarEquipamento(context);
+        var alocacao = await service.CreateAsync(new CreateEquipamentoAlocacaoDto { EquipamentoId = equipamento.Id, UsuarioId = usuario.Id, DataInicio = Hoje.AddDays(-10) });
+        await service.EncerrarAsync(alocacao.Id, new EncerrarEquipamentoAlocacaoDto { DataFim = Hoje });
+
+        var editada = await service.EditarEncerradaAsync(alocacao.Id, new EditarEquipamentoAlocacaoEncerradaDto { DataFim = Hoje.AddDays(-1) });
+
+        Assert.Equal(Hoje.AddDays(-1), editada.DataFim);
+    }
+
+    [Fact]
+    public async Task EditarEncerradaAsync_DeveRejeitarQuandoAlocacaoNaoEstaEncerrada()
+    {
+        var (service, context) = CriarService();
+        var usuario = CriarUsuarioAtivo(context);
+        var equipamento = CriarEquipamento(context);
+        var alocacao = await service.CreateAsync(new CreateEquipamentoAlocacaoDto { EquipamentoId = equipamento.Id, UsuarioId = usuario.Id, DataInicio = Hoje });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.EditarEncerradaAsync(alocacao.Id, new EditarEquipamentoAlocacaoEncerradaDto { DataFim = null }));
+    }
+
+    [Fact]
+    public async Task EditarEncerradaAsync_DeveRejeitarReativarQuandoEquipamentoJaAlocadoAOutro()
+    {
+        var (service, context) = CriarService();
+        var usuario1 = CriarUsuarioAtivo(context, "Ana", "ana@empresa.com");
+        var usuario2 = CriarUsuarioAtivo(context, "João", "joao@empresa.com");
+        var equipamento = CriarEquipamento(context);
+
+        var primeira = await service.CreateAsync(new CreateEquipamentoAlocacaoDto { EquipamentoId = equipamento.Id, UsuarioId = usuario1.Id, DataInicio = Hoje.AddDays(-10) });
+        await service.EncerrarAsync(primeira.Id, new EncerrarEquipamentoAlocacaoDto { DataFim = Hoje.AddDays(-5) });
+
+        await service.CreateAsync(new CreateEquipamentoAlocacaoDto { EquipamentoId = equipamento.Id, UsuarioId = usuario2.Id, DataInicio = Hoje.AddDays(-4) });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.EditarEncerradaAsync(primeira.Id, new EditarEquipamentoAlocacaoEncerradaDto { DataFim = null }));
+    }
+
+    [Fact]
+    public async Task EditarEncerradaAsync_DeveRejeitarReativarQuandoEquipamentoEmManutencao()
+    {
+        var (service, context) = CriarService();
+        var usuario = CriarUsuarioAtivo(context);
+        var equipamento = CriarEquipamento(context);
+        var alocacao = await service.CreateAsync(new CreateEquipamentoAlocacaoDto { EquipamentoId = equipamento.Id, UsuarioId = usuario.Id, DataInicio = Hoje });
+        await service.EncerrarAsync(alocacao.Id, new EncerrarEquipamentoAlocacaoDto { DataFim = Hoje });
+
+        equipamento.Status = "Manutencao";
+        await context.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.EditarEncerradaAsync(alocacao.Id, new EditarEquipamentoAlocacaoEncerradaDto { DataFim = null }));
+    }
+
+    [Fact]
+    public async Task EditarEncerradaAsync_DeveRejeitarDataFimAnteriorADataInicio()
+    {
+        var (service, context) = CriarService();
+        var usuario = CriarUsuarioAtivo(context);
+        var equipamento = CriarEquipamento(context);
+        var alocacao = await service.CreateAsync(new CreateEquipamentoAlocacaoDto { EquipamentoId = equipamento.Id, UsuarioId = usuario.Id, DataInicio = Hoje });
+        await service.EncerrarAsync(alocacao.Id, new EncerrarEquipamentoAlocacaoDto { DataFim = Hoje });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.EditarEncerradaAsync(alocacao.Id, new EditarEquipamentoAlocacaoEncerradaDto { DataFim = Hoje.AddYears(-1) }));
+    }
+
+    [Fact]
     public async Task GetAllAsync_DeveFiltrarPorStatus()
     {
         var (service, context) = CriarService();

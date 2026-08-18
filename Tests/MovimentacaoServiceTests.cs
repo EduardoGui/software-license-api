@@ -173,6 +173,97 @@ public class MovimentacaoServiceTests
     }
 
     [Fact]
+    public async Task EditarEncerradaAsync_DeveReativarMovimentacaoEncerrada()
+    {
+        var (service, context) = CriarService();
+        var licenca = CriarLicenca(context, quantidadeTotal: 1);
+        var usuario = CriarUsuarioAtivo(context);
+
+        var criada = await service.CreateAsync(new CreateMovimentacaoDto { UsuarioId = usuario.Id, LicencaId = licenca.Id, DataInicio = Hoje });
+        await service.EncerrarAsync(criada.Id, new EncerrarMovimentacaoDto { DataFim = Hoje });
+
+        var reativada = await service.EditarEncerradaAsync(criada.Id, new EditarMovimentacaoEncerradaDto { DataFim = null });
+
+        Assert.Equal(MovimentacaoStatus.EmUso, reativada.Status);
+        Assert.Null(reativada.DataFim);
+    }
+
+    [Fact]
+    public async Task EditarEncerradaAsync_DeveAjustarDataFimParaOutraData()
+    {
+        var (service, context) = CriarService();
+        var licenca = CriarLicenca(context);
+        var usuario = CriarUsuarioAtivo(context);
+
+        var criada = await service.CreateAsync(new CreateMovimentacaoDto { UsuarioId = usuario.Id, LicencaId = licenca.Id, DataInicio = Hoje.AddDays(-10) });
+        await service.EncerrarAsync(criada.Id, new EncerrarMovimentacaoDto { DataFim = Hoje });
+
+        var editada = await service.EditarEncerradaAsync(criada.Id, new EditarMovimentacaoEncerradaDto { DataFim = Hoje.AddDays(-1) });
+
+        Assert.Equal(Hoje.AddDays(-1), editada.DataFim);
+    }
+
+    [Fact]
+    public async Task EditarEncerradaAsync_DeveRejeitarQuandoMovimentacaoNaoEstaEncerrada()
+    {
+        var (service, context) = CriarService();
+        var licenca = CriarLicenca(context);
+        var usuario = CriarUsuarioAtivo(context);
+
+        var criada = await service.CreateAsync(new CreateMovimentacaoDto { UsuarioId = usuario.Id, LicencaId = licenca.Id, DataInicio = Hoje });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.EditarEncerradaAsync(criada.Id, new EditarMovimentacaoEncerradaDto { DataFim = null }));
+    }
+
+    [Fact]
+    public async Task EditarEncerradaAsync_DeveRejeitarReativarQuandoJaExisteAtivaParaMesmoUsuarioELicenca()
+    {
+        var (service, context) = CriarService();
+        var licenca = CriarLicenca(context, quantidadeTotal: 5);
+        var usuario = CriarUsuarioAtivo(context);
+
+        var primeira = await service.CreateAsync(new CreateMovimentacaoDto { UsuarioId = usuario.Id, LicencaId = licenca.Id, DataInicio = Hoje.AddDays(-10) });
+        await service.EncerrarAsync(primeira.Id, new EncerrarMovimentacaoDto { DataFim = Hoje.AddDays(-5) });
+
+        await service.CreateAsync(new CreateMovimentacaoDto { UsuarioId = usuario.Id, LicencaId = licenca.Id, DataInicio = Hoje.AddDays(-4) });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.EditarEncerradaAsync(primeira.Id, new EditarMovimentacaoEncerradaDto { DataFim = null }));
+    }
+
+    [Fact]
+    public async Task EditarEncerradaAsync_DeveRejeitarReativarQuandoSemDisponibilidade()
+    {
+        var (service, context) = CriarService();
+        var licenca = CriarLicenca(context, quantidadeTotal: 1);
+        var usuario1 = CriarUsuarioAtivo(context, "Ana", "ana@empresa.com");
+        var usuario2 = CriarUsuarioAtivo(context, "João", "joao@empresa.com");
+
+        var primeira = await service.CreateAsync(new CreateMovimentacaoDto { UsuarioId = usuario1.Id, LicencaId = licenca.Id, DataInicio = Hoje.AddDays(-10) });
+        await service.EncerrarAsync(primeira.Id, new EncerrarMovimentacaoDto { DataFim = Hoje.AddDays(-5) });
+
+        await service.CreateAsync(new CreateMovimentacaoDto { UsuarioId = usuario2.Id, LicencaId = licenca.Id, DataInicio = Hoje.AddDays(-4) });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.EditarEncerradaAsync(primeira.Id, new EditarMovimentacaoEncerradaDto { DataFim = null }));
+    }
+
+    [Fact]
+    public async Task EditarEncerradaAsync_DeveRejeitarDataFimAnteriorADataInicio()
+    {
+        var (service, context) = CriarService();
+        var licenca = CriarLicenca(context);
+        var usuario = CriarUsuarioAtivo(context);
+
+        var criada = await service.CreateAsync(new CreateMovimentacaoDto { UsuarioId = usuario.Id, LicencaId = licenca.Id, DataInicio = Hoje });
+        await service.EncerrarAsync(criada.Id, new EncerrarMovimentacaoDto { DataFim = Hoje });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.EditarEncerradaAsync(criada.Id, new EditarMovimentacaoEncerradaDto { DataFim = Hoje.AddYears(-1) }));
+    }
+
+    [Fact]
     public async Task GetAllAsync_DeveFiltrarPorStatusEPaginar()
     {
         var (service, context) = CriarService();

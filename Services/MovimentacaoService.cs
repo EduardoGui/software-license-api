@@ -177,6 +177,70 @@ public class MovimentacaoService : IMovimentacaoService
         return ParaDto(movimentacao);
     }
 
+    public async Task<MovimentacaoDto> EditarEncerradaAsync(int id, EditarMovimentacaoEncerradaDto dto)
+    {
+        var movimentacao = await _context.UsuarioLicencas
+            .Include(m => m.Usuario)
+            .Include(m => m.Licenca)
+            .FirstOrDefaultAsync(m => m.Id == id)
+            ?? throw new NotFoundException($"Movimentação {id} não encontrada.");
+
+        if (movimentacao.DataFim is null)
+        {
+            throw new BusinessRuleException("Somente movimentações encerradas podem ser editadas.");
+        }
+
+        if (dto.DataFim is not null)
+        {
+            if (dto.DataFim < movimentacao.DataInicio)
+            {
+                throw new BusinessRuleException("A data de fim não pode ser anterior à data de início da movimentação.");
+            }
+        }
+        else
+        {
+            var hoje = Hoje();
+
+            if (UsuarioStatus.Calcular(movimentacao.Usuario, hoje) != UsuarioStatus.Ativo)
+            {
+                throw new BusinessRuleException("Não é possível reativar: o usuário não está ativo.");
+            }
+
+            if (!movimentacao.Licenca.Ativa)
+            {
+                throw new BusinessRuleException("Não é possível reativar: a licença está inativa.");
+            }
+
+            var jaAlocada = await _context.UsuarioLicencas.AnyAsync(m =>
+                m.Id != id && m.UsuarioId == movimentacao.UsuarioId && m.LicencaId == movimentacao.LicencaId && m.DataFim == null);
+            if (jaAlocada)
+            {
+                throw new BusinessRuleException("Este usuário já possui uma alocação ativa desta licença.");
+            }
+
+            var emUso = await _context.UsuarioLicencas.CountAsync(m =>
+                m.Id != id && m.LicencaId == movimentacao.LicencaId && m.DataFim == null);
+            if (emUso >= movimentacao.Licenca.QuantidadeTotal)
+            {
+                throw new BusinessRuleException("Não existem licenças disponíveis para reativar esta movimentação.");
+            }
+        }
+
+        movimentacao.DataFim = dto.DataFim;
+        if (!string.IsNullOrWhiteSpace(dto.Observacao))
+        {
+            movimentacao.Observacao = dto.Observacao;
+        }
+
+        movimentacao.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Movimentação {MovimentacaoId} editada (encerramento ajustado)", movimentacao.Id);
+
+        return ParaDto(movimentacao);
+    }
+
     private DateOnly Hoje() => DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
 
     private static MovimentacaoDto ParaDto(UsuarioLicenca m) => new()

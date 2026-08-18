@@ -35,4 +35,11 @@ public class EquipamentoAlocacoesController : ControllerBase
         var alocacao = await _equipamentoAlocacaoService.EncerrarAsync(id, dto);
         return Ok(alocacao);
     }
+
+    [HttpPatch("{id:int}/editar-encerramento")]
+    public async Task<ActionResult<EquipamentoAlocacaoDto>> EditarEncerramento(int id, EditarEquipamentoAlocacaoEncerradaDto dto)
+    {
+        var alocacao = await _equipamentoAlocacaoService.EditarEncerradaAsync(id, dto);
+        return Ok(alocacao);
+    }
 }

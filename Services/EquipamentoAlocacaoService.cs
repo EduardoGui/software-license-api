@@ -169,13 +169,71 @@ public class EquipamentoAlocacaoService : IEquipamentoAlocacaoService
         return ParaDto(alocacao);
     }
 
+    public async Task<EquipamentoAlocacaoDto> EditarEncerradaAsync(int id, EditarEquipamentoAlocacaoEncerradaDto dto)
+    {
+        var alocacao = await _context.EquipamentoAlocacoes
+            .Include(a => a.Usuario)
+            .Include(a => a.Equipamento)
+            .ThenInclude(e => e.TipoEquipamento)
+            .FirstOrDefaultAsync(a => a.Id == id)
+            ?? throw new NotFoundException($"Alocação {id} não encontrada.");
+
+        if (alocacao.DataFim is null)
+        {
+            throw new BusinessRuleException("Somente alocações encerradas podem ser editadas.");
+        }
+
+        if (dto.DataFim is not null)
+        {
+            if (dto.DataFim < alocacao.DataInicio)
+            {
+                throw new BusinessRuleException("A data de fim não pode ser anterior à data de início da alocação.");
+            }
+        }
+        else
+        {
+            var hoje = Hoje();
+
+            if (UsuarioStatus.Calcular(alocacao.Usuario, hoje) != UsuarioStatus.Ativo)
+            {
+                throw new BusinessRuleException("Não é possível reativar: o usuário não está ativo.");
+            }
+
+            if (alocacao.Equipamento.Status != EquipamentoStatus.Disponivel)
+            {
+                throw new BusinessRuleException("Não é possível reativar: o equipamento não está disponível.");
+            }
+
+            var jaAlocado = await _context.EquipamentoAlocacoes.AnyAsync(a =>
+                a.Id != id && a.EquipamentoId == alocacao.EquipamentoId && a.DataFim == null);
+            if (jaAlocado)
+            {
+                throw new BusinessRuleException("Este equipamento já está alocado a um usuário.");
+            }
+        }
+
+        alocacao.DataFim = dto.DataFim;
+        if (!string.IsNullOrWhiteSpace(dto.Observacao))
+        {
+            alocacao.Observacao = dto.Observacao;
+        }
+
+        alocacao.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Alocação {AlocacaoId} editada (encerramento ajustado)", alocacao.Id);
+
+        return ParaDto(alocacao);
+    }
+
     private DateOnly Hoje() => DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
 
     private static EquipamentoAlocacaoDto ParaDto(EquipamentoAlocacao a) => new()
     {
         Id = a.Id,
         EquipamentoId = a.EquipamentoId,
-        EquipamentoDescricao = DescreverEquipamento(a.Equipamento),
+        EquipamentoDescricao = EquipamentoDescricaoHelper.Descrever(a.Equipamento),
         UsuarioId = a.UsuarioId,
         UsuarioNome = a.Usuario.Nome,
         DataInicio = a.DataInicio,
@@ -185,10 +243,4 @@ public class EquipamentoAlocacaoService : IEquipamentoAlocacaoService
         DataCriacao = a.DataCriacao,
         DataAtualizacao = a.DataAtualizacao,
     };
-
-    private static string DescreverEquipamento(Equipamento e)
-    {
-        var identificador = !string.IsNullOrWhiteSpace(e.Patrimonio) ? e.Patrimonio : e.NumeroSerie;
-        return string.IsNullOrWhiteSpace(identificador) ? e.TipoEquipamento.Nome : $"{e.TipoEquipamento.Nome} ({identificador})";
-    }
 }

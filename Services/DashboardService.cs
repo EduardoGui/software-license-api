@@ -64,7 +64,7 @@ public class DashboardService : IDashboardService
             .Select(e => new VencimentoContratoDto
             {
                 EquipamentoId = e.Id,
-                Descricao = DescreverEquipamento(e),
+                Descricao = EquipamentoDescricaoHelper.Descrever(e),
                 DataFimContrato = e.DataFimContrato!.Value,
                 DiasParaVencer = e.DataFimContrato.Value.DayNumber - hoje.DayNumber,
             })
@@ -83,11 +83,5 @@ public class DashboardService : IDashboardService
             CustoMensalLocacaoAtual = relatorioMesAtual.TotalGeral,
             ProximosVencimentosContratos = proximosVencimentosContratos,
         };
-    }
-
-    private static string DescreverEquipamento(Entities.Equipamento e)
-    {
-        var identificador = !string.IsNullOrWhiteSpace(e.Patrimonio) ? e.Patrimonio : e.NumeroSerie;
-        return string.IsNullOrWhiteSpace(identificador) ? e.TipoEquipamento.Nome : $"{e.TipoEquipamento.Nome} ({identificador})";
     }
 }

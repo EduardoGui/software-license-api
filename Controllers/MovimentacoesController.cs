@@ -35,4 +35,11 @@ public class MovimentacoesController : ControllerBase
         var movimentacao = await _movimentacaoService.EncerrarAsync(id, dto);
         return Ok(movimentacao);
     }
+
+    [HttpPatch("{id:int}/editar-encerramento")]
+    public async Task<ActionResult<MovimentacaoDto>> EditarEncerramento(int id, EditarMovimentacaoEncerradaDto dto)
+    {
+        var movimentacao = await _movimentacaoService.EditarEncerradaAsync(id, dto);
+        return Ok(movimentacao);
+    }
 }
