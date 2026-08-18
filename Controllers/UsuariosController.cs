@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SoftwareLicense.Api.DTOs;
+using SoftwareLicense.Api.Extensions;
 using SoftwareLicense.Api.Services;
 
 namespace SoftwareLicense.Api.Controllers;
@@ -16,6 +18,7 @@ public class UsuariosController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<List<UsuarioDto>>> GetAll([FromQuery] UsuarioFiltroDto filtro)
     {
         var usuarios = await _usuarioService.GetAllAsync(filtro);
@@ -23,13 +26,20 @@ public class UsuariosController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
     public async Task<ActionResult<UsuarioDto>> GetById(int id)
     {
+        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(id))
+        {
+            return Forbid();
+        }
+
         var usuario = await _usuarioService.GetByIdAsync(id);
         return Ok(usuario);
     }
 
     [HttpPost]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<UsuarioDto>> Create(CreateUsuarioDto dto)
     {
         var usuario = await _usuarioService.CreateAsync(dto);
@@ -37,6 +47,7 @@ public class UsuariosController : ControllerBase
     }
 
     [HttpPut("{id:int}")]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<UsuarioDto>> Update(int id, UpdateUsuarioDto dto)
     {
         var usuario = await _usuarioService.UpdateAsync(id, dto);
@@ -44,6 +55,7 @@ public class UsuariosController : ControllerBase
     }
 
     [HttpPatch("{id:int}/desativar")]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<UsuarioDto>> Desativar(int id, DesativarUsuarioDto dto)
     {
         var usuario = await _usuarioService.DesativarAsync(id, dto);

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SoftwareLicense.Api.DTOs;
 using SoftwareLicense.Api.Services;
@@ -6,6 +7,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/timeline")]
+[Authorize(Roles = Roles.Administrador)]
 public class TimelineController : ControllerBase
 {
     private readonly ITimelineService _timelineService;

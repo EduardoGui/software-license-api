@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 using SoftwareLicense.Api.DTOs;
 using SoftwareLicense.Api.Entities;
+using SoftwareLicense.Api.Exceptions;
 
 namespace SoftwareLicense.Api.Services;
 
@@ -42,11 +43,22 @@ public class AuthService : IAuthService
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var expiraEm = agora.AddHours(8);
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(JwtRegisteredClaimNames.Sub, usuario.Id),
-            new Claim(JwtRegisteredClaimNames.Email, usuario.Email ?? string.Empty),
+            new(JwtRegisteredClaimNames.Sub, usuario.Id),
+            new(JwtRegisteredClaimNames.Email, usuario.Email ?? string.Empty),
         };
+
+        // Claim curta "role" (em vez de ClaimTypes.Role, que grava a URI longa no token) —
+        // o JwtBearerHandler mapeia "role" para ClaimTypes.Role automaticamente na leitura,
+        // então [Authorize(Roles=...)] continua funcionando, e o token fica legível pro frontend.
+        var papeis = await _userManager.GetRolesAsync(usuario);
+        claims.AddRange(papeis.Select(papel => new Claim("role", papel)));
+
+        if (usuario.UsuarioId is not null)
+        {
+            claims.Add(new Claim("usuarioId", usuario.UsuarioId.Value.ToString()));
+        }
 
         var chave = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSecret));
         var credenciais = new SigningCredentials(chave, SecurityAlgorithms.HmacSha256);
@@ -66,5 +78,29 @@ public class AuthService : IAuthService
             Email = usuario.Email ?? string.Empty,
             ExpiraEm = expiraEm,
         };
+    }
+
+    public async Task DefinirSenhaAsync(DefinirSenhaDto dto)
+    {
+        var usuario = await _userManager.FindByEmailAsync(dto.Email.Trim());
+        if (usuario is null)
+        {
+            _logger.LogInformation("Tentativa de definir senha para email inexistente {Email}", dto.Email);
+            throw new BusinessRuleException("Link inválido ou expirado.");
+        }
+
+        var resultado = await _userManager.ResetPasswordAsync(usuario, dto.Token, dto.NovaSenha);
+        if (!resultado.Succeeded)
+        {
+            if (resultado.Errors.Any(e => e.Code == "InvalidToken"))
+            {
+                _logger.LogInformation("Token inválido/expirado ao definir senha para {Email}", dto.Email);
+                throw new BusinessRuleException("Link inválido ou expirado.");
+            }
+
+            throw new BusinessRuleException(string.Join(" ", resultado.Errors.Select(e => e.Description)));
+        }
+
+        _logger.LogInformation("Senha definida com sucesso para {Email}", dto.Email);
     }
 }

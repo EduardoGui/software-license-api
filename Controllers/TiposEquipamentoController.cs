@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SoftwareLicense.Api.DTOs;
 using SoftwareLicense.Api.Services;
@@ -6,6 +7,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/tipos-equipamento")]
+[Authorize(Roles = Roles.Administrador)]
 public class TiposEquipamentoController : ControllerBase
 {
     private readonly ITipoEquipamentoService _tipoEquipamentoService;

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SoftwareLicense.Api.Data;
 using SoftwareLicense.Api.DTOs;
 using SoftwareLicense.Api.Entities;
+using SoftwareLicense.Api.Exceptions;
 using SoftwareLicense.Api.Services;
 using Xunit;
 
@@ -25,9 +26,11 @@ public class AuthServiceTests
         var services = new ServiceCollection();
         services.AddSingleton(context);
         services.AddLogging();
+        services.AddDataProtection();
         services.AddIdentityCore<ApplicationUser>()
             .AddRoles<IdentityRole>()
-            .AddEntityFrameworkStores<AppDbContext>();
+            .AddEntityFrameworkStores<AppDbContext>()
+            .AddDefaultTokenProviders();
         var provider = services.BuildServiceProvider();
         var userManager = provider.GetRequiredService<UserManager<ApplicationUser>>();
 
@@ -75,5 +78,51 @@ public class AuthServiceTests
         var resultado = await service.LoginAsync(new LoginDto { Email = "naoexiste@licencas.local", Senha = "Senha@Forte123" });
 
         Assert.Null(resultado);
+    }
+
+    [Fact]
+    public async Task DefinirSenhaAsync_DevePermitirLoginComANovaSenha()
+    {
+        var (service, userManager) = CriarService();
+        var usuario = new ApplicationUser { UserName = "colaborador@empresa.com", Email = "colaborador@empresa.com" };
+        await userManager.CreateAsync(usuario, "SenhaTemporaria@Aa1!");
+        var token = await userManager.GeneratePasswordResetTokenAsync(usuario);
+
+        await service.DefinirSenhaAsync(new DefinirSenhaDto { Email = "colaborador@empresa.com", Token = token, NovaSenha = "NovaSenha@Forte123" });
+
+        var login = await service.LoginAsync(new LoginDto { Email = "colaborador@empresa.com", Senha = "NovaSenha@Forte123" });
+        Assert.NotNull(login);
+    }
+
+    [Fact]
+    public async Task DefinirSenhaAsync_DeveRejeitarEmailInexistente()
+    {
+        var (service, _) = CriarService();
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.DefinirSenhaAsync(new DefinirSenhaDto { Email = "naoexiste@empresa.com", Token = "qualquer", NovaSenha = "NovaSenha@Forte123" }));
+    }
+
+    [Fact]
+    public async Task DefinirSenhaAsync_DeveRejeitarTokenInvalido()
+    {
+        var (service, userManager) = CriarService();
+        var usuario = new ApplicationUser { UserName = "colaborador@empresa.com", Email = "colaborador@empresa.com" };
+        await userManager.CreateAsync(usuario, "SenhaTemporaria@Aa1!");
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.DefinirSenhaAsync(new DefinirSenhaDto { Email = "colaborador@empresa.com", Token = "token-invalido", NovaSenha = "NovaSenha@Forte123" }));
+    }
+
+    [Fact]
+    public async Task DefinirSenhaAsync_DeveRejeitarSenhaQueNaoAtendeAPolitica()
+    {
+        var (service, userManager) = CriarService();
+        var usuario = new ApplicationUser { UserName = "colaborador@empresa.com", Email = "colaborador@empresa.com" };
+        await userManager.CreateAsync(usuario, "SenhaTemporaria@Aa1!");
+        var token = await userManager.GeneratePasswordResetTokenAsync(usuario);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.DefinirSenhaAsync(new DefinirSenhaDto { Email = "colaborador@empresa.com", Token = token, NovaSenha = "123" }));
     }
 }

@@ -5,4 +5,5 @@ namespace SoftwareLicense.Api.Services;
 public interface IAuthService
 {
     Task<LoginResponseDto?> LoginAsync(LoginDto dto);
+    Task DefinirSenhaAsync(DefinirSenhaDto dto);
 }

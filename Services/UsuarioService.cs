@@ -115,14 +115,23 @@ public class UsuarioService : IUsuarioService
         var token = await _userManager.GeneratePasswordResetTokenAsync(contaAcesso);
         var linkDefinirSenha = $"{_frontendBaseUrl}/definir-senha?email={Uri.EscapeDataString(emailNormalizado)}&token={Uri.EscapeDataString(token)}";
 
-        await _emailSender.EnviarAsync(
-            emailNormalizado,
-            "Bem-vindo ao Adm Hope — defina sua senha",
-            $"<p>Olá, {usuario.Nome}!</p><p>Sua conta de acesso ao Adm Hope foi criada. Clique no link abaixo para definir sua senha e fazer login:</p><p><a href=\"{linkDefinirSenha}\">Definir senha</a></p>");
+        try
+        {
+            await _emailSender.EnviarAsync(
+                emailNormalizado,
+                "Bem-vindo ao Adm Hope — defina sua senha",
+                $"<p>Olá, {usuario.Nome}!</p><p>Sua conta de acesso ao Adm Hope foi criada. Clique no link abaixo para definir sua senha e fazer login:</p><p><a href=\"{linkDefinirSenha}\">Definir senha</a></p>");
 
-        _logger.LogInformation(
-            "Usuário {UsuarioId} criado, conta de acesso provisionada (role {Role}) e convite de senha enviado",
-            usuario.Id, Roles.Colaborador);
+            _logger.LogInformation(
+                "Usuário {UsuarioId} criado, conta de acesso provisionada (role {Role}) e convite de senha enviado",
+                usuario.Id, Roles.Colaborador);
+        }
+        catch (Exception ex)
+        {
+            // A conta de acesso já foi criada — uma falha no envio do e-mail não deve reverter
+            // o cadastro do colaborador, só fica registrada para reenvio manual futuro.
+            _logger.LogError(ex, "Usuário {UsuarioId} criado, mas o envio do convite de senha falhou", usuario.Id);
+        }
 
         return ParaDto(usuario, Hoje(), licencasEmUso: 0);
     }

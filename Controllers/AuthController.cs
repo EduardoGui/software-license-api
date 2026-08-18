@@ -28,4 +28,11 @@ public class AuthController : ControllerBase
 
         return Ok(resultado);
     }
+
+    [HttpPost("definir-senha")]
+    public async Task<IActionResult> DefinirSenha(DefinirSenhaDto dto)
+    {
+        await _authService.DefinirSenhaAsync(dto);
+        return NoContent();
+    }
 }

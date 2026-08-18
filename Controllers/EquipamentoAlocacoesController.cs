@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SoftwareLicense.Api.DTOs;
+using SoftwareLicense.Api.Extensions;
 using SoftwareLicense.Api.Services;
 
 namespace SoftwareLicense.Api.Controllers;
@@ -16,13 +18,20 @@ public class EquipamentoAlocacoesController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
     public async Task<ActionResult<PaginaDto<EquipamentoAlocacaoDto>>> GetAll([FromQuery] EquipamentoAlocacaoFiltroDto filtro)
     {
+        if (!User.IsInRole(Roles.Administrador) && (filtro.UsuarioId is null || !User.TemUsuarioId(filtro.UsuarioId.Value)))
+        {
+            return Forbid();
+        }
+
         var pagina = await _equipamentoAlocacaoService.GetAllAsync(filtro);
         return Ok(pagina);
     }
 
     [HttpPost]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<EquipamentoAlocacaoDto>> Create(CreateEquipamentoAlocacaoDto dto)
     {
         var alocacao = await _equipamentoAlocacaoService.CreateAsync(dto);
@@ -30,6 +39,7 @@ public class EquipamentoAlocacoesController : ControllerBase
     }
 
     [HttpPatch("{id:int}/encerrar")]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<EquipamentoAlocacaoDto>> Encerrar(int id, EncerrarEquipamentoAlocacaoDto dto)
     {
         var alocacao = await _equipamentoAlocacaoService.EncerrarAsync(id, dto);
@@ -37,6 +47,7 @@ public class EquipamentoAlocacoesController : ControllerBase
     }
 
     [HttpPatch("{id:int}/editar-encerramento")]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<EquipamentoAlocacaoDto>> EditarEncerramento(int id, EditarEquipamentoAlocacaoEncerradaDto dto)
     {
         var alocacao = await _equipamentoAlocacaoService.EditarEncerradaAsync(id, dto);
