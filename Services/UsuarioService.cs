@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using SoftwareLicense.Api.Data;
 using SoftwareLicense.Api.DTOs;
@@ -11,12 +12,24 @@ public class UsuarioService : IUsuarioService
     private readonly AppDbContext _context;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<UsuarioService> _logger;
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IEmailSender _emailSender;
+    private readonly string _frontendBaseUrl;
 
-    public UsuarioService(AppDbContext context, TimeProvider timeProvider, ILogger<UsuarioService> logger)
+    public UsuarioService(
+        AppDbContext context,
+        TimeProvider timeProvider,
+        ILogger<UsuarioService> logger,
+        UserManager<ApplicationUser> userManager,
+        IEmailSender emailSender,
+        IConfiguration configuration)
     {
         _context = context;
         _timeProvider = timeProvider;
         _logger = logger;
+        _userManager = userManager;
+        _emailSender = emailSender;
+        _frontendBaseUrl = configuration["Frontend:BaseUrl"] ?? "http://localhost:4200";
     }
 
     public async Task<List<UsuarioDto>> GetAllAsync(UsuarioFiltroDto filtro)
@@ -59,11 +72,17 @@ public class UsuarioService : IUsuarioService
         await ValidarDatas(dto.DataInicio, dto.DataFim);
         await ValidarEmailUnico(dto.Email, usuarioIdAtual: null);
 
+        var emailNormalizado = dto.Email.Trim();
+        if (await _userManager.FindByEmailAsync(emailNormalizado) is not null)
+        {
+            throw new BusinessRuleException("Já existe uma conta de acesso cadastrada com este email.");
+        }
+
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var usuario = new Usuario
         {
             Nome = dto.Nome.Trim(),
-            Email = dto.Email.Trim(),
+            Email = emailNormalizado,
             DataInicio = dto.DataInicio,
             DataFim = dto.DataFim,
             Observacao = dto.Observacao,
@@ -74,10 +93,41 @@ public class UsuarioService : IUsuarioService
         _context.Usuarios.Add(usuario);
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Usuário {UsuarioId} criado", usuario.Id);
+        var contaAcesso = new ApplicationUser
+        {
+            UserName = emailNormalizado,
+            Email = emailNormalizado,
+            EmailConfirmed = true,
+            UsuarioId = usuario.Id,
+        };
+
+        var resultadoCriacao = await _userManager.CreateAsync(contaAcesso, GerarSenhaTemporaria());
+        if (!resultadoCriacao.Succeeded)
+        {
+            _context.Usuarios.Remove(usuario);
+            await _context.SaveChangesAsync();
+            throw new BusinessRuleException(
+                $"Não foi possível criar a conta de acesso do colaborador: {string.Join(", ", resultadoCriacao.Errors.Select(e => e.Description))}");
+        }
+
+        await _userManager.AddToRoleAsync(contaAcesso, Roles.Colaborador);
+
+        var token = await _userManager.GeneratePasswordResetTokenAsync(contaAcesso);
+        var linkDefinirSenha = $"{_frontendBaseUrl}/definir-senha?email={Uri.EscapeDataString(emailNormalizado)}&token={Uri.EscapeDataString(token)}";
+
+        await _emailSender.EnviarAsync(
+            emailNormalizado,
+            "Bem-vindo ao Adm Hope — defina sua senha",
+            $"<p>Olá, {usuario.Nome}!</p><p>Sua conta de acesso ao Adm Hope foi criada. Clique no link abaixo para definir sua senha e fazer login:</p><p><a href=\"{linkDefinirSenha}\">Definir senha</a></p>");
+
+        _logger.LogInformation(
+            "Usuário {UsuarioId} criado, conta de acesso provisionada (role {Role}) e convite de senha enviado",
+            usuario.Id, Roles.Colaborador);
 
         return ParaDto(usuario, Hoje(), licencasEmUso: 0);
     }
+
+    private static string GerarSenhaTemporaria() => $"{Guid.NewGuid():N}Aa1!";
 
     public async Task<UsuarioDto> UpdateAsync(int id, UpdateUsuarioDto dto)
     {

@@ -1,0 +1,21 @@
+namespace SoftwareLicense.Api.Services;
+
+// Implementação provisória: registra o e-mail no log em vez de enviar de verdade.
+// Será substituída pelo envio real via SMTP (Brevo) na etapa 13.3 do Plano 13.
+public class LogEmailSender : IEmailSender
+{
+    private readonly ILogger<LogEmailSender> _logger;
+
+    public LogEmailSender(ILogger<LogEmailSender> logger)
+    {
+        _logger = logger;
+    }
+
+    public Task EnviarAsync(string destinatario, string assunto, string corpoHtml)
+    {
+        _logger.LogInformation(
+            "[E-mail simulado — SMTP ainda não configurado] Para: {Destinatario} | Assunto: {Assunto}\n{Corpo}",
+            destinatario, assunto, corpoHtml);
+        return Task.CompletedTask;
+    }
+}

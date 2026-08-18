@@ -4,19 +4,20 @@ using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 using SoftwareLicense.Api.DTOs;
+using SoftwareLicense.Api.Entities;
 
 namespace SoftwareLicense.Api.Services;
 
 public class AuthService : IAuthService
 {
-    private readonly UserManager<IdentityUser> _userManager;
+    private readonly UserManager<ApplicationUser> _userManager;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<AuthService> _logger;
     private readonly string _jwtSecret;
     private readonly string _jwtIssuer;
 
     public AuthService(
-        UserManager<IdentityUser> userManager,
+        UserManager<ApplicationUser> userManager,
         TimeProvider timeProvider,
         IConfiguration configuration,
         ILogger<AuthService> logger)

@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SoftwareLicense.Api.Data;
+using SoftwareLicense.Api.Entities;
 using SoftwareLicense.Api.Middleware;
 using SoftwareLicense.Api.Services;
 
@@ -54,8 +55,10 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-builder.Services.AddIdentityCore<IdentityUser>()
-    .AddEntityFrameworkStores<AppDbContext>();
+builder.Services.AddIdentityCore<ApplicationUser>()
+    .AddRoles<IdentityRole>()
+    .AddEntityFrameworkStores<AppDbContext>()
+    .AddDefaultTokenProviders();
 
 var jwtSecret = builder.Configuration["Jwt:Secret"]
     ?? throw new InvalidOperationException("Configuração 'Jwt:Secret' não encontrada. Defina via dotnet user-secrets.");
@@ -82,6 +85,7 @@ builder.Services.AddScoped<IUsuarioService, UsuarioService>();
 builder.Services.AddScoped<ILicencaService, LicencaService>();
 builder.Services.AddScoped<IMovimentacaoService, MovimentacaoService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IEmailSender, LogEmailSender>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ITimelineService, TimelineService>();
 builder.Services.AddScoped<ITipoEquipamentoService, TipoEquipamentoService>();
@@ -122,15 +126,34 @@ app.Run();
 static async Task SeedAdminAsync(WebApplication app)
 {
     using var scope = app.Services.CreateScope();
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-    if (userManager.Users.Any())
+    foreach (var papel in new[] { Roles.Administrador, Roles.Colaborador })
     {
-        return;
+        if (!await roleManager.RoleExistsAsync(papel))
+        {
+            await roleManager.CreateAsync(new IdentityRole(papel));
+        }
     }
 
     var adminEmail = app.Configuration["Seed:AdminEmail"];
+
+    if (userManager.Users.Any())
+    {
+        // Banco de dev pré-existente: garante que o admin já cadastrado (de antes das roles
+        // existirem) receba a role Administrador, sem duplicar a conta.
+        var existente = !string.IsNullOrWhiteSpace(adminEmail) ? await userManager.FindByEmailAsync(adminEmail) : null;
+        if (existente is not null && !await userManager.IsInRoleAsync(existente, Roles.Administrador))
+        {
+            await userManager.AddToRoleAsync(existente, Roles.Administrador);
+            logger.LogInformation("Role {Role} atribuída ao usuário administrador existente {Email}", Roles.Administrador, adminEmail);
+        }
+
+        return;
+    }
+
     var adminPassword = app.Configuration["Seed:AdminPassword"];
     if (string.IsNullOrWhiteSpace(adminEmail) || string.IsNullOrWhiteSpace(adminPassword))
     {
@@ -138,10 +161,11 @@ static async Task SeedAdminAsync(WebApplication app)
         return;
     }
 
-    var admin = new IdentityUser { UserName = adminEmail, Email = adminEmail, EmailConfirmed = true };
+    var admin = new ApplicationUser { UserName = adminEmail, Email = adminEmail, EmailConfirmed = true };
     var resultado = await userManager.CreateAsync(admin, adminPassword);
     if (resultado.Succeeded)
     {
+        await userManager.AddToRoleAsync(admin, Roles.Administrador);
         logger.LogInformation("Usuário administrador {Email} criado (seed de desenvolvimento)", adminEmail);
     }
     else

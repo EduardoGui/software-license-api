@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using SoftwareLicense.Api.Data;
 using SoftwareLicense.Api.DTOs;
@@ -20,7 +23,32 @@ public class UsuarioServiceTests
             .Options;
 
         context = new AppDbContext(options);
-        return new UsuarioService(context, new FakeTimeProvider(Agora), NullLogger<UsuarioService>.Instance);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(context);
+        services.AddLogging();
+        services.AddDataProtection();
+        services.AddIdentityCore<ApplicationUser>()
+            .AddRoles<IdentityRole>()
+            .AddEntityFrameworkStores<AppDbContext>()
+            .AddDefaultTokenProviders();
+        var provider = services.BuildServiceProvider();
+        var userManager = provider.GetRequiredService<UserManager<ApplicationUser>>();
+        var roleManager = provider.GetRequiredService<RoleManager<IdentityRole>>();
+        foreach (var papel in new[] { Roles.Administrador, Roles.Colaborador })
+        {
+            roleManager.CreateAsync(new IdentityRole(papel)).GetAwaiter().GetResult();
+        }
+
+        var configuracao = new ConfigurationBuilder().AddInMemoryCollection().Build();
+
+        return new UsuarioService(
+            context,
+            new FakeTimeProvider(Agora),
+            NullLogger<UsuarioService>.Instance,
+            userManager,
+            new LogEmailSender(NullLogger<LogEmailSender>.Instance),
+            configuracao);
     }
 
     [Fact]
