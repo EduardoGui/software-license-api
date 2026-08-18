@@ -91,6 +91,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.FornecedorNome).HasMaxLength(200);
             entity.Property(e => e.ValorMensal).HasPrecision(18, 2);
             entity.Property(e => e.Status).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.NumeroNotaSaida).HasMaxLength(50);
             entity.Property(e => e.Observacao).HasMaxLength(1000);
             entity.HasIndex(e => e.Patrimonio).IsUnique();
             entity.HasIndex(e => e.Status);

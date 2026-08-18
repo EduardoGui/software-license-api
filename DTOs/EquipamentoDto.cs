@@ -19,6 +19,7 @@ public class EquipamentoDto
     public DateOnly? DataFimContrato { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateOnly? DataBaixa { get; set; }
+    public string? NumeroNotaSaida { get; set; }
     public string? Observacao { get; set; }
     public int? UsuarioAtualId { get; set; }
     public string? UsuarioAtualNome { get; set; }

@@ -41,9 +41,9 @@ public class EquipamentosController : ControllerBase
     }
 
     [HttpPatch("{id:int}/baixar")]
-    public async Task<ActionResult<EquipamentoDto>> Baixar(int id)
+    public async Task<ActionResult<EquipamentoDto>> Baixar(int id, BaixarEquipamentoDto? dto)
     {
-        var equipamento = await _equipamentoService.BaixarAsync(id);
+        var equipamento = await _equipamentoService.BaixarAsync(id, dto?.NumeroNotaSaida);
         return Ok(equipamento);
     }
 

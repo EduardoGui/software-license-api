@@ -135,10 +135,23 @@ public class EquipamentoServiceTests
         var tipo = CriarTipo(context);
         var equipamento = CriarEquipamento(context, tipo);
 
-        var baixado = await service.BaixarAsync(equipamento.Id);
+        var baixado = await service.BaixarAsync(equipamento.Id, numeroNotaSaida: null);
 
         Assert.Equal(EquipamentoStatus.Baixado, baixado.Status);
         Assert.Equal(Hoje, baixado.DataBaixa);
+        Assert.Null(baixado.NumeroNotaSaida);
+    }
+
+    [Fact]
+    public async Task BaixarAsync_DeveSalvarNumeroDaNotaDeSaidaQuandoInformado()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        var equipamento = CriarEquipamento(context, tipo);
+
+        var baixado = await service.BaixarAsync(equipamento.Id, numeroNotaSaida: " NF-SAI-0042 ");
+
+        Assert.Equal("NF-SAI-0042", baixado.NumeroNotaSaida);
     }
 
     [Fact]
@@ -148,7 +161,7 @@ public class EquipamentoServiceTests
         var tipo = CriarTipo(context);
         var equipamento = CriarEquipamento(context, tipo, origem: EquipamentoOrigem.Locado, valorMensal: 200m);
 
-        var baixado = await service.BaixarAsync(equipamento.Id);
+        var baixado = await service.BaixarAsync(equipamento.Id, numeroNotaSaida: null);
 
         Assert.Equal(Hoje, baixado.DataFimContrato);
     }
@@ -162,7 +175,7 @@ public class EquipamentoServiceTests
         equipamento.DataFimContrato = Hoje.AddDays(-10);
         context.SaveChanges();
 
-        var baixado = await service.BaixarAsync(equipamento.Id);
+        var baixado = await service.BaixarAsync(equipamento.Id, numeroNotaSaida: null);
 
         Assert.Equal(Hoje.AddDays(-10), baixado.DataFimContrato);
     }
@@ -184,7 +197,7 @@ public class EquipamentoServiceTests
         });
         context.SaveChanges();
 
-        await Assert.ThrowsAsync<BusinessRuleException>(() => service.BaixarAsync(equipamento.Id));
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.BaixarAsync(equipamento.Id, numeroNotaSaida: null));
     }
 
     [Fact]
@@ -257,7 +270,7 @@ public class EquipamentoServiceTests
         var monitor = CriarTipo(context, "Monitor");
         CriarEquipamento(context, notebook);
         var notebookBaixado = CriarEquipamento(context, notebook);
-        await service.BaixarAsync(notebookBaixado.Id);
+        await service.BaixarAsync(notebookBaixado.Id, numeroNotaSaida: null);
         CriarEquipamento(context, monitor);
 
         var inventario = await service.GetInventarioAsync();

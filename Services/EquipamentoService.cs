@@ -98,7 +98,7 @@ public class EquipamentoService : IEquipamentoService
         return ParaDto(equipamento, alocacaoAtiva);
     }
 
-    public async Task<EquipamentoDto> BaixarAsync(int id)
+    public async Task<EquipamentoDto> BaixarAsync(int id, string? numeroNotaSaida)
     {
         var equipamento = await BuscarOuFalhar(id);
 
@@ -112,6 +112,7 @@ public class EquipamentoService : IEquipamentoService
 
         equipamento.Status = EquipamentoStatus.Baixado;
         equipamento.DataBaixa = hoje;
+        equipamento.NumeroNotaSaida = string.IsNullOrWhiteSpace(numeroNotaSaida) ? null : numeroNotaSaida.Trim();
         if (equipamento.Origem == EquipamentoOrigem.Locado && equipamento.DataFimContrato is null)
         {
             // Encerra o contrato de locação na baixa, para não continuar sendo cobrado no relatório mensal.
@@ -283,6 +284,7 @@ public class EquipamentoService : IEquipamentoService
             DataFimContrato = e.DataFimContrato,
             Status = status,
             DataBaixa = e.DataBaixa,
+            NumeroNotaSaida = e.NumeroNotaSaida,
             Observacao = e.Observacao,
             UsuarioAtualId = alocacaoAtivaAtual?.UsuarioId,
             UsuarioAtualNome = alocacaoAtivaAtual?.UsuarioNome,
