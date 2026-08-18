@@ -18,6 +18,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<NotaFiscalItem> NotasFiscaisItens => Set<NotaFiscalItem>();
     public DbSet<Equipamento> Equipamentos => Set<Equipamento>();
     public DbSet<EquipamentoAlocacao> EquipamentoAlocacoes => Set<EquipamentoAlocacao>();
+    public DbSet<EquipamentoAnexo> EquipamentoAnexos => Set<EquipamentoAnexo>();
+    public DbSet<NotaFiscalEntradaAnexo> NotaFiscalEntradaAnexos => Set<NotaFiscalEntradaAnexo>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -106,6 +108,22 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(a => a.DataFim);
             entity.HasOne(a => a.Equipamento).WithMany().HasForeignKey(a => a.EquipamentoId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(a => a.Usuario).WithMany().HasForeignKey(a => a.UsuarioId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<EquipamentoAnexo>(entity =>
+        {
+            entity.Property(a => a.NomeArquivo).IsRequired().HasMaxLength(255);
+            entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
+            entity.HasIndex(a => a.EquipamentoId);
+            entity.HasOne(a => a.Equipamento).WithMany().HasForeignKey(a => a.EquipamentoId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<NotaFiscalEntradaAnexo>(entity =>
+        {
+            entity.Property(a => a.NomeArquivo).IsRequired().HasMaxLength(255);
+            entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
+            entity.HasIndex(a => a.NotaFiscalEntradaId);
+            entity.HasOne(a => a.NotaFiscalEntrada).WithMany().HasForeignKey(a => a.NotaFiscalEntradaId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

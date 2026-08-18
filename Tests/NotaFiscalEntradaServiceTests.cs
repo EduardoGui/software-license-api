@@ -149,4 +149,65 @@ public class NotaFiscalEntradaServiceTests
 
         Assert.Equal(2, lista.Single(n => n.Id == nota.Id).QuantidadeItens);
     }
+
+    [Fact]
+    public async Task AdicionarAnexoAsync_DeveSalvarAnexoValido()
+    {
+        var (service, _) = CriarService();
+        var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-008", DataEntrada = Hoje });
+
+        var anexo = await service.AdicionarAnexoAsync(nota.Id, new AdicionarAnexoDto
+        {
+            NomeArquivo = "nota.pdf",
+            TipoConteudo = "application/pdf",
+            Conteudo = [1, 2, 3],
+        });
+
+        Assert.Equal("nota.pdf", anexo.NomeArquivo);
+
+        var lista = await service.ListarAnexosAsync(nota.Id);
+        Assert.Single(lista);
+    }
+
+    [Fact]
+    public async Task AdicionarAnexoAsync_DeveRejeitarTipoNaoPermitido()
+    {
+        var (service, _) = CriarService();
+        var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-009", DataEntrada = Hoje });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.AdicionarAnexoAsync(nota.Id, new AdicionarAnexoDto
+            {
+                NomeArquivo = "planilha.xlsx",
+                TipoConteudo = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Conteudo = [1, 2, 3],
+            }));
+    }
+
+    [Fact]
+    public async Task AdicionarAnexoAsync_DeveLancarNotFoundParaNotaInexistente()
+    {
+        var (service, _) = CriarService();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            service.AdicionarAnexoAsync(999, new AdicionarAnexoDto { NomeArquivo = "a.pdf", TipoConteudo = "application/pdf", Conteudo = [1] }));
+    }
+
+    [Fact]
+    public async Task ExcluirAnexoAsync_DeveRemoverAnexo()
+    {
+        var (service, _) = CriarService();
+        var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-010", DataEntrada = Hoje });
+        var anexo = await service.AdicionarAnexoAsync(nota.Id, new AdicionarAnexoDto
+        {
+            NomeArquivo = "nota.pdf",
+            TipoConteudo = "application/pdf",
+            Conteudo = [1, 2, 3],
+        });
+
+        await service.ExcluirAnexoAsync(nota.Id, anexo.Id);
+
+        var lista = await service.ListarAnexosAsync(nota.Id);
+        Assert.Empty(lista);
+    }
 }

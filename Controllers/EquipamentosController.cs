@@ -68,4 +68,46 @@ public class EquipamentosController : ControllerBase
 
         return Ok(relatorio);
     }
+
+    [HttpGet("{id:int}/anexos")]
+    public async Task<ActionResult<List<AnexoDto>>> ListarAnexos(int id)
+    {
+        var anexos = await _equipamentoService.ListarAnexosAsync(id);
+        return Ok(anexos);
+    }
+
+    [HttpPost("{id:int}/anexos")]
+    public async Task<ActionResult<AnexoDto>> AdicionarAnexo(int id, IFormFile arquivo)
+    {
+        if (arquivo is null || arquivo.Length == 0)
+        {
+            return BadRequest(new { message = "Nenhum arquivo enviado." });
+        }
+
+        using var stream = new MemoryStream();
+        await arquivo.CopyToAsync(stream);
+
+        var anexo = await _equipamentoService.AdicionarAnexoAsync(id, new AdicionarAnexoDto
+        {
+            NomeArquivo = arquivo.FileName,
+            TipoConteudo = arquivo.ContentType,
+            Conteudo = stream.ToArray(),
+        });
+
+        return Ok(anexo);
+    }
+
+    [HttpGet("{id:int}/anexos/{anexoId:int}")]
+    public async Task<IActionResult> BaixarAnexo(int id, int anexoId)
+    {
+        var arquivo = await _equipamentoService.ObterAnexoAsync(id, anexoId);
+        return File(arquivo.Conteudo, arquivo.TipoConteudo, arquivo.NomeArquivo);
+    }
+
+    [HttpDelete("{id:int}/anexos/{anexoId:int}")]
+    public async Task<IActionResult> ExcluirAnexo(int id, int anexoId)
+    {
+        await _equipamentoService.ExcluirAnexoAsync(id, anexoId);
+        return NoContent();
+    }
 }

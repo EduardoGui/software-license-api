@@ -152,6 +152,80 @@ public class EquipamentoService : IEquipamentoService
         };
     }
 
+    public async Task<List<AnexoDto>> ListarAnexosAsync(int equipamentoId)
+    {
+        await BuscarOuFalhar(equipamentoId);
+
+        return await _context.EquipamentoAnexos
+            .Where(a => a.EquipamentoId == equipamentoId)
+            .OrderByDescending(a => a.DataUpload)
+            .Select(a => new AnexoDto
+            {
+                Id = a.Id,
+                NomeArquivo = a.NomeArquivo,
+                TipoConteudo = a.TipoConteudo,
+                Tamanho = a.Tamanho,
+                DataUpload = a.DataUpload,
+            })
+            .ToListAsync();
+    }
+
+    public async Task<AnexoDto> AdicionarAnexoAsync(int equipamentoId, AdicionarAnexoDto dto)
+    {
+        await BuscarOuFalhar(equipamentoId);
+        AnexoValidator.Validar(dto.TipoConteudo, dto.Conteudo.Length);
+
+        var anexo = new EquipamentoAnexo
+        {
+            EquipamentoId = equipamentoId,
+            NomeArquivo = dto.NomeArquivo,
+            TipoConteudo = dto.TipoConteudo,
+            Tamanho = dto.Conteudo.Length,
+            Conteudo = dto.Conteudo,
+            DataUpload = _timeProvider.GetUtcNow().UtcDateTime,
+        };
+
+        _context.EquipamentoAnexos.Add(anexo);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Anexo {AnexoId} adicionado ao equipamento {EquipamentoId}", anexo.Id, equipamentoId);
+
+        return new AnexoDto
+        {
+            Id = anexo.Id,
+            NomeArquivo = anexo.NomeArquivo,
+            TipoConteudo = anexo.TipoConteudo,
+            Tamanho = anexo.Tamanho,
+            DataUpload = anexo.DataUpload,
+        };
+    }
+
+    public async Task<AnexoArquivoDto> ObterAnexoAsync(int equipamentoId, int anexoId)
+    {
+        var anexo = await _context.EquipamentoAnexos
+            .FirstOrDefaultAsync(a => a.Id == anexoId && a.EquipamentoId == equipamentoId)
+            ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
+
+        return new AnexoArquivoDto
+        {
+            NomeArquivo = anexo.NomeArquivo,
+            TipoConteudo = anexo.TipoConteudo,
+            Conteudo = anexo.Conteudo,
+        };
+    }
+
+    public async Task ExcluirAnexoAsync(int equipamentoId, int anexoId)
+    {
+        var anexo = await _context.EquipamentoAnexos
+            .FirstOrDefaultAsync(a => a.Id == anexoId && a.EquipamentoId == equipamentoId)
+            ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
+
+        _context.EquipamentoAnexos.Remove(anexo);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Anexo {AnexoId} excluído do equipamento {EquipamentoId}", anexoId, equipamentoId);
+    }
+
     private DateOnly Hoje() => DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
 
     private async Task<Equipamento> BuscarOuFalhar(int id)

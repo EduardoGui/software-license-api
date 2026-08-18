@@ -146,6 +146,91 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
         return ParaItemDto(item);
     }
 
+    public async Task<List<AnexoDto>> ListarAnexosAsync(int notaFiscalEntradaId)
+    {
+        await BuscarNotaOuFalhar(notaFiscalEntradaId);
+
+        return await _context.NotaFiscalEntradaAnexos
+            .Where(a => a.NotaFiscalEntradaId == notaFiscalEntradaId)
+            .OrderByDescending(a => a.DataUpload)
+            .Select(a => new AnexoDto
+            {
+                Id = a.Id,
+                NomeArquivo = a.NomeArquivo,
+                TipoConteudo = a.TipoConteudo,
+                Tamanho = a.Tamanho,
+                DataUpload = a.DataUpload,
+            })
+            .ToListAsync();
+    }
+
+    public async Task<AnexoDto> AdicionarAnexoAsync(int notaFiscalEntradaId, AdicionarAnexoDto dto)
+    {
+        await BuscarNotaOuFalhar(notaFiscalEntradaId);
+        AnexoValidator.Validar(dto.TipoConteudo, dto.Conteudo.Length);
+
+        var anexo = new NotaFiscalEntradaAnexo
+        {
+            NotaFiscalEntradaId = notaFiscalEntradaId,
+            NomeArquivo = dto.NomeArquivo,
+            TipoConteudo = dto.TipoConteudo,
+            Tamanho = dto.Conteudo.Length,
+            Conteudo = dto.Conteudo,
+            DataUpload = _timeProvider.GetUtcNow().UtcDateTime,
+        };
+
+        _context.NotaFiscalEntradaAnexos.Add(anexo);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Anexo {AnexoId} adicionado à nota fiscal {NotaFiscalEntradaId}", anexo.Id, notaFiscalEntradaId);
+
+        return new AnexoDto
+        {
+            Id = anexo.Id,
+            NomeArquivo = anexo.NomeArquivo,
+            TipoConteudo = anexo.TipoConteudo,
+            Tamanho = anexo.Tamanho,
+            DataUpload = anexo.DataUpload,
+        };
+    }
+
+    public async Task<AnexoArquivoDto> ObterAnexoAsync(int notaFiscalEntradaId, int anexoId)
+    {
+        var anexo = await _context.NotaFiscalEntradaAnexos
+            .FirstOrDefaultAsync(a => a.Id == anexoId && a.NotaFiscalEntradaId == notaFiscalEntradaId)
+            ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
+
+        return new AnexoArquivoDto
+        {
+            NomeArquivo = anexo.NomeArquivo,
+            TipoConteudo = anexo.TipoConteudo,
+            Conteudo = anexo.Conteudo,
+        };
+    }
+
+    public async Task ExcluirAnexoAsync(int notaFiscalEntradaId, int anexoId)
+    {
+        var anexo = await _context.NotaFiscalEntradaAnexos
+            .FirstOrDefaultAsync(a => a.Id == anexoId && a.NotaFiscalEntradaId == notaFiscalEntradaId)
+            ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
+
+        _context.NotaFiscalEntradaAnexos.Remove(anexo);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Anexo {AnexoId} excluído da nota fiscal {NotaFiscalEntradaId}", anexoId, notaFiscalEntradaId);
+    }
+
+    private async Task<NotaFiscalEntrada> BuscarNotaOuFalhar(int id)
+    {
+        var nota = await _context.NotasFiscaisEntrada.FindAsync(id);
+        if (nota is null)
+        {
+            throw new NotFoundException($"Nota fiscal de entrada {id} não encontrada.");
+        }
+
+        return nota;
+    }
+
     private static string ValidarOrigem(string origem)
     {
         var origemNormalizada = origem.Trim();

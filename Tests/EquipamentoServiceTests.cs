@@ -274,4 +274,114 @@ public class EquipamentoServiceTests
         Assert.Single(grupoMonitor.Itens);
         Assert.Equal(1, grupoMonitor.TotalDisponivel);
     }
+
+    [Fact]
+    public async Task AdicionarAnexoAsync_DeveSalvarAnexoValido()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        var equipamento = CriarEquipamento(context, tipo);
+
+        var anexo = await service.AdicionarAnexoAsync(equipamento.Id, new AdicionarAnexoDto
+        {
+            NomeArquivo = "foto.jpg",
+            TipoConteudo = "image/jpeg",
+            Conteudo = [1, 2, 3],
+        });
+
+        Assert.Equal("foto.jpg", anexo.NomeArquivo);
+        Assert.Equal(3, anexo.Tamanho);
+
+        var lista = await service.ListarAnexosAsync(equipamento.Id);
+        Assert.Single(lista);
+    }
+
+    [Fact]
+    public async Task AdicionarAnexoAsync_DeveRejeitarTipoNaoPermitido()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        var equipamento = CriarEquipamento(context, tipo);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.AdicionarAnexoAsync(equipamento.Id, new AdicionarAnexoDto
+            {
+                NomeArquivo = "virus.exe",
+                TipoConteudo = "application/x-msdownload",
+                Conteudo = [1, 2, 3],
+            }));
+    }
+
+    [Fact]
+    public async Task AdicionarAnexoAsync_DeveRejeitarArquivoAcimaDoLimite()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        var equipamento = CriarEquipamento(context, tipo);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.AdicionarAnexoAsync(equipamento.Id, new AdicionarAnexoDto
+            {
+                NomeArquivo = "grande.pdf",
+                TipoConteudo = "application/pdf",
+                Conteudo = new byte[11 * 1024 * 1024],
+            }));
+    }
+
+    [Fact]
+    public async Task AdicionarAnexoAsync_DeveLancarNotFoundParaEquipamentoInexistente()
+    {
+        var (service, _) = CriarService();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            service.AdicionarAnexoAsync(999, new AdicionarAnexoDto { NomeArquivo = "a.pdf", TipoConteudo = "application/pdf", Conteudo = [1] }));
+    }
+
+    [Fact]
+    public async Task ExcluirAnexoAsync_DeveRemoverAnexo()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        var equipamento = CriarEquipamento(context, tipo);
+        var anexo = await service.AdicionarAnexoAsync(equipamento.Id, new AdicionarAnexoDto
+        {
+            NomeArquivo = "doc.pdf",
+            TipoConteudo = "application/pdf",
+            Conteudo = [1, 2, 3],
+        });
+
+        await service.ExcluirAnexoAsync(equipamento.Id, anexo.Id);
+
+        var lista = await service.ListarAnexosAsync(equipamento.Id);
+        Assert.Empty(lista);
+    }
+
+    [Fact]
+    public async Task ExcluirAnexoAsync_DeveLancarNotFoundParaAnexoInexistente()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        var equipamento = CriarEquipamento(context, tipo);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => service.ExcluirAnexoAsync(equipamento.Id, 999));
+    }
+
+    [Fact]
+    public async Task ObterAnexoAsync_DeveRetornarConteudoDoArquivo()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        var equipamento = CriarEquipamento(context, tipo);
+        var anexo = await service.AdicionarAnexoAsync(equipamento.Id, new AdicionarAnexoDto
+        {
+            NomeArquivo = "doc.pdf",
+            TipoConteudo = "application/pdf",
+            Conteudo = [9, 9, 9],
+        });
+
+        var arquivo = await service.ObterAnexoAsync(equipamento.Id, anexo.Id);
+
+        Assert.Equal("doc.pdf", arquivo.NomeArquivo);
+        Assert.Equal([9, 9, 9], arquivo.Conteudo);
+    }
 }
