@@ -161,14 +161,15 @@ public class DashboardServiceTests
     }
 
     [Fact]
-    public async Task ObterAsync_DeveContarEquipamentosPorStatusCorretamente()
+    public async Task ObterAsync_DeveContarEquipamentosLocadosPorStatusEAgruparPorTipo()
     {
         var (service, context) = CriarService();
-        var tipo = CriarTipoEquipamento(context);
-        var disponivel = CriarEquipamento(context, tipo, status: "Disponivel");
-        var alocado = CriarEquipamento(context, tipo, status: "Disponivel");
-        CriarEquipamento(context, tipo, status: "Manutencao");
-        CriarEquipamento(context, tipo, status: "Baixado");
+        var notebook = CriarTipoEquipamento(context, "Notebook");
+        var monitor = CriarTipoEquipamento(context, "Monitor");
+        var alocado = CriarEquipamento(context, notebook, origem: "Locado", status: "Disponivel");
+        CriarEquipamento(context, notebook, origem: "Locado", status: "Disponivel");
+        CriarEquipamento(context, monitor, origem: "Locado", status: "Manutencao");
+        CriarEquipamento(context, monitor, origem: "Locado", status: "Baixado");
 
         var usuario = CriarUsuario(context, "Ana", Hoje.AddDays(-10));
         context.EquipamentoAlocacoes.Add(new EquipamentoAlocacao
@@ -183,22 +184,53 @@ public class DashboardServiceTests
 
         var dashboard = await service.ObterAsync();
 
-        Assert.Equal(1, dashboard.EquipamentosEmUso);
-        Assert.Equal(1, dashboard.EquipamentosDisponiveis);
+        var emUso = Assert.Single(dashboard.EquipamentosEmUsoPorTipo);
+        Assert.Equal("Notebook", emUso.TipoEquipamentoNome);
+        Assert.Equal(1, emUso.Quantidade);
+
+        var disponivel = Assert.Single(dashboard.EquipamentosDisponiveisPorTipo);
+        Assert.Equal("Notebook", disponivel.TipoEquipamentoNome);
+        Assert.Equal(1, disponivel.Quantidade);
     }
 
     [Fact]
-    public async Task ObterAsync_DeveContarLocadosAtivosExcluindoBaixados()
+    public async Task ObterAsync_NaoDeveContarEquipamentoCompradoNasContagensDeLocados()
     {
         var (service, context) = CriarService();
         var tipo = CriarTipoEquipamento(context);
+        var comprado = CriarEquipamento(context, tipo, origem: "Comprado", status: "Disponivel");
+        var usuario = CriarUsuario(context, "Ana", Hoje.AddDays(-10));
+        context.EquipamentoAlocacoes.Add(new EquipamentoAlocacao
+        {
+            EquipamentoId = comprado.Id,
+            UsuarioId = usuario.Id,
+            DataInicio = Hoje,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        });
+        await context.SaveChangesAsync();
+
+        var dashboard = await service.ObterAsync();
+
+        Assert.Empty(dashboard.EquipamentosEmUsoPorTipo);
+        Assert.Empty(dashboard.EquipamentosDisponiveisPorTipo);
+        Assert.Empty(dashboard.EquipamentosLocadosAtivosPorTipo);
+    }
+
+    [Fact]
+    public async Task ObterAsync_DeveContarLocadosAtivosExcluindoBaixadosEAgruparPorTipo()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipoEquipamento(context, "Notebook");
         CriarEquipamento(context, tipo, origem: "Locado", status: "Disponivel");
         CriarEquipamento(context, tipo, origem: "Locado", status: "Baixado");
         CriarEquipamento(context, tipo, origem: "Comprado", status: "Disponivel");
 
         var dashboard = await service.ObterAsync();
 
-        Assert.Equal(1, dashboard.EquipamentosLocadosAtivos);
+        var item = Assert.Single(dashboard.EquipamentosLocadosAtivosPorTipo);
+        Assert.Equal("Notebook", item.TipoEquipamentoNome);
+        Assert.Equal(1, item.Quantidade);
     }
 
     [Fact]

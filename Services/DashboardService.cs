@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SoftwareLicense.Api.Data;
 using SoftwareLicense.Api.DTOs;
+using SoftwareLicense.Api.Entities;
 
 namespace SoftwareLicense.Api.Services;
 
@@ -48,9 +49,13 @@ public class DashboardService : IDashboardService
         var idsEquipamentosAlocados = new HashSet<int>(
             await _context.EquipamentoAlocacoes.Where(a => a.DataFim == null).Select(a => a.EquipamentoId).ToListAsync());
 
-        var equipamentosEmUso = idsEquipamentosAlocados.Count;
-        var equipamentosDisponiveis = equipamentos.Count(e => e.Status == EquipamentoStatus.Disponivel && !idsEquipamentosAlocados.Contains(e.Id));
-        var equipamentosLocadosAtivos = equipamentos.Count(e => e.Origem == EquipamentoOrigem.Locado && e.Status != EquipamentoStatus.Baixado);
+        // Só entram equipamentos Locados (os que têm custo mensal) - Comprado não tem valor a acompanhar aqui.
+        var equipamentosLocados = equipamentos.Where(e => e.Origem == EquipamentoOrigem.Locado).ToList();
+
+        var equipamentosEmUsoPorTipo = AgruparPorTipo(equipamentosLocados.Where(e => idsEquipamentosAlocados.Contains(e.Id)));
+        var equipamentosDisponiveisPorTipo = AgruparPorTipo(
+            equipamentosLocados.Where(e => e.Status == EquipamentoStatus.Disponivel && !idsEquipamentosAlocados.Contains(e.Id)));
+        var equipamentosLocadosAtivosPorTipo = AgruparPorTipo(equipamentosLocados.Where(e => e.Status != EquipamentoStatus.Baixado));
 
         var relatorioMesAtual = await _relatorioMensalLocacaoService.GerarAsync(new RelatorioMensalLocacaoFiltroDto { Ano = hoje.Year, Mes = hoje.Month });
 
@@ -77,11 +82,18 @@ public class DashboardService : IDashboardService
             LicencasEmUso = licencasEmUso,
             LicencasDisponiveis = licencasDisponiveis,
             ProximosVencimentos = proximosVencimentos,
-            EquipamentosEmUso = equipamentosEmUso,
-            EquipamentosDisponiveis = equipamentosDisponiveis,
-            EquipamentosLocadosAtivos = equipamentosLocadosAtivos,
+            EquipamentosEmUsoPorTipo = equipamentosEmUsoPorTipo,
+            EquipamentosDisponiveisPorTipo = equipamentosDisponiveisPorTipo,
+            EquipamentosLocadosAtivosPorTipo = equipamentosLocadosAtivosPorTipo,
             CustoMensalLocacaoAtual = relatorioMesAtual.TotalGeral,
             ProximosVencimentosContratos = proximosVencimentosContratos,
         };
     }
+
+    private static List<EquipamentoContagemPorTipoDto> AgruparPorTipo(IEnumerable<Equipamento> equipamentos) =>
+        equipamentos
+            .GroupBy(e => e.TipoEquipamento.Nome)
+            .OrderBy(g => g.Key)
+            .Select(g => new EquipamentoContagemPorTipoDto { TipoEquipamentoNome = g.Key, Quantidade = g.Count() })
+            .ToList();
 }

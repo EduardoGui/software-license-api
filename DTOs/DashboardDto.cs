@@ -7,9 +7,9 @@ public class DashboardDto
     public int LicencasEmUso { get; set; }
     public int LicencasDisponiveis { get; set; }
     public List<VencimentoDto> ProximosVencimentos { get; set; } = [];
-    public int EquipamentosEmUso { get; set; }
-    public int EquipamentosDisponiveis { get; set; }
-    public int EquipamentosLocadosAtivos { get; set; }
+    public List<EquipamentoContagemPorTipoDto> EquipamentosEmUsoPorTipo { get; set; } = [];
+    public List<EquipamentoContagemPorTipoDto> EquipamentosDisponiveisPorTipo { get; set; } = [];
+    public List<EquipamentoContagemPorTipoDto> EquipamentosLocadosAtivosPorTipo { get; set; } = [];
     public decimal CustoMensalLocacaoAtual { get; set; }
     public List<VencimentoContratoDto> ProximosVencimentosContratos { get; set; } = [];
 }
