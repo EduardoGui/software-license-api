@@ -8,6 +8,8 @@ namespace SoftwareLicense.Api.Services;
 
 public class LicencaService : ILicencaService
 {
+    private static readonly HashSet<string> PeriodicidadesValidas = [LicencaPeriodicidade.Mensal, LicencaPeriodicidade.Anual];
+
     private readonly AppDbContext _context;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<LicencaService> _logger;
@@ -41,19 +43,24 @@ public class LicencaService : ILicencaService
 
         var licencas = await query.OrderBy(l => l.Nome).ToListAsync();
         var emUsoPorLicenca = await ContarEmUsoPorLicencaAsync(licencas.Select(l => l.Id));
+        var valorVigentePorLicenca = await BuscarValorVigentePorLicencaAsync(licencas.Select(l => l.Id));
 
-        return licencas.Select(l => ParaDto(l, emUsoPorLicenca.GetValueOrDefault(l.Id))).ToList();
+        return licencas
+            .Select(l => ParaDto(l, emUsoPorLicenca.GetValueOrDefault(l.Id), valorVigentePorLicenca.GetValueOrDefault(l.Id)))
+            .ToList();
     }
 
     public async Task<LicencaDto> GetByIdAsync(int id)
     {
         var licenca = await BuscarOuFalhar(id);
-        return ParaDto(licenca, await ContarEmUsoAsync(licenca.Id));
+        var valorVigente = await BuscarValorVigenteAsync(licenca.Id);
+        return ParaDto(licenca, await ContarEmUsoAsync(licenca.Id), valorVigente);
     }
 
     public async Task<LicencaDto> CreateAsync(CreateLicencaDto dto)
     {
         ValidarDatas(dto.DataInicio, dto.DataTerminoPrevisto);
+        var periodicidade = ValidarPeriodicidade(dto.Periodicidade);
 
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var licenca = new Licenca
@@ -71,11 +78,22 @@ public class LicencaService : ILicencaService
         };
 
         _context.Licencas.Add(licenca);
+
+        var valorInicial = new LicencaValor
+        {
+            Licenca = licenca,
+            Valor = dto.Valor,
+            Periodicidade = periodicidade,
+            DataVigenciaInicio = dto.DataInicio,
+            DataCriacao = agora,
+        };
+        _context.LicencaValores.Add(valorInicial);
+
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Licença {LicencaId} criada", licenca.Id);
 
-        return ParaDto(licenca, quantidadeEmUso: 0);
+        return ParaDto(licenca, quantidadeEmUso: 0, valorInicial);
     }
 
     public async Task<LicencaDto> UpdateAsync(int id, UpdateLicencaDto dto)
@@ -98,7 +116,7 @@ public class LicencaService : ILicencaService
 
         _logger.LogInformation("Licença {LicencaId} atualizada", licenca.Id);
 
-        return ParaDto(licenca, await ContarEmUsoAsync(licenca.Id));
+        return ParaDto(licenca, await ContarEmUsoAsync(licenca.Id), await BuscarValorVigenteAsync(licenca.Id));
     }
 
     public async Task<LicencaDto> DesativarAsync(int id)
@@ -112,7 +130,7 @@ public class LicencaService : ILicencaService
 
         _logger.LogInformation("Licença {LicencaId} desativada", licenca.Id);
 
-        return ParaDto(licenca, await ContarEmUsoAsync(licenca.Id));
+        return ParaDto(licenca, await ContarEmUsoAsync(licenca.Id), await BuscarValorVigenteAsync(licenca.Id));
     }
 
     private Task<int> ContarEmUsoAsync(int licencaId) =>
@@ -124,6 +142,85 @@ public class LicencaService : ILicencaService
             .GroupBy(m => m.LicencaId)
             .Select(g => new { g.Key, Quantidade = g.Count() })
             .ToDictionaryAsync(g => g.Key, g => g.Quantidade);
+
+    private Task<LicencaValor?> BuscarValorVigenteAsync(int licencaId)
+    {
+        var hoje = Hoje();
+        return _context.LicencaValores
+            .Where(v => v.LicencaId == licencaId && v.DataVigenciaInicio <= hoje)
+            .OrderByDescending(v => v.DataVigenciaInicio)
+            .ThenByDescending(v => v.Id)
+            .FirstOrDefaultAsync();
+    }
+
+    private async Task<Dictionary<int, LicencaValor>> BuscarValorVigentePorLicencaAsync(IEnumerable<int> licencaIds)
+    {
+        var hoje = Hoje();
+        return await _context.LicencaValores
+            .Where(v => licencaIds.Contains(v.LicencaId) && v.DataVigenciaInicio <= hoje)
+            .GroupBy(v => v.LicencaId)
+            .Select(g => g.OrderByDescending(v => v.DataVigenciaInicio).ThenByDescending(v => v.Id).First())
+            .ToDictionaryAsync(v => v.LicencaId, v => v);
+    }
+
+    public async Task<LicencaDto> AdicionarValorAsync(int id, CreateLicencaValorDto dto)
+    {
+        var licenca = await BuscarOuFalhar(id);
+        var periodicidade = ValidarPeriodicidade(dto.Periodicidade);
+        var hoje = Hoje();
+
+        if (dto.DataVigenciaInicio < hoje)
+        {
+            throw new BusinessRuleException("A data de vigência não pode ser retroativa.");
+        }
+
+        var vigenciaAtual = await _context.LicencaValores
+            .Where(v => v.LicencaId == id)
+            .OrderByDescending(v => v.DataVigenciaInicio)
+            .ThenByDescending(v => v.Id)
+            .FirstOrDefaultAsync();
+
+        if (vigenciaAtual is not null && dto.DataVigenciaInicio <= vigenciaAtual.DataVigenciaInicio)
+        {
+            throw new BusinessRuleException("A nova vigência deve começar depois da vigência mais recente já cadastrada.");
+        }
+
+        _context.LicencaValores.Add(new LicencaValor
+        {
+            LicencaId = id,
+            Valor = dto.Valor,
+            Periodicidade = periodicidade,
+            DataVigenciaInicio = dto.DataVigenciaInicio,
+            DataCriacao = _timeProvider.GetUtcNow().UtcDateTime,
+        });
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Novo valor registrado para a licença {LicencaId}, vigente a partir de {DataVigenciaInicio}", id, dto.DataVigenciaInicio);
+
+        return ParaDto(licenca, await ContarEmUsoAsync(licenca.Id), await BuscarValorVigenteAsync(licenca.Id));
+    }
+
+    public async Task<List<LicencaValorDto>> ListarValoresAsync(int id)
+    {
+        await BuscarOuFalhar(id);
+
+        return await _context.LicencaValores
+            .Where(v => v.LicencaId == id)
+            .OrderByDescending(v => v.DataVigenciaInicio)
+            .ThenByDescending(v => v.Id)
+            .Select(v => new LicencaValorDto
+            {
+                Id = v.Id,
+                Valor = v.Valor,
+                Periodicidade = v.Periodicidade,
+                DataVigenciaInicio = v.DataVigenciaInicio,
+                DataCriacao = v.DataCriacao,
+            })
+            .ToListAsync();
+    }
+
+    private DateOnly Hoje() => DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
 
     private async Task<Licenca> BuscarOuFalhar(int id)
     {
@@ -144,7 +241,17 @@ public class LicencaService : ILicencaService
         }
     }
 
-    private static LicencaDto ParaDto(Licenca l, int quantidadeEmUso)
+    private static string ValidarPeriodicidade(string periodicidade)
+    {
+        if (!PeriodicidadesValidas.Contains(periodicidade))
+        {
+            throw new BusinessRuleException("Periodicidade deve ser 'Mensal' ou 'Anual'.");
+        }
+
+        return periodicidade;
+    }
+
+    private static LicencaDto ParaDto(Licenca l, int quantidadeEmUso, LicencaValor? valorVigente)
     {
         return new LicencaDto
         {
@@ -160,6 +267,8 @@ public class LicencaService : ILicencaService
             Observacao = l.Observacao,
             Ativa = l.Ativa,
             Status = LicencaStatus.Calcular(l),
+            ValorVigente = valorVigente?.Valor,
+            Periodicidade = valorVigente?.Periodicidade,
             DataCriacao = l.DataCriacao,
             DataAtualizacao = l.DataAtualizacao,
         };

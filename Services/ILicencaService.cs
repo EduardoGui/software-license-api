@@ -9,4 +9,6 @@ public interface ILicencaService
     Task<LicencaDto> CreateAsync(CreateLicencaDto dto);
     Task<LicencaDto> UpdateAsync(int id, UpdateLicencaDto dto);
     Task<LicencaDto> DesativarAsync(int id);
+    Task<LicencaDto> AdicionarValorAsync(int id, CreateLicencaValorDto dto);
+    Task<List<LicencaValorDto>> ListarValoresAsync(int id);
 }

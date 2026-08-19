@@ -12,6 +12,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
 
     public DbSet<Usuario> Usuarios => Set<Usuario>();
     public DbSet<Licenca> Licencas => Set<Licenca>();
+    public DbSet<LicencaValor> LicencaValores => Set<LicencaValor>();
     public DbSet<UsuarioLicenca> UsuarioLicencas => Set<UsuarioLicenca>();
     public DbSet<TipoEquipamento> TiposEquipamento => Set<TipoEquipamento>();
     public DbSet<NotaFiscalEntrada> NotasFiscaisEntrada => Set<NotaFiscalEntrada>();
@@ -44,6 +45,14 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(l => l.Nome).IsRequired().HasMaxLength(200);
             entity.Property(l => l.Descricao).HasMaxLength(1000);
             entity.Property(l => l.Observacao).HasMaxLength(1000);
+        });
+
+        modelBuilder.Entity<LicencaValor>(entity =>
+        {
+            entity.Property(v => v.Valor).HasPrecision(18, 2);
+            entity.Property(v => v.Periodicidade).IsRequired().HasMaxLength(20);
+            entity.HasIndex(v => new { v.LicencaId, v.DataVigenciaInicio });
+            entity.HasOne(v => v.Licenca).WithMany().HasForeignKey(v => v.LicencaId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<UsuarioLicenca>(entity =>

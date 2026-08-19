@@ -14,6 +14,8 @@ public class LicencaDto
     public string? Observacao { get; set; }
     public bool Ativa { get; set; }
     public string Status { get; set; } = string.Empty;
+    public decimal? ValorVigente { get; set; }
+    public string? Periodicidade { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
 }

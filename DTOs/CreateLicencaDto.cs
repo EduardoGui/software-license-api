@@ -28,4 +28,11 @@ public class CreateLicencaDto
     public string? Observacao { get; set; }
 
     public bool Ativa { get; set; } = true;
+
+    [Required(ErrorMessage = "Valor é obrigatório.")]
+    [Range(0.01, (double)decimal.MaxValue, ErrorMessage = "Valor deve ser maior que zero.")]
+    public decimal Valor { get; set; }
+
+    [Required(ErrorMessage = "Periodicidade é obrigatória.")]
+    public string Periodicidade { get; set; } = string.Empty;
 }
