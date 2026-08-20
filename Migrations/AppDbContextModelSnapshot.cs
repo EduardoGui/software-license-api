@@ -225,6 +225,41 @@ namespace SoftwareLicense.Api.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.EmailNotificacaoReembolso", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Ativo")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("DataAtualizacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("TipoDestinatario")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.ToTable("EmailsNotificacaoReembolso");
+                });
+
             modelBuilder.Entity("SoftwareLicense.Api.Entities.Equipamento", b =>
                 {
                     b.Property<int>("Id")
@@ -471,6 +506,40 @@ namespace SoftwareLicense.Api.Migrations
                     b.ToTable("LicencaValores");
                 });
 
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.Local", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Ativo")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("DataAtualizacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Endereco")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Nome")
+                        .IsUnique();
+
+                    b.ToTable("Locais");
+                });
+
             modelBuilder.Entity("SoftwareLicense.Api.Entities.NotaFiscalEntrada", b =>
                 {
                     b.Property<int>("Id")
@@ -588,6 +657,200 @@ namespace SoftwareLicense.Api.Migrations
                     b.ToTable("NotasFiscaisItens");
                 });
 
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.ReembolsoDespesa", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("AprovadorId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("DataAtualizacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DataDecisao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("DataSolicitacao")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Finalidade")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("FormaPagamento")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int?>("LocalId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Observacao")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("ObservacaoAprovador")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int?>("SetorId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AprovadorId");
+
+                    b.HasIndex("LocalId");
+
+                    b.HasIndex("SetorId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.ToTable("ReembolsosDespesa");
+                });
+
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.ReembolsoDespesaItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateOnly>("Data")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Descricao")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("NumeroDocumento")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int>("ReembolsoDespesaId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TipoDespesaId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("Valor")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReembolsoDespesaId");
+
+                    b.HasIndex("TipoDespesaId");
+
+                    b.ToTable("ReembolsoDespesaItens");
+                });
+
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.Setor", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Ativo")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("DataAtualizacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Nome")
+                        .IsUnique();
+
+                    b.ToTable("Setores");
+                });
+
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.SetorAprovador", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("SetorId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("SetorId", "UsuarioId")
+                        .IsUnique();
+
+                    b.ToTable("SetorAprovadores");
+                });
+
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.TipoDespesa", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Ativo")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("DataAtualizacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Nome")
+                        .IsUnique();
+
+                    b.ToTable("TiposDespesa");
+                });
+
             modelBuilder.Entity("SoftwareLicense.Api.Entities.TipoEquipamento", b =>
                 {
                     b.Property<int>("Id")
@@ -626,6 +889,30 @@ namespace SoftwareLicense.Api.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Agencia")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Banco")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Cargo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ChavePix")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ContaBancaria")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Cpf")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<DateTime>("DataAtualizacao")
                         .HasColumnType("timestamp with time zone");
 
@@ -652,10 +939,15 @@ namespace SoftwareLicense.Api.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
+                    b.Property<int?>("SetorId")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Email")
                         .IsUnique();
+
+                    b.HasIndex("SetorId");
 
                     b.ToTable("Usuarios");
                 });
@@ -853,6 +1145,86 @@ namespace SoftwareLicense.Api.Migrations
                     b.Navigation("TipoEquipamento");
                 });
 
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.ReembolsoDespesa", b =>
+                {
+                    b.HasOne("SoftwareLicense.Api.Entities.Usuario", "Aprovador")
+                        .WithMany()
+                        .HasForeignKey("AprovadorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SoftwareLicense.Api.Entities.Local", "Local")
+                        .WithMany()
+                        .HasForeignKey("LocalId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SoftwareLicense.Api.Entities.Setor", "Setor")
+                        .WithMany()
+                        .HasForeignKey("SetorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SoftwareLicense.Api.Entities.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Aprovador");
+
+                    b.Navigation("Local");
+
+                    b.Navigation("Setor");
+
+                    b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.ReembolsoDespesaItem", b =>
+                {
+                    b.HasOne("SoftwareLicense.Api.Entities.ReembolsoDespesa", "ReembolsoDespesa")
+                        .WithMany("Itens")
+                        .HasForeignKey("ReembolsoDespesaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SoftwareLicense.Api.Entities.TipoDespesa", "TipoDespesa")
+                        .WithMany()
+                        .HasForeignKey("TipoDespesaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ReembolsoDespesa");
+
+                    b.Navigation("TipoDespesa");
+                });
+
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.SetorAprovador", b =>
+                {
+                    b.HasOne("SoftwareLicense.Api.Entities.Setor", "Setor")
+                        .WithMany()
+                        .HasForeignKey("SetorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SoftwareLicense.Api.Entities.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Setor");
+
+                    b.Navigation("Usuario");
+                });
+
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.Usuario", b =>
+                {
+                    b.HasOne("SoftwareLicense.Api.Entities.Setor", "Setor")
+                        .WithMany()
+                        .HasForeignKey("SetorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Setor");
+                });
+
             modelBuilder.Entity("SoftwareLicense.Api.Entities.UsuarioLicenca", b =>
                 {
                     b.HasOne("SoftwareLicense.Api.Entities.Licenca", "Licenca")
@@ -880,6 +1252,11 @@ namespace SoftwareLicense.Api.Migrations
             modelBuilder.Entity("SoftwareLicense.Api.Entities.NotaFiscalItem", b =>
                 {
                     b.Navigation("Equipamentos");
+                });
+
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.ReembolsoDespesa", b =>
+                {
+                    b.Navigation("Itens");
                 });
 #pragma warning restore 612, 618
         }

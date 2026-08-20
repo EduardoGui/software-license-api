@@ -101,6 +101,11 @@ builder.Services.AddScoped<IEquipamentoService, EquipamentoService>();
 builder.Services.AddScoped<IEquipamentoAlocacaoService, EquipamentoAlocacaoService>();
 builder.Services.AddScoped<IRelatorioMensalLocacaoService, RelatorioMensalLocacaoService>();
 builder.Services.AddScoped<IRelatorioMensalCustoLicencasService, RelatorioMensalCustoLicencasService>();
+builder.Services.AddScoped<ISetorService, SetorService>();
+builder.Services.AddScoped<ITipoDespesaService, TipoDespesaService>();
+builder.Services.AddScoped<ILocalService, LocalService>();
+builder.Services.AddScoped<IReembolsoDespesaService, ReembolsoDespesaService>();
+builder.Services.AddScoped<IEmailNotificacaoReembolsoService, EmailNotificacaoReembolsoService>();
 
 builder.Services.AddCors(options =>
 {

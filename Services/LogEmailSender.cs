@@ -18,4 +18,14 @@ public class LogEmailSender : IEmailSender
             destinatario, assunto, corpoHtml);
         return Task.CompletedTask;
     }
+
+    public Task EnviarAsync(
+        IReadOnlyList<string> destinatarios, string assunto, string corpoHtml,
+        IReadOnlyList<string>? copia = null, IReadOnlyList<EmailAnexo>? anexos = null)
+    {
+        _logger.LogInformation(
+            "[E-mail simulado — SMTP ainda não configurado] Para: {Destinatarios} | Cc: {Copia} | Assunto: {Assunto} | Anexos: {QuantidadeAnexos}\n{Corpo}",
+            string.Join(", ", destinatarios), copia is null ? "-" : string.Join(", ", copia), assunto, anexos?.Count ?? 0, corpoHtml);
+        return Task.CompletedTask;
+    }
 }

@@ -61,4 +61,17 @@ public class UsuariosController : ControllerBase
         var usuario = await _usuarioService.DesativarAsync(id, dto);
         return Ok(usuario);
     }
+
+    [HttpPatch("{id:int}/perfil")]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
+    public async Task<ActionResult<UsuarioDto>> AtualizarPerfil(int id, AtualizarPerfilDto dto)
+    {
+        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(id))
+        {
+            return Forbid();
+        }
+
+        var usuario = await _usuarioService.AtualizarPerfilAsync(id, dto);
+        return Ok(usuario);
+    }
 }

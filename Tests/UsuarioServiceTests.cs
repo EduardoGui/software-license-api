@@ -259,4 +259,44 @@ public class UsuarioServiceTests
 
         Assert.Equal(1, encontrado.LicencasEmUso);
     }
+
+    [Fact]
+    public async Task AtualizarPerfilAsync_DeveAtualizarCamposEIncluirNomeDoSetor()
+    {
+        var service = CriarService(out var context);
+        var inicio = DateOnly.FromDateTime(Agora.Date);
+        var usuario = await service.CreateAsync(new CreateUsuarioDto { Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio });
+
+        var setor = new Setor { Nome = "Financeiro", Ativo = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        context.Setores.Add(setor);
+        await context.SaveChangesAsync();
+
+        var atualizado = await service.AtualizarPerfilAsync(usuario.Id, new AtualizarPerfilDto
+        {
+            Cpf = "123.456.789-00",
+            Cargo = "Analista",
+            SetorId = setor.Id,
+            ChavePix = "ana@empresa.com",
+            Banco = "Banco X",
+            Agencia = "0001",
+            ContaBancaria = "12345-6",
+        });
+
+        Assert.Equal("123.456.789-00", atualizado.Cpf);
+        Assert.Equal("Analista", atualizado.Cargo);
+        Assert.Equal(setor.Id, atualizado.SetorId);
+        Assert.Equal("Financeiro", atualizado.SetorNome);
+        Assert.Equal("ana@empresa.com", atualizado.ChavePix);
+    }
+
+    [Fact]
+    public async Task AtualizarPerfilAsync_DeveRejeitarSetorInexistente()
+    {
+        var service = CriarService(out _);
+        var inicio = DateOnly.FromDateTime(Agora.Date);
+        var usuario = await service.CreateAsync(new CreateUsuarioDto { Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio });
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            service.AtualizarPerfilAsync(usuario.Id, new AtualizarPerfilDto { SetorId = 999 }));
+    }
 }

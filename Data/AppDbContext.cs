@@ -11,6 +11,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     }
 
     public DbSet<Usuario> Usuarios => Set<Usuario>();
+    public DbSet<Setor> Setores => Set<Setor>();
+    public DbSet<SetorAprovador> SetorAprovadores => Set<SetorAprovador>();
+    public DbSet<TipoDespesa> TiposDespesa => Set<TipoDespesa>();
+    public DbSet<ReembolsoDespesa> ReembolsosDespesa => Set<ReembolsoDespesa>();
+    public DbSet<ReembolsoDespesaItem> ReembolsoDespesaItens => Set<ReembolsoDespesaItem>();
+    public DbSet<EmailNotificacaoReembolso> EmailsNotificacaoReembolso => Set<EmailNotificacaoReembolso>();
+    public DbSet<Local> Locais => Set<Local>();
     public DbSet<Licenca> Licencas => Set<Licenca>();
     public DbSet<LicencaValor> LicencaValores => Set<LicencaValor>();
     public DbSet<UsuarioLicenca> UsuarioLicencas => Set<UsuarioLicenca>();
@@ -37,7 +44,72 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(u => u.Nome).IsRequired().HasMaxLength(200);
             entity.Property(u => u.Email).IsRequired().HasMaxLength(200);
             entity.Property(u => u.Observacao).HasMaxLength(1000);
+            entity.Property(u => u.Cpf).HasMaxLength(20);
+            entity.Property(u => u.Cargo).HasMaxLength(100);
+            entity.Property(u => u.ChavePix).HasMaxLength(200);
+            entity.Property(u => u.Banco).HasMaxLength(100);
+            entity.Property(u => u.Agencia).HasMaxLength(20);
+            entity.Property(u => u.ContaBancaria).HasMaxLength(30);
             entity.HasIndex(u => u.Email).IsUnique();
+            entity.HasOne(u => u.Setor).WithMany().HasForeignKey(u => u.SetorId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Setor>(entity =>
+        {
+            entity.Property(s => s.Nome).IsRequired().HasMaxLength(100);
+            entity.HasIndex(s => s.Nome).IsUnique();
+        });
+
+        modelBuilder.Entity<SetorAprovador>(entity =>
+        {
+            entity.HasIndex(a => new { a.SetorId, a.UsuarioId }).IsUnique();
+            entity.HasOne(a => a.Setor).WithMany().HasForeignKey(a => a.SetorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(a => a.Usuario).WithMany().HasForeignKey(a => a.UsuarioId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<TipoDespesa>(entity =>
+        {
+            entity.Property(t => t.Nome).IsRequired().HasMaxLength(100);
+            entity.HasIndex(t => t.Nome).IsUnique();
+        });
+
+        modelBuilder.Entity<ReembolsoDespesa>(entity =>
+        {
+            entity.Property(r => r.Finalidade).IsRequired().HasMaxLength(300);
+            entity.Property(r => r.FormaPagamento).HasMaxLength(50);
+            entity.Property(r => r.Status).IsRequired().HasMaxLength(30);
+            entity.Property(r => r.ObservacaoAprovador).HasMaxLength(1000);
+            entity.Property(r => r.Observacao).HasMaxLength(1000);
+            entity.HasIndex(r => r.UsuarioId);
+            entity.HasIndex(r => r.Status);
+            entity.HasOne(r => r.Usuario).WithMany().HasForeignKey(r => r.UsuarioId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.Setor).WithMany().HasForeignKey(r => r.SetorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.Aprovador).WithMany().HasForeignKey(r => r.AprovadorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.Local).WithMany().HasForeignKey(r => r.LocalId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ReembolsoDespesaItem>(entity =>
+        {
+            entity.Property(i => i.Descricao).HasMaxLength(300);
+            entity.Property(i => i.NumeroDocumento).HasMaxLength(50);
+            entity.Property(i => i.Valor).HasPrecision(18, 2);
+            entity.HasIndex(i => i.ReembolsoDespesaId);
+            entity.HasOne(i => i.ReembolsoDespesa).WithMany(r => r.Itens).HasForeignKey(i => i.ReembolsoDespesaId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(i => i.TipoDespesa).WithMany().HasForeignKey(i => i.TipoDespesaId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<EmailNotificacaoReembolso>(entity =>
+        {
+            entity.Property(e => e.Email).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.TipoDestinatario).IsRequired().HasMaxLength(10);
+            entity.HasIndex(e => e.Email).IsUnique();
+        });
+
+        modelBuilder.Entity<Local>(entity =>
+        {
+            entity.Property(l => l.Nome).IsRequired().HasMaxLength(100);
+            entity.Property(l => l.Endereco).HasMaxLength(300);
+            entity.HasIndex(l => l.Nome).IsUnique();
         });
 
         modelBuilder.Entity<Licenca>(entity =>

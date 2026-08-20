@@ -11,4 +11,12 @@ public static class ClaimsPrincipalExtensions
         var valor = principal.FindFirstValue("usuarioId");
         return int.TryParse(valor, out var id) && id == usuarioId;
     }
+
+    // Retorna o UsuarioId vinculado à conta autenticada, ou null se a conta não tiver um
+    // (ex.: conta de Administrador sem colaborador associado).
+    public static int? ObterUsuarioId(this ClaimsPrincipal principal)
+    {
+        var valor = principal.FindFirstValue("usuarioId");
+        return int.TryParse(valor, out var id) ? id : null;
+    }
 }

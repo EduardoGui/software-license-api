@@ -10,6 +10,14 @@ public class UsuarioDto
     public string? Observacao { get; set; }
     public string Status { get; set; } = string.Empty;
     public int LicencasEmUso { get; set; }
+    public string? Cpf { get; set; }
+    public string? Cargo { get; set; }
+    public int? SetorId { get; set; }
+    public string? SetorNome { get; set; }
+    public string? ChavePix { get; set; }
+    public string? Banco { get; set; }
+    public string? Agencia { get; set; }
+    public string? ContaBancaria { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
 }

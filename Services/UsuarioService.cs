@@ -50,8 +50,9 @@ public class UsuarioService : IUsuarioService
 
         var usuarios = await query.OrderBy(u => u.Nome).ToListAsync();
         var emUsoPorUsuario = await ContarEmUsoPorUsuarioAsync(usuarios.Select(u => u.Id));
+        var nomesSetores = await ObterNomesSetoresAsync(usuarios.Where(u => u.SetorId is not null).Select(u => u.SetorId!.Value));
 
-        var resultado = usuarios.Select(u => ParaDto(u, hoje, emUsoPorUsuario.GetValueOrDefault(u.Id)));
+        var resultado = usuarios.Select(u => ParaDto(u, hoje, emUsoPorUsuario.GetValueOrDefault(u.Id), NomeSetorOuNulo(u.SetorId, nomesSetores)));
 
         if (!string.IsNullOrWhiteSpace(filtro.Status))
         {
@@ -64,7 +65,7 @@ public class UsuarioService : IUsuarioService
     public async Task<UsuarioDto> GetByIdAsync(int id)
     {
         var usuario = await BuscarOuFalhar(id);
-        return ParaDto(usuario, Hoje(), await ContarEmUsoAsync(usuario.Id));
+        return ParaDto(usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId));
     }
 
     public async Task<UsuarioDto> CreateAsync(CreateUsuarioDto dto)
@@ -133,7 +134,7 @@ public class UsuarioService : IUsuarioService
             _logger.LogError(ex, "Usuário {UsuarioId} criado, mas o envio do convite de senha falhou", usuario.Id);
         }
 
-        return ParaDto(usuario, Hoje(), licencasEmUso: 0);
+        return ParaDto(usuario, Hoje(), licencasEmUso: 0, setorNome: null);
     }
 
     private static string GerarSenhaTemporaria() => $"{Guid.NewGuid():N}Aa1!";
@@ -156,7 +157,7 @@ public class UsuarioService : IUsuarioService
 
         _logger.LogInformation("Usuário {UsuarioId} atualizado", usuario.Id);
 
-        return ParaDto(usuario, Hoje(), await ContarEmUsoAsync(usuario.Id));
+        return ParaDto(usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId));
     }
 
     public async Task<UsuarioDto> DesativarAsync(int id, DesativarUsuarioDto dto)
@@ -202,7 +203,32 @@ public class UsuarioService : IUsuarioService
             "Usuário {UsuarioId} desativado, encerrando {QuantidadeMovimentacoes} movimentação(ões) e {QuantidadeAlocacoes} alocação(ões) de equipamento ativa(s)",
             usuario.Id, movimentacoesAtivas.Count, alocacoesAtivas.Count);
 
-        return ParaDto(usuario, Hoje(), licencasEmUso: 0);
+        return ParaDto(usuario, Hoje(), licencasEmUso: 0, await ObterNomeSetorAsync(usuario.SetorId));
+    }
+
+    public async Task<UsuarioDto> AtualizarPerfilAsync(int id, AtualizarPerfilDto dto)
+    {
+        var usuario = await BuscarOuFalhar(id);
+
+        if (dto.SetorId is not null && await _context.Setores.FindAsync(dto.SetorId) is null)
+        {
+            throw new NotFoundException($"Setor {dto.SetorId} não encontrado.");
+        }
+
+        usuario.Cpf = dto.Cpf?.Trim();
+        usuario.Cargo = dto.Cargo?.Trim();
+        usuario.SetorId = dto.SetorId;
+        usuario.ChavePix = dto.ChavePix?.Trim();
+        usuario.Banco = dto.Banco?.Trim();
+        usuario.Agencia = dto.Agencia?.Trim();
+        usuario.ContaBancaria = dto.ContaBancaria?.Trim();
+        usuario.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Perfil do usuário {UsuarioId} atualizado", usuario.Id);
+
+        return ParaDto(usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId));
     }
 
     private Task<int> ContarEmUsoAsync(int usuarioId) =>
@@ -250,7 +276,20 @@ public class UsuarioService : IUsuarioService
 
     private DateOnly Hoje() => DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
 
-    private static UsuarioDto ParaDto(Usuario u, DateOnly hoje, int licencasEmUso) => new()
+    private Task<string?> ObterNomeSetorAsync(int? setorId) =>
+        setorId is null
+            ? Task.FromResult<string?>(null)
+            : _context.Setores.Where(s => s.Id == setorId).Select(s => s.Nome).FirstOrDefaultAsync();
+
+    private async Task<Dictionary<int, string>> ObterNomesSetoresAsync(IEnumerable<int> setorIds) =>
+        await _context.Setores
+            .Where(s => setorIds.Contains(s.Id))
+            .ToDictionaryAsync(s => s.Id, s => s.Nome);
+
+    private static string? NomeSetorOuNulo(int? setorId, Dictionary<int, string> nomesSetores) =>
+        setorId is not null && nomesSetores.TryGetValue(setorId.Value, out var nome) ? nome : null;
+
+    private static UsuarioDto ParaDto(Usuario u, DateOnly hoje, int licencasEmUso, string? setorNome) => new()
     {
         Id = u.Id,
         Nome = u.Nome,
@@ -260,6 +299,14 @@ public class UsuarioService : IUsuarioService
         Observacao = u.Observacao,
         Status = UsuarioStatus.Calcular(u, hoje),
         LicencasEmUso = licencasEmUso,
+        Cpf = u.Cpf,
+        Cargo = u.Cargo,
+        SetorId = u.SetorId,
+        SetorNome = setorNome,
+        ChavePix = u.ChavePix,
+        Banco = u.Banco,
+        Agencia = u.Agencia,
+        ContaBancaria = u.ContaBancaria,
         DataCriacao = u.DataCriacao,
         DataAtualizacao = u.DataAtualizacao,
     };

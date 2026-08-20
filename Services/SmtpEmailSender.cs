@@ -50,4 +50,44 @@ public class SmtpEmailSender : IEmailSender
 
         _logger.LogInformation("E-mail enviado para {Destinatario}", destinatario);
     }
+
+    public async Task EnviarAsync(
+        IReadOnlyList<string> destinatarios, string assunto, string corpoHtml,
+        IReadOnlyList<string>? copia = null, IReadOnlyList<EmailAnexo>? anexos = null)
+    {
+        using var client = new SmtpClient(_host, _port)
+        {
+            Credentials = new NetworkCredential(_usuario, _senha),
+            EnableSsl = true,
+        };
+
+        using var mensagem = new MailMessage
+        {
+            From = new MailAddress(_remetenteEmail, _remetenteNome),
+            Subject = assunto,
+            Body = corpoHtml,
+            IsBodyHtml = true,
+        };
+
+        foreach (var destinatario in destinatarios)
+        {
+            mensagem.To.Add(destinatario);
+        }
+
+        foreach (var emCopia in copia ?? [])
+        {
+            mensagem.CC.Add(emCopia);
+        }
+
+        foreach (var anexo in anexos ?? [])
+        {
+            mensagem.Attachments.Add(new Attachment(new MemoryStream(anexo.Conteudo), anexo.NomeArquivo, anexo.TipoConteudo));
+        }
+
+        await client.SendMailAsync(mensagem);
+
+        _logger.LogInformation(
+            "E-mail enviado para {QuantidadeDestinatarios} destinatário(s), {QuantidadeCopia} em cópia, {QuantidadeAnexos} anexo(s)",
+            destinatarios.Count, copia?.Count ?? 0, anexos?.Count ?? 0);
+    }
 }
