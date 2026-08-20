@@ -14,6 +14,21 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Fonts\DejaVuSans.ttf">
+      <LogicalName>Fonts.DejaVuSans.ttf</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Fonts\DejaVuSans-Bold.ttf">
+      <LogicalName>Fonts.DejaVuSans-Bold.ttf</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Fonts\DejaVuSans-Italic.ttf">
+      <LogicalName>Fonts.DejaVuSans-Italic.ttf</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Fonts\DejaVuSans-BoldItalic.ttf">
+      <LogicalName>Fonts.DejaVuSans-BoldItalic.ttf</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.105.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="8.0.11" />

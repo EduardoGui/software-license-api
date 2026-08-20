@@ -22,7 +22,7 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
 
     static ReembolsoDespesaService()
     {
-        GlobalFontSettings.FontResolver ??= new WindowsFontResolver();
+        GlobalFontSettings.FontResolver ??= new PdfFontResolver();
     }
 
     public ReembolsoDespesaService(
@@ -332,13 +332,13 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         var corBorda = XColor.FromArgb(0xB7, 0xB7, 0xB9);
         var corFundoClaro = XColor.FromArgb(0xF3, 0xF4, 0xF5);
 
-        var fontTitulo = new XFont("Arial", 13, XFontStyleEx.Bold);
-        var fontSubtitulo = new XFont("Arial", 8);
-        var fontSecao = new XFont("Arial", 9, XFontStyleEx.Bold);
-        var fontRotulo = new XFont("Arial", 7);
-        var fontValor = new XFont("Arial", 9);
-        var fontValorBold = new XFont("Arial", 10, XFontStyleEx.Bold);
-        var fontDeclaracao = new XFont("Arial", 7);
+        var fontTitulo = new XFont("DejaVuSans", 13, XFontStyleEx.Bold);
+        var fontSubtitulo = new XFont("DejaVuSans", 8);
+        var fontSecao = new XFont("DejaVuSans", 9, XFontStyleEx.Bold);
+        var fontRotulo = new XFont("DejaVuSans", 7);
+        var fontValor = new XFont("DejaVuSans", 9);
+        var fontValorBold = new XFont("DejaVuSans", 10, XFontStyleEx.Bold);
+        var fontDeclaracao = new XFont("DejaVuSans", 7);
 
         var document = new PdfDocument();
         var page = document.AddPage();
@@ -351,7 +351,7 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
 
         // Cabeçalho
         var xFaixa = margem + 90;
-        gfx.DrawString("hope", new XFont("Arial", 20, XFontStyleEx.BoldItalic), new XSolidBrush(corPrimaria), new XPoint(margem, y + 24));
+        gfx.DrawString("hope", new XFont("DejaVuSans", 20, XFontStyleEx.BoldItalic), new XSolidBrush(corPrimaria), new XPoint(margem, y + 24));
         gfx.DrawRectangle(new XSolidBrush(corPrimaria), xFaixa, y, largura - 90, 32);
         gfx.DrawString(
             "REEMBOLSO DE DESPESA — HOPE", fontTitulo, XBrushes.White,
@@ -420,10 +420,11 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
             ("Banco", r.Usuario.Banco ?? "-"), ("Agência", r.Usuario.Agencia ?? "-"), ("Conta", r.Usuario.ContaBancaria ?? "-"));
 
         y = DesenharSecao(gfx, "ANEXOS E OBSERVAÇÃO", margem, y, largura, corPrimaria, fontSecao);
-        gfx.DrawString(
+        y = DesenharTextoMultilinha(
+            gfx,
             "Os valores acima correspondem exatamente às despesas efetivamente pagas pelo solicitante, comprovadas pelos documentos anexos, sem acréscimo de qualquer natureza.",
-            fontDeclaracao, new XSolidBrush(corRotulo), new XRect(margem, y, largura, 20), XStringFormats.TopLeft);
-        y += 24;
+            fontDeclaracao, new XSolidBrush(corRotulo), margem, y, largura, alturaLinha: 10);
+        y += 8;
 
         y = DesenharSecao(gfx, "LOCAL, DATA E ASSINATURAS", margem, y, largura, corPrimaria, fontSecao);
         y = DesenharLinha(
@@ -434,6 +435,34 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         using var stream = new MemoryStream();
         document.Save(stream, false);
         return stream.ToArray();
+    }
+
+    private static double DesenharTextoMultilinha(
+        XGraphics gfx, string texto, XFont fonte, XBrush brush, double margem, double y, double largura, double alturaLinha)
+    {
+        var linhaAtual = string.Empty;
+        foreach (var palavra in texto.Split(' '))
+        {
+            var tentativa = linhaAtual.Length == 0 ? palavra : $"{linhaAtual} {palavra}";
+            if (linhaAtual.Length > 0 && gfx.MeasureString(tentativa, fonte).Width > largura)
+            {
+                gfx.DrawString(linhaAtual, fonte, brush, new XRect(margem, y, largura, alturaLinha), XStringFormats.TopLeft);
+                y += alturaLinha;
+                linhaAtual = palavra;
+            }
+            else
+            {
+                linhaAtual = tentativa;
+            }
+        }
+
+        if (linhaAtual.Length > 0)
+        {
+            gfx.DrawString(linhaAtual, fonte, brush, new XRect(margem, y, largura, alturaLinha), XStringFormats.TopLeft);
+            y += alturaLinha;
+        }
+
+        return y;
     }
 
     private static double DesenharSecao(XGraphics gfx, string titulo, double margem, double y, double largura, XColor cor, XFont fonte)
