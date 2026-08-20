@@ -299,4 +299,22 @@ public class UsuarioServiceTests
         await Assert.ThrowsAsync<NotFoundException>(() =>
             service.AtualizarPerfilAsync(usuario.Id, new AtualizarPerfilDto { SetorId = 999 }));
     }
+
+    [Fact]
+    public async Task ReenviarConviteAsync_DeveLancarNotFoundParaUsuarioInexistente()
+    {
+        var service = CriarService(out _);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => service.ReenviarConviteAsync(999));
+    }
+
+    [Fact]
+    public async Task ReenviarConviteAsync_DeveExecutarSemErroParaUsuarioComContaDeAcesso()
+    {
+        var service = CriarService(out _);
+        var inicio = DateOnly.FromDateTime(Agora.Date);
+        var usuario = await service.CreateAsync(new CreateUsuarioDto { Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio });
+
+        await service.ReenviarConviteAsync(usuario.Id);
+    }
 }

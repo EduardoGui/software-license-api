@@ -10,4 +10,5 @@ public interface IUsuarioService
     Task<UsuarioDto> UpdateAsync(int id, UpdateUsuarioDto dto);
     Task<UsuarioDto> DesativarAsync(int id, DesativarUsuarioDto dto);
     Task<UsuarioDto> AtualizarPerfilAsync(int id, AtualizarPerfilDto dto);
+    Task ReenviarConviteAsync(int id);
 }

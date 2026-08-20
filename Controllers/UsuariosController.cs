@@ -74,4 +74,12 @@ public class UsuariosController : ControllerBase
         var usuario = await _usuarioService.AtualizarPerfilAsync(id, dto);
         return Ok(usuario);
     }
+
+    [HttpPatch("{id:int}/reenviar-convite")]
+    [Authorize(Roles = Roles.Administrador)]
+    public async Task<IActionResult> ReenviarConvite(int id)
+    {
+        await _usuarioService.ReenviarConviteAsync(id);
+        return NoContent();
+    }
 }

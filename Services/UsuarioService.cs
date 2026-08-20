@@ -113,16 +113,9 @@ public class UsuarioService : IUsuarioService
 
         await _userManager.AddToRoleAsync(contaAcesso, Roles.Colaborador);
 
-        var token = await _userManager.GeneratePasswordResetTokenAsync(contaAcesso);
-        var linkDefinirSenha = $"{_frontendBaseUrl}/definir-senha?email={Uri.EscapeDataString(emailNormalizado)}&token={Uri.EscapeDataString(token)}";
-
         try
         {
-            await _emailSender.EnviarAsync(
-                emailNormalizado,
-                "Bem-vindo ao Adm Hope — defina sua senha",
-                $"<p>Olá, {usuario.Nome}!</p><p>Sua conta de acesso ao Adm Hope foi criada. Clique no link abaixo para definir sua senha e fazer login:</p><p><a href=\"{linkDefinirSenha}\">Definir senha</a></p>");
-
+            await EnviarConviteAsync(usuario, contaAcesso);
             _logger.LogInformation(
                 "Usuário {UsuarioId} criado, conta de acesso provisionada (role {Role}) e convite de senha enviado",
                 usuario.Id, Roles.Colaborador);
@@ -135,6 +128,33 @@ public class UsuarioService : IUsuarioService
         }
 
         return ParaDto(usuario, Hoje(), licencasEmUso: 0, setorNome: null);
+    }
+
+    public async Task ReenviarConviteAsync(int id)
+    {
+        var usuario = await BuscarOuFalhar(id);
+
+        var contaAcesso = await _userManager.Users.FirstOrDefaultAsync(u => u.UsuarioId == id);
+        if (contaAcesso is null)
+        {
+            throw new BusinessRuleException("Este usuário não tem conta de acesso vinculada.");
+        }
+
+        await EnviarConviteAsync(usuario, contaAcesso);
+
+        _logger.LogInformation("Convite de senha reenviado para o usuário {UsuarioId}", usuario.Id);
+    }
+
+    private async Task EnviarConviteAsync(Usuario usuario, ApplicationUser contaAcesso)
+    {
+        var token = await _userManager.GeneratePasswordResetTokenAsync(contaAcesso);
+        var linkDefinirSenha =
+            $"{_frontendBaseUrl}/definir-senha?email={Uri.EscapeDataString(contaAcesso.Email!)}&token={Uri.EscapeDataString(token)}";
+
+        await _emailSender.EnviarAsync(
+            contaAcesso.Email!,
+            "Bem-vindo ao Adm Hope — defina sua senha",
+            $"<p>Olá, {usuario.Nome}!</p><p>Sua conta de acesso ao Adm Hope foi criada. Clique no link abaixo para definir sua senha e fazer login:</p><p><a href=\"{linkDefinirSenha}\">Definir senha</a></p>");
     }
 
     private static string GerarSenhaTemporaria() => $"{Guid.NewGuid():N}Aa1!";
