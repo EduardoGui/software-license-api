@@ -128,8 +128,12 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
-    await SeedAdminAsync(app);
 }
+
+// Idempotente (só cria a conta se o banco estiver sem nenhum usuário de acesso ainda) - roda em
+// qualquer ambiente, não é "dado de teste", é o bootstrap necessário pra existir login em um
+// banco novo (ex.: primeiro deploy em produção).
+await SeedAdminAsync(app);
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
