@@ -93,9 +93,9 @@ builder.Services.AddScoped<IUsuarioService, UsuarioService>();
 builder.Services.AddScoped<ILicencaService, LicencaService>();
 builder.Services.AddScoped<IMovimentacaoService, MovimentacaoService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
-if (!string.IsNullOrWhiteSpace(builder.Configuration["Smtp:Host"]))
+if (!string.IsNullOrWhiteSpace(builder.Configuration["Brevo:ApiKey"]))
 {
-    builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+    builder.Services.AddHttpClient<IEmailSender, BrevoApiEmailSender>();
 }
 else
 {
