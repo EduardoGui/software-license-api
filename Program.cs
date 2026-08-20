@@ -13,6 +13,14 @@ using SoftwareLicense.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Render injeta a porta a escutar via variável de ambiente PORT (não usa ASPNETCORE_URLS).
+// Em dev local a variável não existe, então o Kestrel mantém o comportamento padrão.
+var portRender = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrWhiteSpace(portRender))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{portRender}");
+}
+
 const string CorsPolicy = "Frontend";
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 
