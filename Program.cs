@@ -107,6 +107,8 @@ builder.Services.AddScoped<ITipoEquipamentoService, TipoEquipamentoService>();
 builder.Services.AddScoped<INotaFiscalEntradaService, NotaFiscalEntradaService>();
 builder.Services.AddScoped<IEquipamentoService, EquipamentoService>();
 builder.Services.AddScoped<IEquipamentoAlocacaoService, EquipamentoAlocacaoService>();
+builder.Services.AddScoped<ITipoPatrimonioService, TipoPatrimonioService>();
+builder.Services.AddScoped<IPatrimonioItemService, PatrimonioItemService>();
 builder.Services.AddScoped<IRelatorioMensalLocacaoService, RelatorioMensalLocacaoService>();
 builder.Services.AddScoped<IRelatorioMensalCustoLicencasService, RelatorioMensalCustoLicencasService>();
 builder.Services.AddScoped<ISetorService, SetorService>();

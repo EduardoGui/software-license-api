@@ -4,8 +4,13 @@ namespace SoftwareLicense.Api.DTOs;
 
 public class CreateNotaFiscalItemDto
 {
-    [Required(ErrorMessage = "Tipo de equipamento é obrigatório.")]
-    public int TipoEquipamentoId { get; set; }
+    public string? Destino { get; set; }
+
+    public int? TipoEquipamentoId { get; set; }
+
+    public int? TipoPatrimonioId { get; set; }
+
+    public int? LocalId { get; set; }
 
     [MaxLength(300)]
     public string? Descricao { get; set; }
@@ -17,6 +22,5 @@ public class CreateNotaFiscalItemDto
     [Range(0, double.MaxValue, ErrorMessage = "Valor unitário não pode ser negativo.")]
     public decimal? ValorUnitario { get; set; }
 
-    [Required(ErrorMessage = "Origem é obrigatória.")]
-    public string Origem { get; set; } = string.Empty;
+    public string? Origem { get; set; }
 }

@@ -9,6 +9,7 @@ namespace SoftwareLicense.Api.Services;
 public class NotaFiscalEntradaService : INotaFiscalEntradaService
 {
     private static readonly HashSet<string> OrigensValidas = [EquipamentoOrigem.Locado, EquipamentoOrigem.Comprado];
+    private static readonly HashSet<string> DestinosValidos = [NotaFiscalItemDestino.Equipamento, NotaFiscalItemDestino.Patrimonio];
 
     private readonly AppDbContext _context;
     private readonly TimeProvider _timeProvider;
@@ -46,6 +47,10 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
         var nota = await _context.NotasFiscaisEntrada
             .Include(n => n.Itens)
             .ThenInclude(i => i.TipoEquipamento)
+            .Include(n => n.Itens)
+            .ThenInclude(i => i.TipoPatrimonio)
+            .Include(n => n.Itens)
+            .ThenInclude(i => i.Local)
             .FirstOrDefaultAsync(n => n.Id == id);
 
         if (nota is null)
@@ -95,10 +100,31 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
             throw new NotFoundException($"Nota fiscal de entrada {notaFiscalEntradaId} não encontrada.");
         }
 
-        var tipoEquipamento = await _context.TiposEquipamento.FindAsync(dto.TipoEquipamentoId);
+        var destino = ValidarDestino(dto.Destino);
+
+        return destino switch
+        {
+            NotaFiscalItemDestino.Patrimonio => await AdicionarItemPatrimonioAsync(nota, dto),
+            _ => await AdicionarItemEquipamentoAsync(nota, dto),
+        };
+    }
+
+    private async Task<NotaFiscalItemDto> AdicionarItemEquipamentoAsync(NotaFiscalEntrada nota, CreateNotaFiscalItemDto dto)
+    {
+        if (dto.TipoEquipamentoId is null)
+        {
+            throw new BusinessRuleException("Tipo de equipamento é obrigatório.");
+        }
+
+        var tipoEquipamento = await _context.TiposEquipamento.FindAsync(dto.TipoEquipamentoId.Value);
         if (tipoEquipamento is null)
         {
             throw new NotFoundException($"Tipo de equipamento {dto.TipoEquipamentoId} não encontrado.");
+        }
+
+        if (string.IsNullOrWhiteSpace(dto.Origem))
+        {
+            throw new BusinessRuleException("Origem é obrigatória.");
         }
 
         var origem = ValidarOrigem(dto.Origem);
@@ -107,6 +133,7 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
         var item = new NotaFiscalItem
         {
             NotaFiscalEntradaId = nota.Id,
+            Destino = NotaFiscalItemDestino.Equipamento,
             TipoEquipamentoId = tipoEquipamento.Id,
             Descricao = dto.Descricao,
             Quantidade = dto.Quantidade,
@@ -143,6 +170,73 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
             item.Id, nota.Id, item.Quantidade, tipoEquipamento.Id);
 
         item.TipoEquipamento = tipoEquipamento;
+        return ParaItemDto(item);
+    }
+
+    private async Task<NotaFiscalItemDto> AdicionarItemPatrimonioAsync(NotaFiscalEntrada nota, CreateNotaFiscalItemDto dto)
+    {
+        if (dto.TipoPatrimonioId is null)
+        {
+            throw new BusinessRuleException("Tipo de patrimônio é obrigatório.");
+        }
+
+        var tipoPatrimonio = await _context.TiposPatrimonio.FindAsync(dto.TipoPatrimonioId.Value);
+        if (tipoPatrimonio is null)
+        {
+            throw new NotFoundException($"Tipo de patrimônio {dto.TipoPatrimonioId} não encontrado.");
+        }
+
+        Local? local = null;
+        if (dto.LocalId is not null)
+        {
+            local = await _context.Locais.FindAsync(dto.LocalId.Value);
+            if (local is null)
+            {
+                throw new NotFoundException($"Local {dto.LocalId} não encontrado.");
+            }
+        }
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        var item = new NotaFiscalItem
+        {
+            NotaFiscalEntradaId = nota.Id,
+            Destino = NotaFiscalItemDestino.Patrimonio,
+            TipoPatrimonioId = tipoPatrimonio.Id,
+            LocalId = dto.LocalId,
+            Descricao = dto.Descricao,
+            Quantidade = dto.Quantidade,
+            ValorUnitario = dto.ValorUnitario,
+            Origem = EquipamentoOrigem.Comprado,
+            DataCriacao = agora,
+        };
+
+        _context.NotasFiscaisItens.Add(item);
+        await _context.SaveChangesAsync();
+
+        var patrimonioItens = new List<PatrimonioItem>();
+        for (var i = 0; i < item.Quantidade; i++)
+        {
+            patrimonioItens.Add(new PatrimonioItem
+            {
+                NotaFiscalItemId = item.Id,
+                TipoPatrimonioId = tipoPatrimonio.Id,
+                Descricao = dto.Descricao,
+                LocalId = dto.LocalId,
+                Status = PatrimonioItemStatus.Ativo,
+                DataCriacao = agora,
+                DataAtualizacao = agora,
+            });
+        }
+
+        _context.PatrimonioItens.AddRange(patrimonioItens);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Item {NotaFiscalItemId} adicionado à nota fiscal {NotaFiscalEntradaId}, gerando {Quantidade} item(ns) de patrimônio do tipo {TipoPatrimonioId}",
+            item.Id, nota.Id, item.Quantidade, tipoPatrimonio.Id);
+
+        item.TipoPatrimonio = tipoPatrimonio;
+        item.Local = local;
         return ParaItemDto(item);
     }
 
@@ -242,6 +336,17 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
         return origemNormalizada;
     }
 
+    private static string ValidarDestino(string? destino)
+    {
+        var destinoNormalizado = string.IsNullOrWhiteSpace(destino) ? NotaFiscalItemDestino.Equipamento : destino.Trim();
+        if (!DestinosValidos.Contains(destinoNormalizado))
+        {
+            throw new BusinessRuleException("Destino deve ser 'Equipamento' ou 'Patrimonio'.");
+        }
+
+        return destinoNormalizado;
+    }
+
     private async Task<Dictionary<int, int>> ContarItensPorNotaAsync(IEnumerable<int> notaIds) =>
         await _context.NotasFiscaisItens
             .Where(i => notaIds.Contains(i.NotaFiscalEntradaId))
@@ -270,8 +375,13 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
         {
             Id = i.Id,
             NotaFiscalEntradaId = i.NotaFiscalEntradaId,
+            Destino = i.Destino,
             TipoEquipamentoId = i.TipoEquipamentoId,
             TipoEquipamentoNome = i.TipoEquipamento?.Nome,
+            TipoPatrimonioId = i.TipoPatrimonioId,
+            TipoPatrimonioNome = i.TipoPatrimonio?.Nome,
+            LocalId = i.LocalId,
+            LocalNome = i.Local?.Nome,
             Descricao = i.Descricao,
             Quantidade = i.Quantidade,
             ValorUnitario = i.ValorUnitario,

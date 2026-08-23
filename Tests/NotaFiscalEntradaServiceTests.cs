@@ -33,6 +33,22 @@ public class NotaFiscalEntradaServiceTests
         return tipo;
     }
 
+    private static TipoPatrimonio CriarTipoPatrimonio(AppDbContext context, string nome = "Mobiliário")
+    {
+        var tipo = new TipoPatrimonio { Nome = nome, Ativo = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        context.TiposPatrimonio.Add(tipo);
+        context.SaveChanges();
+        return tipo;
+    }
+
+    private static Local CriarLocal(AppDbContext context, string nome = "Escritório")
+    {
+        var local = new Local { Nome = nome, Ativo = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        context.Locais.Add(local);
+        context.SaveChanges();
+        return local;
+    }
+
     [Fact]
     public async Task AdicionarItemAsync_DeveGerarUmEquipamentoPorUnidadeDeQuantidade()
     {
@@ -119,6 +135,85 @@ public class NotaFiscalEntradaServiceTests
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { TipoEquipamentoId = 999, Quantidade = 1, Origem = EquipamentoOrigem.Comprado }));
+    }
+
+    [Fact]
+    public async Task AdicionarItemAsync_ComDestinoPatrimonio_DeveGerarUmItemDePatrimonioPorUnidade()
+    {
+        var (service, context) = CriarService();
+        var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-011", DataEntrada = Hoje });
+        var tipo = CriarTipoPatrimonio(context);
+
+        await service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto
+        {
+            Destino = NotaFiscalItemDestino.Patrimonio,
+            TipoPatrimonioId = tipo.Id,
+            Quantidade = 4,
+        });
+
+        var itens = await context.PatrimonioItens.Where(p => p.TipoPatrimonioId == tipo.Id).ToListAsync();
+        Assert.Equal(4, itens.Count);
+        Assert.All(itens, p => Assert.Equal(PatrimonioItemStatus.Ativo, p.Status));
+        Assert.Empty(await context.Equipamentos.ToListAsync());
+    }
+
+    [Fact]
+    public async Task AdicionarItemAsync_ComDestinoPatrimonio_DeveAssociarLocalInformado()
+    {
+        var (service, context) = CriarService();
+        var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-012", DataEntrada = Hoje });
+        var tipo = CriarTipoPatrimonio(context, "Ferramenta");
+        var local = CriarLocal(context);
+
+        var itemDto = await service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto
+        {
+            Destino = NotaFiscalItemDestino.Patrimonio,
+            TipoPatrimonioId = tipo.Id,
+            LocalId = local.Id,
+            Quantidade = 2,
+        });
+
+        Assert.Equal(local.Id, itemDto.LocalId);
+        var itens = await context.PatrimonioItens.Where(p => p.TipoPatrimonioId == tipo.Id).ToListAsync();
+        Assert.All(itens, p => Assert.Equal(local.Id, p.LocalId));
+    }
+
+    [Fact]
+    public async Task AdicionarItemAsync_ComDestinoPatrimonio_DeveExigirTipoPatrimonio()
+    {
+        var (service, _) = CriarService();
+        var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-013", DataEntrada = Hoje });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { Destino = NotaFiscalItemDestino.Patrimonio, Quantidade = 1 }));
+    }
+
+    [Fact]
+    public async Task AdicionarItemAsync_DeveRejeitarDestinoInvalido()
+    {
+        var (service, context) = CriarService();
+        var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-014", DataEntrada = Hoje });
+        var tipo = CriarTipo(context);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { Destino = "Outro", TipoEquipamentoId = tipo.Id, Quantidade = 1, Origem = EquipamentoOrigem.Comprado }));
+    }
+
+    [Fact]
+    public async Task AdicionarItemAsync_SemDestinoInformado_DeveAssumirEquipamentoPorRetrocompatibilidade()
+    {
+        var (service, context) = CriarService();
+        var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-015", DataEntrada = Hoje });
+        var tipo = CriarTipo(context);
+
+        var itemDto = await service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto
+        {
+            TipoEquipamentoId = tipo.Id,
+            Quantidade = 1,
+            Origem = EquipamentoOrigem.Comprado,
+        });
+
+        Assert.Equal(NotaFiscalItemDestino.Equipamento, itemDto.Destino);
     }
 
     [Fact]
