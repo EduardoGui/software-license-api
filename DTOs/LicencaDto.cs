@@ -16,6 +16,8 @@ public class LicencaDto
     public string Status { get; set; } = string.Empty;
     public decimal? ValorVigente { get; set; }
     public string? Periodicidade { get; set; }
+    public int? NotaFiscalEntradaId { get; set; }
+    public string? NumeroNotaFiscal { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
 }

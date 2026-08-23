@@ -35,4 +35,6 @@ public class CreateLicencaDto
 
     [Required(ErrorMessage = "Periodicidade é obrigatória.")]
     public string Periodicidade { get; set; } = string.Empty;
+
+    public int? NotaFiscalEntradaId { get; set; }
 }

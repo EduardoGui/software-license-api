@@ -23,7 +23,7 @@ public class LicencaService : ILicencaService
 
     public async Task<List<LicencaDto>> GetAllAsync(LicencaFiltroDto filtro)
     {
-        var query = _context.Licencas.AsQueryable();
+        var query = _context.Licencas.Include(l => l.NotaFiscalEntrada).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(filtro.Nome))
         {
@@ -61,6 +61,7 @@ public class LicencaService : ILicencaService
     {
         ValidarDatas(dto.DataInicio, dto.DataTerminoPrevisto);
         var periodicidade = ValidarPeriodicidade(dto.Periodicidade);
+        var notaFiscal = await ValidarNotaFiscalAsync(dto.NotaFiscalEntradaId);
 
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var licenca = new Licenca
@@ -73,6 +74,7 @@ public class LicencaService : ILicencaService
             DiasAntecedenciaAviso = dto.DiasAntecedenciaAviso,
             Observacao = dto.Observacao,
             Ativa = dto.Ativa,
+            NotaFiscalEntrada = notaFiscal,
             DataCriacao = agora,
             DataAtualizacao = agora,
         };
@@ -101,6 +103,7 @@ public class LicencaService : ILicencaService
         var licenca = await BuscarOuFalhar(id);
 
         ValidarDatas(dto.DataInicio, dto.DataTerminoPrevisto);
+        var notaFiscal = await ValidarNotaFiscalAsync(dto.NotaFiscalEntradaId);
 
         licenca.Nome = dto.Nome.Trim();
         licenca.Descricao = dto.Descricao;
@@ -110,6 +113,7 @@ public class LicencaService : ILicencaService
         licenca.DiasAntecedenciaAviso = dto.DiasAntecedenciaAviso;
         licenca.Observacao = dto.Observacao;
         licenca.Ativa = dto.Ativa;
+        licenca.NotaFiscalEntrada = notaFiscal;
         licenca.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
 
         await _context.SaveChangesAsync();
@@ -224,13 +228,29 @@ public class LicencaService : ILicencaService
 
     private async Task<Licenca> BuscarOuFalhar(int id)
     {
-        var licenca = await _context.Licencas.FindAsync(id);
+        var licenca = await _context.Licencas.Include(l => l.NotaFiscalEntrada).FirstOrDefaultAsync(l => l.Id == id);
         if (licenca is null)
         {
             throw new NotFoundException($"Licença {id} não encontrada.");
         }
 
         return licenca;
+    }
+
+    private async Task<NotaFiscalEntrada?> ValidarNotaFiscalAsync(int? notaFiscalEntradaId)
+    {
+        if (notaFiscalEntradaId is null)
+        {
+            return null;
+        }
+
+        var notaFiscal = await _context.NotasFiscaisEntrada.FindAsync(notaFiscalEntradaId.Value);
+        if (notaFiscal is null)
+        {
+            throw new NotFoundException($"Nota fiscal {notaFiscalEntradaId} não encontrada.");
+        }
+
+        return notaFiscal;
     }
 
     private static void ValidarDatas(DateOnly dataInicio, DateOnly dataTerminoPrevisto)
@@ -269,6 +289,8 @@ public class LicencaService : ILicencaService
             Status = LicencaStatus.Calcular(l),
             ValorVigente = valorVigente?.Valor,
             Periodicidade = valorVigente?.Periodicidade,
+            NotaFiscalEntradaId = l.NotaFiscalEntradaId,
+            NumeroNotaFiscal = l.NotaFiscalEntrada?.Numero,
             DataCriacao = l.DataCriacao,
             DataAtualizacao = l.DataAtualizacao,
         };

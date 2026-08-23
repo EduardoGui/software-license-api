@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using SoftwareLicense.Api.Data;
 using SoftwareLicense.Api.DTOs;
+using SoftwareLicense.Api.Entities;
 using SoftwareLicense.Api.Exceptions;
 using SoftwareLicense.Api.Services;
 using Xunit;
@@ -169,5 +170,70 @@ public class LicencaServiceTests
         Assert.Equal(2, historico.Count);
         Assert.Equal(hoje.AddDays(10), historico[0].DataVigenciaInicio);
         Assert.Equal(hoje, historico[1].DataVigenciaInicio);
+    }
+
+    private static NotaFiscalEntrada CriarNotaFiscal(AppDbContext context, string numero)
+    {
+        var nota = new NotaFiscalEntrada
+        {
+            Numero = numero,
+            DataEntrada = DateOnly.FromDateTime(Agora.Date),
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.NotasFiscaisEntrada.Add(nota);
+        context.SaveChanges();
+        return nota;
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveAssociarNotaFiscalInformada()
+    {
+        var service = CriarService(out var context);
+        var nota = CriarNotaFiscal(context, "NF-100");
+        var inicio = DateOnly.FromDateTime(Agora.Date);
+        var dto = CriarDto(inicio, inicio.AddYears(1));
+        dto.NotaFiscalEntradaId = nota.Id;
+
+        var licenca = await service.CreateAsync(dto);
+
+        Assert.Equal(nota.Id, licenca.NotaFiscalEntradaId);
+        Assert.Equal("NF-100", licenca.NumeroNotaFiscal);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveRejeitarNotaFiscalInexistente()
+    {
+        var service = CriarService(out _);
+        var inicio = DateOnly.FromDateTime(Agora.Date);
+        var dto = CriarDto(inicio, inicio.AddYears(1));
+        dto.NotaFiscalEntradaId = 999;
+
+        await Assert.ThrowsAsync<NotFoundException>(() => service.CreateAsync(dto));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DeveAtualizarNotaFiscalAssociada()
+    {
+        var service = CriarService(out var context);
+        var nota = CriarNotaFiscal(context, "NF-101");
+        var inicio = DateOnly.FromDateTime(Agora.Date);
+        var criada = await service.CreateAsync(CriarDto(inicio, inicio.AddYears(1)));
+
+        var dto = new UpdateLicencaDto
+        {
+            Nome = "Microsoft 365",
+            QuantidadeTotal = 10,
+            DataInicio = inicio,
+            DataTerminoPrevisto = inicio.AddYears(1),
+            DiasAntecedenciaAviso = 30,
+            Ativa = true,
+            NotaFiscalEntradaId = nota.Id,
+        };
+
+        var atualizada = await service.UpdateAsync(criada.Id, dto);
+
+        Assert.Equal(nota.Id, atualizada.NotaFiscalEntradaId);
+        Assert.Equal("NF-101", atualizada.NumeroNotaFiscal);
     }
 }

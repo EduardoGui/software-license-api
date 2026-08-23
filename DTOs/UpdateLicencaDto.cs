@@ -28,4 +28,6 @@ public class UpdateLicencaDto
     public string? Observacao { get; set; }
 
     public bool Ativa { get; set; }
+
+    public int? NotaFiscalEntradaId { get; set; }
 }
