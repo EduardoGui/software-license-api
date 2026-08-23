@@ -11,6 +11,8 @@ public class Licenca
     public int DiasAntecedenciaAviso { get; set; }
     public string? Observacao { get; set; }
     public bool Ativa { get; set; } = true;
+    public int? NotaFiscalEntradaId { get; set; }
+    public NotaFiscalEntrada? NotaFiscalEntrada { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
 }

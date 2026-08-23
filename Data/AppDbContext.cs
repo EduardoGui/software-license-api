@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using SoftwareLicense.Api.Entities;
+using SoftwareLicense.Api.Services;
 
 namespace SoftwareLicense.Api.Data;
 
@@ -28,6 +29,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<EquipamentoAlocacao> EquipamentoAlocacoes => Set<EquipamentoAlocacao>();
     public DbSet<EquipamentoAnexo> EquipamentoAnexos => Set<EquipamentoAnexo>();
     public DbSet<NotaFiscalEntradaAnexo> NotaFiscalEntradaAnexos => Set<NotaFiscalEntradaAnexo>();
+    public DbSet<TipoPatrimonio> TiposPatrimonio => Set<TipoPatrimonio>();
+    public DbSet<PatrimonioItem> PatrimonioItens => Set<PatrimonioItem>();
+    public DbSet<PatrimonioItemAnexo> PatrimonioItemAnexos => Set<PatrimonioItemAnexo>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -117,6 +121,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(l => l.Nome).IsRequired().HasMaxLength(200);
             entity.Property(l => l.Descricao).HasMaxLength(1000);
             entity.Property(l => l.Observacao).HasMaxLength(1000);
+            entity.HasOne(l => l.NotaFiscalEntrada).WithMany().HasForeignKey(l => l.NotaFiscalEntradaId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<LicencaValor>(entity =>
@@ -157,9 +162,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(i => i.Descricao).HasMaxLength(300);
             entity.Property(i => i.ValorUnitario).HasPrecision(18, 2);
             entity.Property(i => i.Origem).IsRequired().HasMaxLength(20);
+            entity.Property(i => i.Destino).IsRequired().HasMaxLength(20).HasDefaultValue(NotaFiscalItemDestino.Equipamento);
             entity.HasIndex(i => i.NotaFiscalEntradaId);
             entity.HasOne(i => i.NotaFiscalEntrada).WithMany(n => n.Itens).HasForeignKey(i => i.NotaFiscalEntradaId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(i => i.TipoEquipamento).WithMany().HasForeignKey(i => i.TipoEquipamentoId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(i => i.TipoPatrimonio).WithMany().HasForeignKey(i => i.TipoPatrimonioId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(i => i.Local).WithMany().HasForeignKey(i => i.LocalId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Equipamento>(entity =>
@@ -206,6 +214,34 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
             entity.HasIndex(a => a.NotaFiscalEntradaId);
             entity.HasOne(a => a.NotaFiscalEntrada).WithMany().HasForeignKey(a => a.NotaFiscalEntradaId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<TipoPatrimonio>(entity =>
+        {
+            entity.Property(t => t.Nome).IsRequired().HasMaxLength(100);
+            entity.HasIndex(t => t.Nome).IsUnique();
+        });
+
+        modelBuilder.Entity<PatrimonioItem>(entity =>
+        {
+            entity.Property(p => p.Descricao).HasMaxLength(300);
+            entity.Property(p => p.NumeroPatrimonio).HasMaxLength(100);
+            entity.Property(p => p.Status).IsRequired().HasMaxLength(20);
+            entity.Property(p => p.Observacao).HasMaxLength(1000);
+            entity.HasIndex(p => p.NumeroPatrimonio).IsUnique().HasFilter("\"NumeroPatrimonio\" IS NOT NULL");
+            entity.HasIndex(p => p.Status);
+            entity.HasIndex(p => p.TipoPatrimonioId);
+            entity.HasOne(p => p.NotaFiscalItem).WithMany(i => i.PatrimonioItens).HasForeignKey(p => p.NotaFiscalItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(p => p.TipoPatrimonio).WithMany().HasForeignKey(p => p.TipoPatrimonioId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(p => p.Local).WithMany().HasForeignKey(p => p.LocalId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<PatrimonioItemAnexo>(entity =>
+        {
+            entity.Property(a => a.NomeArquivo).IsRequired().HasMaxLength(255);
+            entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
+            entity.HasIndex(a => a.PatrimonioItemId);
+            entity.HasOne(a => a.PatrimonioItem).WithMany().HasForeignKey(a => a.PatrimonioItemId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

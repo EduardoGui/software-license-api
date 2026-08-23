@@ -271,7 +271,7 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
             Id = i.Id,
             NotaFiscalEntradaId = i.NotaFiscalEntradaId,
             TipoEquipamentoId = i.TipoEquipamentoId,
-            TipoEquipamentoNome = i.TipoEquipamento.Nome,
+            TipoEquipamentoNome = i.TipoEquipamento?.Nome,
             Descricao = i.Descricao,
             Quantidade = i.Quantidade,
             ValorUnitario = i.ValorUnitario,
