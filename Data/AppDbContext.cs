@@ -32,6 +32,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<TipoPatrimonio> TiposPatrimonio => Set<TipoPatrimonio>();
     public DbSet<PatrimonioItem> PatrimonioItens => Set<PatrimonioItem>();
     public DbSet<PatrimonioItemAnexo> PatrimonioItemAnexos => Set<PatrimonioItemAnexo>();
+    public DbSet<LogAuditoria> LogsAuditoria => Set<LogAuditoria>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -242,6 +243,16 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
             entity.HasIndex(a => a.PatrimonioItemId);
             entity.HasOne(a => a.PatrimonioItem).WithMany().HasForeignKey(a => a.PatrimonioItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<LogAuditoria>(entity =>
+        {
+            entity.Property(l => l.UsuarioNome).IsRequired().HasMaxLength(200);
+            entity.Property(l => l.Entidade).IsRequired().HasMaxLength(100);
+            entity.Property(l => l.Acao).IsRequired().HasMaxLength(100);
+            entity.Property(l => l.Detalhe).HasMaxLength(2000);
+            entity.HasIndex(l => l.DataHora);
+            entity.HasIndex(l => new { l.Entidade, l.EntidadeId });
         });
     }
 }

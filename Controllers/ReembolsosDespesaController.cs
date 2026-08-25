@@ -65,7 +65,7 @@ public class ReembolsosDespesaController : ControllerBase
             return Forbid();
         }
 
-        var reembolso = await _reembolsoDespesaService.UpdateAsync(id, dto);
+        var reembolso = await _reembolsoDespesaService.UpdateAsync(id, dto, User.ObterUsuarioId());
         return Ok(reembolso);
     }
 
@@ -78,7 +78,7 @@ public class ReembolsosDespesaController : ControllerBase
             return Forbid();
         }
 
-        await _reembolsoDespesaService.ExcluirAsync(id);
+        await _reembolsoDespesaService.ExcluirAsync(id, User.ObterUsuarioId());
         return NoContent();
     }
 
@@ -91,7 +91,7 @@ public class ReembolsosDespesaController : ControllerBase
             return Forbid();
         }
 
-        var reembolso = await _reembolsoDespesaService.EnviarAsync(id);
+        var reembolso = await _reembolsoDespesaService.EnviarAsync(id, User.ObterUsuarioId());
         return Ok(reembolso);
     }
 

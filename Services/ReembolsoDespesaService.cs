@@ -19,6 +19,7 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
     private readonly ILogger<ReembolsoDespesaService> _logger;
     private readonly IConfiguration _configuration;
     private readonly IEmailSender _emailSender;
+    private readonly IAuditoriaService _auditoriaService;
 
     static ReembolsoDespesaService()
     {
@@ -27,13 +28,14 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
 
     public ReembolsoDespesaService(
         AppDbContext context, TimeProvider timeProvider, ILogger<ReembolsoDespesaService> logger,
-        IConfiguration configuration, IEmailSender emailSender)
+        IConfiguration configuration, IEmailSender emailSender, IAuditoriaService auditoriaService)
     {
         _context = context;
         _timeProvider = timeProvider;
         _logger = logger;
         _configuration = configuration;
         _emailSender = emailSender;
+        _auditoriaService = auditoriaService;
     }
 
     public async Task<List<ReembolsoDespesaDto>> GetAllAsync(ReembolsoDespesaFiltroDto filtro)
@@ -90,11 +92,12 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Reembolso de despesa {ReembolsoId} criado pelo usuário {UsuarioId}", reembolso.Id, usuarioId);
+        await _auditoriaService.RegistrarAsync(usuarioId, LogAuditoriaEntidade.ReembolsoDespesa, reembolso.Id, LogAuditoriaAcao.Criado);
 
         return await GetByIdAsync(reembolso.Id);
     }
 
-    public async Task<ReembolsoDespesaDto> UpdateAsync(int id, UpdateReembolsoDespesaDto dto)
+    public async Task<ReembolsoDespesaDto> UpdateAsync(int id, UpdateReembolsoDespesaDto dto, int? usuarioIdAtor = null)
     {
         var reembolso = await BuscarOuFalhar(id);
 
@@ -118,11 +121,12 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Reembolso de despesa {ReembolsoId} atualizado", reembolso.Id);
+        await _auditoriaService.RegistrarAsync(usuarioIdAtor, LogAuditoriaEntidade.ReembolsoDespesa, reembolso.Id, LogAuditoriaAcao.Atualizado);
 
         return await GetByIdAsync(reembolso.Id);
     }
 
-    public async Task ExcluirAsync(int id)
+    public async Task ExcluirAsync(int id, int? usuarioIdAtor = null)
     {
         var reembolso = await BuscarOuFalhar(id);
 
@@ -136,9 +140,10 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Reembolso de despesa {ReembolsoId} excluído", id);
+        await _auditoriaService.RegistrarAsync(usuarioIdAtor, LogAuditoriaEntidade.ReembolsoDespesa, id, LogAuditoriaAcao.Excluido);
     }
 
-    public async Task<ReembolsoDespesaDto> EnviarAsync(int id)
+    public async Task<ReembolsoDespesaDto> EnviarAsync(int id, int? usuarioIdAtor = null)
     {
         var reembolso = await BuscarOuFalhar(id);
 
@@ -168,6 +173,8 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Reembolso de despesa {ReembolsoId} enviado para aprovação do setor {SetorId}", id, reembolso.SetorId);
+        await _auditoriaService.RegistrarAsync(
+            usuarioIdAtor, LogAuditoriaEntidade.ReembolsoDespesa, id, LogAuditoriaAcao.Enviado, $"Setor {reembolso.SetorId}");
 
         return await GetByIdAsync(id);
     }
@@ -192,6 +199,7 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Reembolso de despesa {ReembolsoId} aprovado pelo usuário {AprovadorId}", id, aprovadorUsuarioId);
+        await _auditoriaService.RegistrarAsync(aprovadorUsuarioId, LogAuditoriaEntidade.ReembolsoDespesa, id, LogAuditoriaAcao.Aprovado);
 
         await EnviarEmailAprovacaoAsync(reembolso);
 
@@ -262,6 +270,8 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Reembolso de despesa {ReembolsoId} devolvido para revisão pelo usuário {AprovadorId}", id, aprovadorUsuarioId);
+        await _auditoriaService.RegistrarAsync(
+            aprovadorUsuarioId, LogAuditoriaEntidade.ReembolsoDespesa, id, LogAuditoriaAcao.Devolvido, reembolso.ObservacaoAprovador);
 
         return await GetByIdAsync(id);
     }
@@ -286,6 +296,8 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Reembolso de despesa {ReembolsoId} reprovado pelo usuário {AprovadorId}", id, aprovadorUsuarioId);
+        await _auditoriaService.RegistrarAsync(
+            aprovadorUsuarioId, LogAuditoriaEntidade.ReembolsoDespesa, id, LogAuditoriaAcao.Reprovado, reembolso.ObservacaoAprovador);
 
         return await GetByIdAsync(id);
     }

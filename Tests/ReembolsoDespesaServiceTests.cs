@@ -24,8 +24,10 @@ public class ReembolsoDespesaServiceTests
         var context = new AppDbContext(options);
         var configuracao = new ConfigurationBuilder().AddInMemoryCollection().Build();
         var emailSender = new FakeEmailSender();
+        var timeProvider = new FakeTimeProvider(Agora);
+        var auditoriaService = new AuditoriaService(context, timeProvider);
         var service = new ReembolsoDespesaService(
-            context, new FakeTimeProvider(Agora), NullLogger<ReembolsoDespesaService>.Instance, configuracao, emailSender);
+            context, timeProvider, NullLogger<ReembolsoDespesaService>.Instance, configuracao, emailSender, auditoriaService);
         return (service, context, emailSender);
     }
 
@@ -536,5 +538,67 @@ public class ReembolsoDespesaServiceTests
         Assert.NotEmpty(pdf);
         // Assinatura de arquivo PDF (%PDF) no início do conteúdo.
         Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(pdf, 0, 4));
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveRegistrarLogDeAuditoria()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context);
+        var tipo = CriarTipoDespesa(context);
+
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
+
+        var log = Assert.Single(context.LogsAuditoria);
+        Assert.Equal(usuario.Id, log.UsuarioId);
+        Assert.Equal(LogAuditoriaEntidade.ReembolsoDespesa, log.Entidade);
+        Assert.Equal(criado.Id, log.EntidadeId);
+        Assert.Equal(LogAuditoriaAcao.Criado, log.Acao);
+    }
+
+    [Fact]
+    public async Task DevolverAsync_DeveRegistrarLogDeAuditoriaComMotivo()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context, "Ana");
+        var setor = CriarSetor(context);
+        CompletarPerfil(context, usuario, setor.Id);
+        var aprovador = CriarUsuario(context, "Bruno");
+        TornarAprovador(context, setor.Id, aprovador.Id);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
+        await service.EnviarAsync(criado.Id);
+
+        await service.DevolverAsync(criado.Id, aprovador.Id, new DevolverReembolsoDespesaDto { ObservacaoAprovador = "Falta comprovante" });
+
+        var logDevolvido = context.LogsAuditoria.Single(l => l.Acao == LogAuditoriaAcao.Devolvido);
+        Assert.Equal(aprovador.Id, logDevolvido.UsuarioId);
+        Assert.Equal("Falta comprovante", logDevolvido.Detalhe);
+
+        // O log de auditoria continua guardando o motivo da devolucao mesmo depois do reembolso
+        // ser reenviado e aprovado - diferente do campo ObservacaoAprovador na entidade, que e sobrescrito.
+        await service.EnviarAsync(criado.Id);
+        await service.AprovarAsync(criado.Id, aprovador.Id);
+
+        var aprovadoDto = await service.GetByIdAsync(criado.Id);
+        Assert.Null(aprovadoDto.ObservacaoAprovador);
+
+        var logDevolvidoAposAprovar = context.LogsAuditoria.Single(l => l.Acao == LogAuditoriaAcao.Devolvido);
+        Assert.Equal("Falta comprovante", logDevolvidoAposAprovar.Detalhe);
+    }
+
+    [Fact]
+    public async Task ExcluirAsync_ChamadoPeloAdministrador_DeveRegistrarLogSemUsuarioId()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
+
+        await service.ExcluirAsync(criado.Id, usuarioIdAtor: null);
+
+        var log = context.LogsAuditoria.Single(l => l.Acao == LogAuditoriaAcao.Excluido);
+        Assert.Null(log.UsuarioId);
+        Assert.Equal("Administrador", log.UsuarioNome);
     }
 }
