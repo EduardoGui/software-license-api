@@ -653,6 +653,22 @@ public class ReembolsoDespesaServiceTests
     }
 
     [Fact]
+    public async Task ListarAnexosItemAsync_DeveRetornarAnexosDoItem()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
+        var itemId = criado.Itens[0].Id;
+        await service.AdicionarAnexoItemAsync(criado.Id, itemId, CriarAnexoDto());
+
+        var lista = await service.ListarAnexosItemAsync(criado.Id, itemId);
+
+        var anexo = Assert.Single(lista);
+        Assert.Equal("comprovante.jpg", anexo.NomeArquivo);
+    }
+
+    [Fact]
     public async Task AdicionarAnexoItemAsync_DeveSalvarERegistrarAuditoria()
     {
         var (service, context, _) = CriarService();

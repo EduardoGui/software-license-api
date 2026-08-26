@@ -147,6 +147,19 @@ public class ReembolsosDespesaController : ControllerBase
         return File(pdf, "application/pdf", $"reembolso-{existente.Numero}.pdf");
     }
 
+    [HttpGet("{id:int}/itens/{itemId:int}/anexos")]
+    public async Task<ActionResult<List<AnexoDto>>> ListarAnexosItem(int id, int itemId)
+    {
+        var existente = await _reembolsoDespesaService.GetByIdAsync(id);
+        if (!await PodeVisualizarAsync(existente))
+        {
+            return Forbid();
+        }
+
+        var anexos = await _reembolsoDespesaService.ListarAnexosItemAsync(id, itemId);
+        return Ok(anexos);
+    }
+
     [HttpPost("{id:int}/itens/{itemId:int}/anexos")]
     public async Task<ActionResult<AnexoDto>> AdicionarAnexoItem(int id, int itemId, IFormFile arquivo)
     {

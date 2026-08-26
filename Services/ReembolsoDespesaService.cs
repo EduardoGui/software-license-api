@@ -333,6 +333,17 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         return GerarPdfDocumento(reembolso);
     }
 
+    public async Task<List<AnexoDto>> ListarAnexosItemAsync(int reembolsoId, int itemId)
+    {
+        await BuscarItemOuFalhar(reembolsoId, itemId);
+
+        return await _context.ReembolsoDespesaItemAnexos
+            .Where(a => a.ReembolsoDespesaItemId == itemId)
+            .OrderByDescending(a => a.DataUpload)
+            .Select(a => new AnexoDto { Id = a.Id, NomeArquivo = a.NomeArquivo, TipoConteudo = a.TipoConteudo, Tamanho = a.Tamanho, DataUpload = a.DataUpload })
+            .ToListAsync();
+    }
+
     public async Task<AnexoDto> AdicionarAnexoItemAsync(int reembolsoId, int itemId, AdicionarAnexoDto dto, int? usuarioIdAtor = null)
     {
         var (reembolso, _) = await BuscarItemOuFalhar(reembolsoId, itemId);
