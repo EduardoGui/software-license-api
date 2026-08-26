@@ -14,6 +14,9 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
 {
     private static readonly HashSet<string> StatusEditaveis = [ReembolsoDespesaStatus.Rascunho, ReembolsoDespesaStatus.DevolvidoParaRevisao];
 
+    // Limite documentado da Brevo para o tamanho total dos anexos de um e-mail.
+    private const long TamanhoMaximoAnexosEmailBytes = 10 * 1024 * 1024;
+
     private readonly AppDbContext _context;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ReembolsoDespesaService> _logger;
@@ -201,12 +204,17 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         _logger.LogInformation("Reembolso de despesa {ReembolsoId} aprovado pelo usuário {AprovadorId}", id, aprovadorUsuarioId);
         await _auditoriaService.RegistrarAsync(aprovadorUsuarioId, LogAuditoriaEntidade.ReembolsoDespesa, id, LogAuditoriaAcao.Aprovado);
 
-        await EnviarEmailAprovacaoAsync(reembolso);
+        var avisoEmail = await EnviarEmailAprovacaoAsync(reembolso);
 
-        return await GetByIdAsync(id);
+        var resultado = await GetByIdAsync(id);
+        resultado.AvisoEmail = avisoEmail;
+        return resultado;
     }
 
-    private async Task EnviarEmailAprovacaoAsync(ReembolsoDespesa reembolso)
+    // Retorna um aviso para exibir ao aprovador só quando o e-mail não é enviado por exceder o
+    // limite de tamanho - nos demais casos (sem destinatário ativo, falha de envio) o comportamento
+    // já existente é mantido: fica só registrado em log, sem interromper nem avisar na hora.
+    private async Task<string?> EnviarEmailAprovacaoAsync(ReembolsoDespesa reembolso)
     {
         var destinatariosAtivos = await _context.EmailsNotificacaoReembolso.Where(e => e.Ativo).ToListAsync();
         var destinatariosPara = destinatariosAtivos.Where(e => e.TipoDestinatario == TipoDestinatarioEmail.Para).Select(e => e.Email).ToList();
@@ -217,12 +225,30 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
             _logger.LogWarning(
                 "Reembolso de despesa {ReembolsoId} aprovado, mas não há nenhum e-mail de notificação ativo cadastrado - e-mail não enviado",
                 reembolso.Id);
-            return;
+            return null;
+        }
+
+        var pdf = GerarPdfDocumento(reembolso);
+        var comprovantes = await ObterComprovantesParaEmailAsync(reembolso.Itens.Select(i => i.Id).ToList());
+        var tamanhoTotal = pdf.LongLength + comprovantes.Sum(c => (long)c.Conteudo.Length);
+
+        if (tamanhoTotal > TamanhoMaximoAnexosEmailBytes)
+        {
+            var aviso =
+                $"E-mail ao financeiro não enviado: o PDF e os comprovantes juntos somam {tamanhoTotal / 1024.0 / 1024.0:N1} MB, " +
+                $"acima do limite de {TamanhoMaximoAnexosEmailBytes / 1024 / 1024} MB por e-mail. Baixe o PDF e envie os comprovantes manualmente.";
+
+            _logger.LogError(
+                "Reembolso de despesa {ReembolsoId} aprovado, mas o e-mail ao financeiro não foi enviado: anexos somam {TamanhoTotal} bytes, acima do limite",
+                reembolso.Id, tamanhoTotal);
+            await _auditoriaService.RegistrarAsync(
+                reembolso.AprovadorId, LogAuditoriaEntidade.ReembolsoDespesa, reembolso.Id, LogAuditoriaAcao.EmailNaoEnviado, aviso);
+
+            return aviso;
         }
 
         try
         {
-            var pdf = GerarPdfDocumento(reembolso);
             var valorTotal = reembolso.Itens.Sum(i => i.Valor);
             var numero = reembolso.Id.ToString("D4");
             var assunto = $"Solicitação de pagamento / Reembolso de despesas / {reembolso.Usuario.Nome}";
@@ -233,21 +259,49 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
                 <p>Dados para pagamento:<br/>
                 Chave PIX: {reembolso.Usuario.ChavePix ?? "-"}<br/>
                 Banco: {reembolso.Usuario.Banco ?? "-"} / Agência: {reembolso.Usuario.Agencia ?? "-"} / Conta: {reembolso.Usuario.ContaBancaria ?? "-"}</p>
-                <p>O formulário completo do reembolso {numero} está anexado a este e-mail.</p>
+                <p>O formulário completo do reembolso {numero} e os comprovantes anexados estão neste e-mail.</p>
                 """;
 
-            await _emailSender.EnviarAsync(
-                destinatariosPara, assunto, corpo, destinatariosCc,
-                [new EmailAnexo($"reembolso-{numero}.pdf", pdf, "application/pdf")]);
+            List<EmailAnexo> anexos =
+            [
+                new EmailAnexo($"reembolso-{numero}.pdf", pdf, "application/pdf"),
+                .. comprovantes.Select(c => new EmailAnexo(c.NomeArquivo, c.Conteudo, c.TipoConteudo)),
+            ];
 
-            _logger.LogInformation("E-mail de aprovação do reembolso {ReembolsoId} enviado ao financeiro", reembolso.Id);
+            await _emailSender.EnviarAsync(destinatariosPara, assunto, corpo, destinatariosCc, anexos);
+
+            _logger.LogInformation(
+                "E-mail de aprovação do reembolso {ReembolsoId} enviado ao financeiro com {QuantidadeComprovantes} comprovante(s)",
+                reembolso.Id, comprovantes.Count);
+            return null;
         }
         catch (Exception ex)
         {
             // O reembolso já foi aprovado - uma falha no envio do e-mail não deve reverter a aprovação,
             // só fica registrada para reenvio manual (mesmo padrão do convite de senha em UsuarioService).
             _logger.LogError(ex, "Reembolso de despesa {ReembolsoId} aprovado, mas o envio do e-mail ao financeiro falhou", reembolso.Id);
+            return null;
         }
+    }
+
+    private async Task<List<ComprovanteConteudo>> ObterComprovantesParaEmailAsync(List<int> itemIds)
+    {
+        if (itemIds.Count == 0)
+        {
+            return [];
+        }
+
+        return await _context.ReembolsoDespesaItemAnexos
+            .Where(a => itemIds.Contains(a.ReembolsoDespesaItemId))
+            .Select(a => new ComprovanteConteudo { NomeArquivo = a.NomeArquivo, TipoConteudo = a.TipoConteudo, Conteudo = a.Conteudo })
+            .ToListAsync();
+    }
+
+    private class ComprovanteConteudo
+    {
+        public string NomeArquivo { get; set; } = string.Empty;
+        public string TipoConteudo { get; set; } = string.Empty;
+        public byte[] Conteudo { get; set; } = [];
     }
 
     public async Task<ReembolsoDespesaDto> DevolverAsync(int id, int aprovadorUsuarioId, DevolverReembolsoDespesaDto dto)

@@ -11,4 +11,5 @@ public static class LogAuditoriaAcao
     public const string Reprovado = "Reprovado";
     public const string AnexoAdicionado = "AnexoAdicionado";
     public const string AnexoExcluido = "AnexoExcluido";
+    public const string EmailNaoEnviado = "EmailNaoEnviado";
 }

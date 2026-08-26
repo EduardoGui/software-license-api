@@ -23,4 +23,8 @@ public class ReembolsoDespesaDto
     public decimal ValorTotal { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
+
+    // Preenchido só na resposta do Aprovar, quando o e-mail ao financeiro não é enviado por
+    // exceder o limite de tamanho - nunca persistido, não aparece em GetById/GetAll.
+    public string? AvisoEmail { get; set; }
 }

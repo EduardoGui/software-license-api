@@ -793,6 +793,71 @@ public class ReembolsoDespesaServiceTests
     }
 
     [Fact]
+    public async Task AprovarAsync_DeveAnexarComprovantesAoEmailQuandoDentroDoLimite()
+    {
+        var (service, context, emailSender) = CriarService();
+        var usuario = CriarUsuario(context, "Ana");
+        var setor = CriarSetor(context);
+        CompletarPerfil(context, usuario, setor.Id);
+        var aprovador = CriarUsuario(context, "Bruno");
+        TornarAprovador(context, setor.Id, aprovador.Id);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
+        await service.AdicionarAnexoItemAsync(criado.Id, criado.Itens[0].Id, CriarAnexoDto());
+        await service.EnviarAsync(criado.Id);
+
+        context.EmailsNotificacaoReembolso.Add(new EmailNotificacaoReembolso
+        {
+            Email = "financeiro@hope-br.com", TipoDestinatario = TipoDestinatarioEmail.Para, Ativo = true,
+            DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime,
+        });
+        await context.SaveChangesAsync();
+
+        var aprovado = await service.AprovarAsync(criado.Id, aprovador.Id);
+
+        Assert.Null(aprovado.AvisoEmail);
+        Assert.Equal(2, emailSender.UltimosAnexos!.Count);
+        Assert.Contains(emailSender.UltimosAnexos!, a => a.NomeArquivo == "comprovante.jpg");
+    }
+
+    [Fact]
+    public async Task AprovarAsync_NaoDeveEnviarEmailQuandoAnexosExcedemLimiteDeTamanho()
+    {
+        var (service, context, emailSender) = CriarService();
+        var usuario = CriarUsuario(context, "Ana");
+        var setor = CriarSetor(context);
+        CompletarPerfil(context, usuario, setor.Id);
+        var aprovador = CriarUsuario(context, "Bruno");
+        TornarAprovador(context, setor.Id, aprovador.Id);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
+
+        // Exatamente no limite por arquivo (permitido pelo AnexoValidator) - somado ao PDF do
+        // formulário já ultrapassa o limite total de anexos por e-mail.
+        var dto = CriarAnexoDto();
+        dto.Conteudo = new byte[10 * 1024 * 1024];
+        await service.AdicionarAnexoItemAsync(criado.Id, criado.Itens[0].Id, dto);
+        await service.EnviarAsync(criado.Id);
+
+        context.EmailsNotificacaoReembolso.Add(new EmailNotificacaoReembolso
+        {
+            Email = "financeiro@hope-br.com", TipoDestinatario = TipoDestinatarioEmail.Para, Ativo = true,
+            DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime,
+        });
+        await context.SaveChangesAsync();
+
+        var aprovado = await service.AprovarAsync(criado.Id, aprovador.Id);
+
+        Assert.Equal(0, emailSender.ChamadasComAnexo);
+        Assert.NotNull(aprovado.AvisoEmail);
+        Assert.Contains("limite", aprovado.AvisoEmail);
+
+        var log = context.LogsAuditoria.Single(l => l.Acao == LogAuditoriaAcao.EmailNaoEnviado);
+        Assert.Equal(aprovador.Id, log.UsuarioId);
+        Assert.Equal(criado.Id, log.EntidadeId);
+    }
+
+    [Fact]
     public async Task EhAprovadorDoSetorAsync_DeveDistinguirAprovadorDeNaoAprovador()
     {
         var (service, context, _) = CriarService();
