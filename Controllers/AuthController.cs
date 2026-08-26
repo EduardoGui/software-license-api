@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SoftwareLicense.Api.DTOs;
 using SoftwareLicense.Api.Services;
 
@@ -8,6 +9,7 @@ namespace SoftwareLicense.Api.Controllers;
 [ApiController]
 [Route("api/auth")]
 [AllowAnonymous]
+[EnableRateLimiting("login")]
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
