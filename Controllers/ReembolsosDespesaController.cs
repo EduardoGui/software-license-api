@@ -108,6 +108,19 @@ public class ReembolsosDespesaController : ControllerBase
         return Ok(reembolsos);
     }
 
+    [HttpGet("aprovados-por-mim")]
+    public async Task<ActionResult<List<ReembolsoDespesaDto>>> GetAprovadosPorMim()
+    {
+        var aprovadorUsuarioId = User.ObterUsuarioId();
+        if (aprovadorUsuarioId is null)
+        {
+            return Forbid();
+        }
+
+        var reembolsos = await _reembolsoDespesaService.GetAprovadosPorMimAsync(aprovadorUsuarioId.Value);
+        return Ok(reembolsos);
+    }
+
     [HttpPatch("{id:int}/aprovar")]
     public async Task<ActionResult<ReembolsoDespesaDto>> Aprovar(int id)
     {

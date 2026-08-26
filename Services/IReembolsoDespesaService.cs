@@ -14,6 +14,7 @@ public interface IReembolsoDespesaService
     Task<ReembolsoDespesaDto> DevolverAsync(int id, int aprovadorUsuarioId, DevolverReembolsoDespesaDto dto);
     Task<ReembolsoDespesaDto> ReprovarAsync(int id, int aprovadorUsuarioId, ReprovarReembolsoDespesaDto dto);
     Task<List<ReembolsoDespesaDto>> GetPendentesParaAprovacaoAsync(int aprovadorUsuarioId);
+    Task<List<ReembolsoDespesaDto>> GetAprovadosPorMimAsync(int aprovadorUsuarioId);
     Task<byte[]> GerarPdfAsync(int id);
     Task<bool> EhAprovadorDoSetorAsync(int usuarioId, int? setorId);
     Task<List<AnexoDto>> ListarAnexosItemAsync(int reembolsoId, int itemId);

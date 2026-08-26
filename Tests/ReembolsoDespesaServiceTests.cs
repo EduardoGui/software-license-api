@@ -524,6 +524,52 @@ public class ReembolsoDespesaServiceTests
     }
 
     [Fact]
+    public async Task GetAprovadosPorMimAsync_DeveListarSomenteAprovadosPorEsteAprovadorOrdenadosPorDecisaoDesc()
+    {
+        var (service, context, _) = CriarService();
+        var usuarioA = CriarUsuario(context, "Ana");
+        var setor = CriarSetor(context);
+        CompletarPerfil(context, usuarioA, setor.Id);
+        var usuarioB = CriarUsuario(context, "Bia");
+        CompletarPerfil(context, usuarioB, setor.Id);
+        var aprovador = CriarUsuario(context, "Carlos");
+        TornarAprovador(context, setor.Id, aprovador.Id);
+        var outroAprovador = CriarUsuario(context, "Diego");
+        TornarAprovador(context, setor.Id, outroAprovador.Id);
+        var tipo = CriarTipoDespesa(context);
+
+        var primeiro = await service.CreateAsync(usuarioA.Id, CriarDto(tipo.Id));
+        await service.EnviarAsync(primeiro.Id);
+        await service.AprovarAsync(primeiro.Id, aprovador.Id);
+
+        // Serviço com um instante posterior, para o segundo aprovado ter DataDecisao mais recente.
+        var configuracao = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var servicoInstanteSeguinte = new ReembolsoDespesaService(
+            context, new FakeTimeProvider(Agora.AddMinutes(1)), NullLogger<ReembolsoDespesaService>.Instance,
+            configuracao, new FakeEmailSender(), new AuditoriaService(context, new FakeTimeProvider(Agora.AddMinutes(1))));
+
+        var segundo = await servicoInstanteSeguinte.CreateAsync(usuarioB.Id, CriarDto(tipo.Id));
+        await servicoInstanteSeguinte.EnviarAsync(segundo.Id);
+        await servicoInstanteSeguinte.AprovarAsync(segundo.Id, aprovador.Id);
+
+        // Reprovado pelo mesmo aprovador não deve aparecer na lista de aprovados.
+        var terceiro = await service.CreateAsync(usuarioA.Id, CriarDto(tipo.Id));
+        await service.EnviarAsync(terceiro.Id);
+        await service.ReprovarAsync(terceiro.Id, aprovador.Id, new ReprovarReembolsoDespesaDto());
+
+        // Aprovado por outro aprovador não deve aparecer.
+        var quarto = await service.CreateAsync(usuarioB.Id, CriarDto(tipo.Id));
+        await service.EnviarAsync(quarto.Id);
+        await service.AprovarAsync(quarto.Id, outroAprovador.Id);
+
+        var resultado = await service.GetAprovadosPorMimAsync(aprovador.Id);
+
+        Assert.Equal(2, resultado.Count);
+        Assert.Equal(segundo.Id, resultado[0].Id);
+        Assert.Equal(primeiro.Id, resultado[1].Id);
+    }
+
+    [Fact]
     public async Task GerarPdfAsync_DeveGerarArquivoNaoVazio()
     {
         var (service, context, _) = CriarService();

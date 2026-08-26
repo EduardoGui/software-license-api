@@ -327,6 +327,21 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         return reembolsos.Select(r => ParaDto(r)).ToList();
     }
 
+    public async Task<List<ReembolsoDespesaDto>> GetAprovadosPorMimAsync(int aprovadorUsuarioId)
+    {
+        var reembolsos = await _context.ReembolsosDespesa
+            .Include(r => r.Usuario)
+            .Include(r => r.Setor)
+            .Include(r => r.Aprovador)
+            .Include(r => r.Local)
+            .Include(r => r.Itens).ThenInclude(i => i.TipoDespesa)
+            .Where(r => r.Status == ReembolsoDespesaStatus.Aprovado && r.AprovadorId == aprovadorUsuarioId)
+            .OrderByDescending(r => r.DataDecisao)
+            .ToListAsync();
+
+        return reembolsos.Select(r => ParaDto(r)).ToList();
+    }
+
     public async Task<byte[]> GerarPdfAsync(int id)
     {
         var reembolso = await BuscarOuFalhar(id);
