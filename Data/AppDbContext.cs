@@ -17,6 +17,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<TipoDespesa> TiposDespesa => Set<TipoDespesa>();
     public DbSet<ReembolsoDespesa> ReembolsosDespesa => Set<ReembolsoDespesa>();
     public DbSet<ReembolsoDespesaItem> ReembolsoDespesaItens => Set<ReembolsoDespesaItem>();
+    public DbSet<ReembolsoDespesaItemAnexo> ReembolsoDespesaItemAnexos => Set<ReembolsoDespesaItemAnexo>();
     public DbSet<EmailNotificacaoReembolso> EmailsNotificacaoReembolso => Set<EmailNotificacaoReembolso>();
     public DbSet<Local> Locais => Set<Local>();
     public DbSet<Licenca> Licencas => Set<Licenca>();
@@ -101,6 +102,16 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(i => i.ReembolsoDespesaId);
             entity.HasOne(i => i.ReembolsoDespesa).WithMany(r => r.Itens).HasForeignKey(i => i.ReembolsoDespesaId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(i => i.TipoDespesa).WithMany().HasForeignKey(i => i.TipoDespesaId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ReembolsoDespesaItemAnexo>(entity =>
+        {
+            entity.Property(a => a.NomeArquivo).IsRequired().HasMaxLength(255);
+            entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
+            entity.HasIndex(a => a.ReembolsoDespesaItemId);
+            // Cascade (diferente dos outros anexos, que usam Restrict): itens de reembolso são
+            // de fato apagados ao editar/excluir o reembolso, então o anexo não pode sobreviver órfão.
+            entity.HasOne(a => a.ReembolsoDespesaItem).WithMany(i => i.Anexos).HasForeignKey(a => a.ReembolsoDespesaItemId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<EmailNotificacaoReembolso>(entity =>

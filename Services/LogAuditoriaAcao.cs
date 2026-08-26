@@ -9,4 +9,6 @@ public static class LogAuditoriaAcao
     public const string Aprovado = "Aprovado";
     public const string Devolvido = "Devolvido";
     public const string Reprovado = "Reprovado";
+    public const string AnexoAdicionado = "AnexoAdicionado";
+    public const string AnexoExcluido = "AnexoExcluido";
 }

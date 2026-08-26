@@ -35,7 +35,7 @@ public class ReembolsosDespesaController : ControllerBase
     {
         var reembolso = await _reembolsoDespesaService.GetByIdAsync(id);
 
-        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(reembolso.UsuarioId))
+        if (!await PodeVisualizarAsync(reembolso))
         {
             return Forbid();
         }
@@ -138,13 +138,77 @@ public class ReembolsosDespesaController : ControllerBase
     public async Task<IActionResult> GerarPdf(int id)
     {
         var existente = await _reembolsoDespesaService.GetByIdAsync(id);
-        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(existente.UsuarioId))
+        if (!await PodeVisualizarAsync(existente))
         {
             return Forbid();
         }
 
         var pdf = await _reembolsoDespesaService.GerarPdfAsync(id);
         return File(pdf, "application/pdf", $"reembolso-{existente.Numero}.pdf");
+    }
+
+    [HttpPost("{id:int}/itens/{itemId:int}/anexos")]
+    public async Task<ActionResult<AnexoDto>> AdicionarAnexoItem(int id, int itemId, IFormFile arquivo)
+    {
+        var existente = await _reembolsoDespesaService.GetByIdAsync(id);
+        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(existente.UsuarioId))
+        {
+            return Forbid();
+        }
+
+        if (arquivo is null || arquivo.Length == 0)
+        {
+            return BadRequest(new { message = "Nenhum arquivo enviado." });
+        }
+
+        using var stream = new MemoryStream();
+        await arquivo.CopyToAsync(stream);
+
+        var anexo = await _reembolsoDespesaService.AdicionarAnexoItemAsync(id, itemId, new AdicionarAnexoDto
+        {
+            NomeArquivo = arquivo.FileName,
+            TipoConteudo = arquivo.ContentType,
+            Conteudo = stream.ToArray(),
+        }, User.ObterUsuarioId());
+
+        return Ok(anexo);
+    }
+
+    [HttpGet("{id:int}/itens/{itemId:int}/anexos/{anexoId:int}")]
+    public async Task<IActionResult> BaixarAnexoItem(int id, int itemId, int anexoId)
+    {
+        var existente = await _reembolsoDespesaService.GetByIdAsync(id);
+        if (!await PodeVisualizarAsync(existente))
+        {
+            return Forbid();
+        }
+
+        var arquivo = await _reembolsoDespesaService.ObterAnexoItemAsync(id, itemId, anexoId);
+        return File(arquivo.Conteudo, arquivo.TipoConteudo, arquivo.NomeArquivo);
+    }
+
+    [HttpDelete("{id:int}/itens/{itemId:int}/anexos/{anexoId:int}")]
+    public async Task<IActionResult> ExcluirAnexoItem(int id, int itemId, int anexoId)
+    {
+        var existente = await _reembolsoDespesaService.GetByIdAsync(id);
+        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(existente.UsuarioId))
+        {
+            return Forbid();
+        }
+
+        await _reembolsoDespesaService.ExcluirAnexoItemAsync(id, itemId, anexoId, User.ObterUsuarioId());
+        return NoContent();
+    }
+
+    private async Task<bool> PodeVisualizarAsync(ReembolsoDespesaDto reembolso)
+    {
+        if (User.IsInRole(Roles.Administrador) || User.TemUsuarioId(reembolso.UsuarioId))
+        {
+            return true;
+        }
+
+        var usuarioId = User.ObterUsuarioId();
+        return usuarioId is not null && await _reembolsoDespesaService.EhAprovadorDoSetorAsync(usuarioId.Value, reembolso.SetorId);
     }
 
     [HttpPatch("{id:int}/reprovar")]

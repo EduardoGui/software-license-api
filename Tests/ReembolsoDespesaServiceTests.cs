@@ -601,4 +601,146 @@ public class ReembolsoDespesaServiceTests
         Assert.Null(log.UsuarioId);
         Assert.Equal("Administrador", log.UsuarioNome);
     }
+
+    private static AdicionarAnexoDto CriarAnexoDto(string nomeArquivo = "comprovante.jpg") => new()
+    {
+        NomeArquivo = nomeArquivo,
+        TipoConteudo = "image/jpeg",
+        Conteudo = [1, 2, 3],
+    };
+
+    [Fact]
+    public async Task UpdateAsync_DevePreservarIdEComprovanteDoItemExistente()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id, 100m));
+        var itemId = criado.Itens[0].Id;
+        await service.AdicionarAnexoItemAsync(criado.Id, itemId, CriarAnexoDto());
+
+        var atualizado = await service.UpdateAsync(criado.Id, new UpdateReembolsoDespesaDto
+        {
+            Finalidade = "Viagem a cliente - atualizado",
+            Itens = [new CreateReembolsoDespesaItemDto { Id = itemId, Data = Hoje, TipoDespesaId = tipo.Id, Valor = 250m }],
+        });
+
+        var item = Assert.Single(atualizado.Itens);
+        Assert.Equal(itemId, item.Id);
+        Assert.Equal(250m, item.Valor);
+        var anexo = Assert.Single(item.Anexos);
+        Assert.Equal("comprovante.jpg", anexo.NomeArquivo);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DeveExcluirComprovanteDeItemRemovido()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id, 100m));
+        var itemId = criado.Itens[0].Id;
+        await service.AdicionarAnexoItemAsync(criado.Id, itemId, CriarAnexoDto());
+
+        var outroTipo = CriarTipoDespesa(context, "Hospedagem");
+        await service.UpdateAsync(criado.Id, new UpdateReembolsoDespesaDto
+        {
+            Finalidade = "Item trocado",
+            Itens = [new CreateReembolsoDespesaItemDto { Data = Hoje, TipoDespesaId = outroTipo.Id, Valor = 300m }],
+        });
+
+        Assert.Empty(await context.ReembolsoDespesaItemAnexos.Where(a => a.ReembolsoDespesaItemId == itemId).ToListAsync());
+    }
+
+    [Fact]
+    public async Task AdicionarAnexoItemAsync_DeveSalvarERegistrarAuditoria()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
+        var itemId = criado.Itens[0].Id;
+
+        var anexo = await service.AdicionarAnexoItemAsync(criado.Id, itemId, CriarAnexoDto(), usuario.Id);
+
+        Assert.Equal("comprovante.jpg", anexo.NomeArquivo);
+        var log = context.LogsAuditoria.Single(l => l.Acao == LogAuditoriaAcao.AnexoAdicionado);
+        Assert.Equal(usuario.Id, log.UsuarioId);
+    }
+
+    [Fact]
+    public async Task AdicionarAnexoItemAsync_DeveRejeitarTipoDeArquivoInvalido()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
+        var itemId = criado.Itens[0].Id;
+
+        var dto = CriarAnexoDto();
+        dto.TipoConteudo = "application/zip";
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.AdicionarAnexoItemAsync(criado.Id, itemId, dto));
+    }
+
+    [Fact]
+    public async Task AdicionarAnexoItemAsync_DeveRejeitarQuandoStatusNaoEditavel()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context);
+        var setor = CriarSetor(context);
+        CompletarPerfil(context, usuario, setor.Id);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
+        var itemId = criado.Itens[0].Id;
+        await service.EnviarAsync(criado.Id);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.AdicionarAnexoItemAsync(criado.Id, itemId, CriarAnexoDto()));
+    }
+
+    [Fact]
+    public async Task ObterAnexoItemAsync_DeveRetornarConteudo()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
+        var itemId = criado.Itens[0].Id;
+        var anexo = await service.AdicionarAnexoItemAsync(criado.Id, itemId, CriarAnexoDto());
+
+        var arquivo = await service.ObterAnexoItemAsync(criado.Id, itemId, anexo.Id);
+
+        Assert.Equal("comprovante.jpg", arquivo.NomeArquivo);
+        Assert.Equal<byte[]>([1, 2, 3], arquivo.Conteudo);
+    }
+
+    [Fact]
+    public async Task ExcluirAnexoItemAsync_DeveRemoverERegistrarAuditoria()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
+        var itemId = criado.Itens[0].Id;
+        var anexo = await service.AdicionarAnexoItemAsync(criado.Id, itemId, CriarAnexoDto());
+
+        await service.ExcluirAnexoItemAsync(criado.Id, itemId, anexo.Id, usuario.Id);
+
+        Assert.Empty(await context.ReembolsoDespesaItemAnexos.Where(a => a.ReembolsoDespesaItemId == itemId).ToListAsync());
+        Assert.Contains(context.LogsAuditoria, l => l.Acao == LogAuditoriaAcao.AnexoExcluido);
+    }
+
+    [Fact]
+    public async Task EhAprovadorDoSetorAsync_DeveDistinguirAprovadorDeNaoAprovador()
+    {
+        var (service, context, _) = CriarService();
+        var setor = CriarSetor(context);
+        var aprovador = CriarUsuario(context, "Bruno");
+        var naoAprovador = CriarUsuario(context, "Carlos");
+        TornarAprovador(context, setor.Id, aprovador.Id);
+
+        Assert.True(await service.EhAprovadorDoSetorAsync(aprovador.Id, setor.Id));
+        Assert.False(await service.EhAprovadorDoSetorAsync(naoAprovador.Id, setor.Id));
+        Assert.False(await service.EhAprovadorDoSetorAsync(aprovador.Id, null));
+    }
 }

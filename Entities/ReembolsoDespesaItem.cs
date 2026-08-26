@@ -11,4 +11,5 @@ public class ReembolsoDespesaItem
     public string? Descricao { get; set; }
     public string? NumeroDocumento { get; set; }
     public decimal Valor { get; set; }
+    public List<ReembolsoDespesaItemAnexo> Anexos { get; set; } = [];
 }

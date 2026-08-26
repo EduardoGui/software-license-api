@@ -59,13 +59,14 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         }
 
         var reembolsos = await query.OrderByDescending(r => r.DataSolicitacao).ThenByDescending(r => r.Id).ToListAsync();
-        return reembolsos.Select(ParaDto).ToList();
+        return reembolsos.Select(r => ParaDto(r)).ToList();
     }
 
     public async Task<ReembolsoDespesaDto> GetByIdAsync(int id)
     {
         var reembolso = await BuscarOuFalhar(id);
-        return ParaDto(reembolso);
+        var anexosPorItem = await ObterAnexosPorItemAsync(reembolso.Itens.Select(i => i.Id).ToList());
+        return ParaDto(reembolso, anexosPorItem);
     }
 
     public async Task<ReembolsoDespesaDto> CreateAsync(int usuarioId, CreateReembolsoDespesaDto dto)
@@ -115,8 +116,7 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         reembolso.Observacao = dto.Observacao?.Trim();
         reembolso.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
 
-        _context.ReembolsoDespesaItens.RemoveRange(reembolso.Itens);
-        reembolso.Itens = dto.Itens.Select(ParaEntidadeItem).ToList();
+        AtualizarItens(reembolso, dto.Itens);
 
         await _context.SaveChangesAsync();
 
@@ -324,13 +324,88 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
             .OrderBy(r => r.DataSolicitacao)
             .ToListAsync();
 
-        return reembolsos.Select(ParaDto).ToList();
+        return reembolsos.Select(r => ParaDto(r)).ToList();
     }
 
     public async Task<byte[]> GerarPdfAsync(int id)
     {
         var reembolso = await BuscarOuFalhar(id);
         return GerarPdfDocumento(reembolso);
+    }
+
+    public async Task<AnexoDto> AdicionarAnexoItemAsync(int reembolsoId, int itemId, AdicionarAnexoDto dto, int? usuarioIdAtor = null)
+    {
+        var (reembolso, _) = await BuscarItemOuFalhar(reembolsoId, itemId);
+
+        if (!StatusEditaveis.Contains(reembolso.Status))
+        {
+            throw new BusinessRuleException("Só é possível anexar comprovante a um reembolso em rascunho ou devolvido para revisão.");
+        }
+
+        AnexoValidator.Validar(dto.TipoConteudo, dto.Conteudo.Length);
+
+        var anexo = new ReembolsoDespesaItemAnexo
+        {
+            ReembolsoDespesaItemId = itemId,
+            NomeArquivo = dto.NomeArquivo,
+            TipoConteudo = dto.TipoConteudo,
+            Tamanho = dto.Conteudo.Length,
+            Conteudo = dto.Conteudo,
+            DataUpload = _timeProvider.GetUtcNow().UtcDateTime,
+        };
+
+        _context.ReembolsoDespesaItemAnexos.Add(anexo);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Anexo {AnexoId} adicionado ao item {ItemId} do reembolso de despesa {ReembolsoId}", anexo.Id, itemId, reembolsoId);
+        await _auditoriaService.RegistrarAsync(
+            usuarioIdAtor, LogAuditoriaEntidade.ReembolsoDespesa, reembolsoId, LogAuditoriaAcao.AnexoAdicionado, $"Item {itemId}: {anexo.NomeArquivo}");
+
+        return new AnexoDto
+        {
+            Id = anexo.Id,
+            NomeArquivo = anexo.NomeArquivo,
+            TipoConteudo = anexo.TipoConteudo,
+            Tamanho = anexo.Tamanho,
+            DataUpload = anexo.DataUpload,
+        };
+    }
+
+    public async Task<AnexoArquivoDto> ObterAnexoItemAsync(int reembolsoId, int itemId, int anexoId)
+    {
+        await BuscarItemOuFalhar(reembolsoId, itemId);
+
+        var anexo = await _context.ReembolsoDespesaItemAnexos
+            .FirstOrDefaultAsync(a => a.Id == anexoId && a.ReembolsoDespesaItemId == itemId)
+            ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
+
+        return new AnexoArquivoDto
+        {
+            NomeArquivo = anexo.NomeArquivo,
+            TipoConteudo = anexo.TipoConteudo,
+            Conteudo = anexo.Conteudo,
+        };
+    }
+
+    public async Task ExcluirAnexoItemAsync(int reembolsoId, int itemId, int anexoId, int? usuarioIdAtor = null)
+    {
+        var (reembolso, _) = await BuscarItemOuFalhar(reembolsoId, itemId);
+
+        if (!StatusEditaveis.Contains(reembolso.Status))
+        {
+            throw new BusinessRuleException("Só é possível excluir comprovante de um reembolso em rascunho ou devolvido para revisão.");
+        }
+
+        var anexo = await _context.ReembolsoDespesaItemAnexos
+            .FirstOrDefaultAsync(a => a.Id == anexoId && a.ReembolsoDespesaItemId == itemId)
+            ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
+
+        _context.ReembolsoDespesaItemAnexos.Remove(anexo);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Anexo {AnexoId} excluído do item {ItemId} do reembolso de despesa {ReembolsoId}", anexoId, itemId, reembolsoId);
+        await _auditoriaService.RegistrarAsync(
+            usuarioIdAtor, LogAuditoriaEntidade.ReembolsoDespesa, reembolsoId, LogAuditoriaAcao.AnexoExcluido, $"Item {itemId}: {anexo.NomeArquivo}");
     }
 
     private byte[] GerarPdfDocumento(ReembolsoDespesa r)
@@ -519,12 +594,12 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         gfx.DrawLine(new XPen(XColor.FromArgb(0xDD, 0xDF, 0xE2)), margem, y + altura, margem + largura, y + altura);
     }
 
+    public async Task<bool> EhAprovadorDoSetorAsync(int usuarioId, int? setorId) =>
+        setorId is not null && await _context.SetorAprovadores.AnyAsync(a => a.SetorId == setorId && a.UsuarioId == usuarioId);
+
     private async Task ValidarAprovadorDoSetor(int? setorId, int aprovadorUsuarioId)
     {
-        var ehAprovador = setorId is not null
-            && await _context.SetorAprovadores.AnyAsync(a => a.SetorId == setorId && a.UsuarioId == aprovadorUsuarioId);
-
-        if (!ehAprovador)
+        if (!await EhAprovadorDoSetorAsync(aprovadorUsuarioId, setorId))
         {
             throw new BusinessRuleException("Você não é aprovador do setor deste reembolso.");
         }
@@ -546,6 +621,40 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         }
 
         return reembolso;
+    }
+
+    private async Task<(ReembolsoDespesa Reembolso, ReembolsoDespesaItem Item)> BuscarItemOuFalhar(int reembolsoId, int itemId)
+    {
+        var reembolso = await BuscarOuFalhar(reembolsoId);
+        var item = reembolso.Itens.FirstOrDefault(i => i.Id == itemId)
+            ?? throw new NotFoundException($"Item {itemId} não encontrado no reembolso {reembolsoId}.");
+
+        return (reembolso, item);
+    }
+
+    private async Task<Dictionary<int, List<AnexoDto>>> ObterAnexosPorItemAsync(List<int> itemIds)
+    {
+        if (itemIds.Count == 0)
+        {
+            return [];
+        }
+
+        var anexos = await _context.ReembolsoDespesaItemAnexos
+            .Where(a => itemIds.Contains(a.ReembolsoDespesaItemId))
+            .Select(a => new AnexoComItemId
+            {
+                ItemId = a.ReembolsoDespesaItemId,
+                Anexo = new AnexoDto { Id = a.Id, NomeArquivo = a.NomeArquivo, TipoConteudo = a.TipoConteudo, Tamanho = a.Tamanho, DataUpload = a.DataUpload },
+            })
+            .ToListAsync();
+
+        return anexos.GroupBy(a => a.ItemId).ToDictionary(g => g.Key, g => g.Select(a => a.Anexo).ToList());
+    }
+
+    private class AnexoComItemId
+    {
+        public int ItemId { get; set; }
+        public AnexoDto Anexo { get; set; } = null!;
     }
 
     private async Task ValidarTiposDespesaAsync(List<CreateReembolsoDespesaItemDto> itens)
@@ -587,9 +696,39 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         Valor = dto.Valor,
     };
 
+    // Casa os itens recebidos com os existentes pelo Id (atualiza em vigor) em vez de apagar/recriar
+    // tudo a cada edição - preserva o Id do item e, com isso, os comprovantes já anexados a ele.
+    private void AtualizarItens(ReembolsoDespesa reembolso, List<CreateReembolsoDespesaItemDto> itensDto)
+    {
+        var idsRecebidos = itensDto.Where(i => i.Id is not null).Select(i => i.Id!.Value).ToHashSet();
+        var itensRemovidos = reembolso.Itens.Where(i => !idsRecebidos.Contains(i.Id)).ToList();
+        foreach (var item in itensRemovidos)
+        {
+            reembolso.Itens.Remove(item);
+        }
+        _context.ReembolsoDespesaItens.RemoveRange(itensRemovidos);
+
+        foreach (var itemDto in itensDto)
+        {
+            var itemExistente = itemDto.Id is not null ? reembolso.Itens.FirstOrDefault(i => i.Id == itemDto.Id) : null;
+            if (itemExistente is not null)
+            {
+                itemExistente.Data = itemDto.Data;
+                itemExistente.TipoDespesaId = itemDto.TipoDespesaId;
+                itemExistente.Descricao = itemDto.Descricao?.Trim();
+                itemExistente.NumeroDocumento = itemDto.NumeroDocumento?.Trim();
+                itemExistente.Valor = itemDto.Valor;
+            }
+            else
+            {
+                reembolso.Itens.Add(ParaEntidadeItem(itemDto));
+            }
+        }
+    }
+
     private DateOnly Hoje() => DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
 
-    private static ReembolsoDespesaDto ParaDto(ReembolsoDespesa r)
+    private static ReembolsoDespesaDto ParaDto(ReembolsoDespesa r, Dictionary<int, List<AnexoDto>>? anexosPorItem = null)
     {
         var itens = r.Itens
             .OrderBy(i => i.Data)
@@ -602,6 +741,7 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
                 Descricao = i.Descricao,
                 NumeroDocumento = i.NumeroDocumento,
                 Valor = i.Valor,
+                Anexos = anexosPorItem is not null && anexosPorItem.TryGetValue(i.Id, out var anexos) ? anexos : [],
             })
             .ToList();
 

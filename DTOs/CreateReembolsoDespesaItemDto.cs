@@ -4,6 +4,10 @@ namespace SoftwareLicense.Api.DTOs;
 
 public class CreateReembolsoDespesaItemDto
 {
+    // Preenchido pelo frontend ao editar um item já existente, para o backend atualizar em vigor
+    // em vez de apagar/recriar (o que perderia o comprovante anexado ao item). Ignorado na criação.
+    public int? Id { get; set; }
+
     [Required(ErrorMessage = "Data é obrigatória.")]
     public DateOnly Data { get; set; }
 

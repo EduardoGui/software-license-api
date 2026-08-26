@@ -9,4 +9,5 @@ public class ReembolsoDespesaItemDto
     public string? Descricao { get; set; }
     public string? NumeroDocumento { get; set; }
     public decimal Valor { get; set; }
+    public List<AnexoDto> Anexos { get; set; } = [];
 }
