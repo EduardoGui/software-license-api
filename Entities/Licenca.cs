@@ -4,6 +4,9 @@ public class Licenca
 {
     public int Id { get; set; }
     public string Nome { get; set; } = string.Empty;
+    // Agrupamento livre pra relatórios (ex.: "Microsoft 365", "Microsoft Project", "AutoCAD") -
+    // não é uma taxonomia estruturada, só texto pra juntar licenças da mesma família.
+    public string? Tipo { get; set; }
     public string? Descricao { get; set; }
     public int QuantidadeTotal { get; set; }
     public DateOnly DataInicio { get; set; }

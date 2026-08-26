@@ -4,6 +4,7 @@ public class LicencaDto
 {
     public int Id { get; set; }
     public string Nome { get; set; } = string.Empty;
+    public string? Tipo { get; set; }
     public string? Descricao { get; set; }
     public int QuantidadeTotal { get; set; }
     public int QuantidadeEmUso { get; set; }

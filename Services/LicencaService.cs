@@ -67,6 +67,7 @@ public class LicencaService : ILicencaService
         var licenca = new Licenca
         {
             Nome = dto.Nome.Trim(),
+            Tipo = string.IsNullOrWhiteSpace(dto.Tipo) ? null : dto.Tipo.Trim(),
             Descricao = dto.Descricao,
             QuantidadeTotal = dto.QuantidadeTotal,
             DataInicio = dto.DataInicio,
@@ -106,6 +107,7 @@ public class LicencaService : ILicencaService
         var notaFiscal = await ValidarNotaFiscalAsync(dto.NotaFiscalEntradaId);
 
         licenca.Nome = dto.Nome.Trim();
+        licenca.Tipo = string.IsNullOrWhiteSpace(dto.Tipo) ? null : dto.Tipo.Trim();
         licenca.Descricao = dto.Descricao;
         licenca.QuantidadeTotal = dto.QuantidadeTotal;
         licenca.DataInicio = dto.DataInicio;
@@ -277,6 +279,7 @@ public class LicencaService : ILicencaService
         {
             Id = l.Id,
             Nome = l.Nome,
+            Tipo = l.Tipo,
             Descricao = l.Descricao,
             QuantidadeTotal = l.QuantidadeTotal,
             QuantidadeEmUso = quantidadeEmUso,

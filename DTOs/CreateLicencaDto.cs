@@ -8,6 +8,9 @@ public class CreateLicencaDto
     [MaxLength(200)]
     public string Nome { get; set; } = string.Empty;
 
+    [MaxLength(100)]
+    public string? Tipo { get; set; }
+
     [MaxLength(1000)]
     public string? Descricao { get; set; }
 

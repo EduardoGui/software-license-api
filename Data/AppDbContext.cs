@@ -131,6 +131,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<Licenca>(entity =>
         {
             entity.Property(l => l.Nome).IsRequired().HasMaxLength(200);
+            entity.Property(l => l.Tipo).HasMaxLength(100);
             entity.Property(l => l.Descricao).HasMaxLength(1000);
             entity.Property(l => l.Observacao).HasMaxLength(1000);
             entity.HasOne(l => l.NotaFiscalEntrada).WithMany().HasForeignKey(l => l.NotaFiscalEntradaId).OnDelete(DeleteBehavior.Restrict);
