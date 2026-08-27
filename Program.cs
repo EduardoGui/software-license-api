@@ -122,6 +122,7 @@ builder.Services.AddScoped<IAuditoriaService, AuditoriaService>();
 builder.Services.AddScoped<IEmpresaPjService, EmpresaPjService>();
 builder.Services.AddScoped<IPlanoSaudeCustoService, PlanoSaudeCustoService>();
 builder.Services.AddScoped<IRelatorioMensalPlanoSaudeService, RelatorioMensalPlanoSaudeService>();
+builder.Services.AddScoped<INotaDebitoPjService, NotaDebitoPjService>();
 
 builder.Services.AddCors(options =>
 {

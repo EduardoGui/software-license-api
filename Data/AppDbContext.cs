@@ -37,6 +37,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<EmpresaPj> EmpresasPj => Set<EmpresaPj>();
     public DbSet<Dependente> Dependentes => Set<Dependente>();
     public DbSet<PlanoSaudeCusto> PlanoSaudeCustos => Set<PlanoSaudeCusto>();
+    public DbSet<NotaDebitoPj> NotasDebitoPj => Set<NotaDebitoPj>();
+    public DbSet<NotaDebitoPjAnexo> NotasDebitoPjAnexos => Set<NotaDebitoPjAnexo>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -155,6 +157,32 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(p => p.DependenteId);
             entity.HasOne(p => p.Usuario).WithMany().HasForeignKey(p => p.UsuarioId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(p => p.Dependente).WithMany().HasForeignKey(p => p.DependenteId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<NotaDebitoPj>(entity =>
+        {
+            entity.Property(n => n.ValorBruto).HasPrecision(18, 2);
+            entity.Property(n => n.Desconto).HasPrecision(18, 2);
+            entity.Property(n => n.RetencaoTributaria).HasPrecision(18, 2);
+            entity.Property(n => n.OperadoraSaude).IsRequired().HasMaxLength(100);
+            entity.Property(n => n.NumeroDocumento).HasMaxLength(50);
+            entity.Property(n => n.Descricao).HasMaxLength(500);
+            entity.Property(n => n.FormaPagamento).HasMaxLength(50);
+            entity.Property(n => n.CentroCusto).HasMaxLength(100);
+            entity.Property(n => n.Area).HasMaxLength(100);
+            entity.Property(n => n.ContaContabil).HasMaxLength(100);
+            entity.Property(n => n.ProjetoContrato).HasMaxLength(100);
+            entity.Property(n => n.Status).IsRequired().HasMaxLength(20);
+            entity.HasIndex(n => new { n.UsuarioId, n.Ano, n.Mes }).IsUnique();
+            entity.HasOne(n => n.Usuario).WithMany().HasForeignKey(n => n.UsuarioId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<NotaDebitoPjAnexo>(entity =>
+        {
+            entity.Property(a => a.NomeArquivo).IsRequired().HasMaxLength(255);
+            entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
+            entity.HasIndex(a => a.NotaDebitoPjId);
+            entity.HasOne(a => a.NotaDebitoPj).WithMany().HasForeignKey(a => a.NotaDebitoPjId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Licenca>(entity =>
