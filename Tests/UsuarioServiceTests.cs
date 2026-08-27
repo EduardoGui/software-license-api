@@ -317,4 +317,131 @@ public class UsuarioServiceTests
 
         await service.ReenviarConviteAsync(usuario.Id);
     }
+
+    [Fact]
+    public async Task CreateAsync_DeveRejeitarTipoPjSemEmpresaPj()
+    {
+        var service = CriarService(out _);
+        var inicio = DateOnly.FromDateTime(Agora.Date);
+        var dto = new CreateUsuarioDto { Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio, Tipo = UsuarioTipo.Pj };
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(dto));
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveRejeitarEmpresaPjParaTipoDiferenteDePj()
+    {
+        var service = CriarService(out var context);
+        var empresa = await CriarEmpresaPjAsync(context);
+        var inicio = DateOnly.FromDateTime(Agora.Date);
+        var dto = new CreateUsuarioDto
+        {
+            Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio, Tipo = UsuarioTipo.Clt, EmpresaPjId = empresa.Id,
+        };
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(dto));
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveRejeitarEmpresaPjInexistente()
+    {
+        var service = CriarService(out _);
+        var inicio = DateOnly.FromDateTime(Agora.Date);
+        var dto = new CreateUsuarioDto
+        {
+            Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio, Tipo = UsuarioTipo.Pj, EmpresaPjId = 999,
+        };
+
+        await Assert.ThrowsAsync<NotFoundException>(() => service.CreateAsync(dto));
+    }
+
+    [Fact]
+    public async Task CreateAsync_DevePermitirTipoPjComEmpresaPjValida()
+    {
+        var service = CriarService(out var context);
+        var empresa = await CriarEmpresaPjAsync(context);
+        var inicio = DateOnly.FromDateTime(Agora.Date);
+
+        var usuario = await service.CreateAsync(new CreateUsuarioDto
+        {
+            Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio, Tipo = UsuarioTipo.Pj, EmpresaPjId = empresa.Id,
+        });
+
+        Assert.Equal(UsuarioTipo.Pj, usuario.Tipo);
+        Assert.Equal(empresa.Id, usuario.EmpresaPjId);
+        Assert.Equal(empresa.RazaoSocial, usuario.EmpresaPjNome);
+    }
+
+    [Fact]
+    public async Task AdicionarDependenteAsync_DeveAdicionarERetornarNaListaDoUsuario()
+    {
+        var service = CriarService(out _);
+        var inicio = DateOnly.FromDateTime(Agora.Date);
+        var usuario = await service.CreateAsync(new CreateUsuarioDto { Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio });
+
+        var atualizado = await service.AdicionarDependenteAsync(usuario.Id, new CreateDependenteDto { Nome = "Maria" });
+
+        var dependente = Assert.Single(atualizado.Dependentes);
+        Assert.Equal("Maria", dependente.Nome);
+        Assert.True(dependente.Ativo);
+    }
+
+    [Fact]
+    public async Task AtualizarDependenteAsync_DeveAtualizarNomeEAtivo()
+    {
+        var service = CriarService(out _);
+        var inicio = DateOnly.FromDateTime(Agora.Date);
+        var usuario = await service.CreateAsync(new CreateUsuarioDto { Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio });
+        var comDependente = await service.AdicionarDependenteAsync(usuario.Id, new CreateDependenteDto { Nome = "Maria" });
+        var dependenteId = comDependente.Dependentes[0].Id;
+
+        var atualizado = await service.AtualizarDependenteAsync(
+            usuario.Id, dependenteId, new UpdateDependenteDto { Nome = "Maria Silva", Ativo = false });
+
+        var dependente = Assert.Single(atualizado.Dependentes);
+        Assert.Equal("Maria Silva", dependente.Nome);
+        Assert.False(dependente.Ativo);
+    }
+
+    [Fact]
+    public async Task RemoverDependenteAsync_DeveRemoverDaListaDoUsuario()
+    {
+        var service = CriarService(out _);
+        var inicio = DateOnly.FromDateTime(Agora.Date);
+        var usuario = await service.CreateAsync(new CreateUsuarioDto { Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio });
+        var comDependente = await service.AdicionarDependenteAsync(usuario.Id, new CreateDependenteDto { Nome = "Maria" });
+        var dependenteId = comDependente.Dependentes[0].Id;
+
+        var atualizado = await service.RemoverDependenteAsync(usuario.Id, dependenteId);
+
+        Assert.Empty(atualizado.Dependentes);
+    }
+
+    [Fact]
+    public async Task RemoverDependenteAsync_DeveLancarNotFoundQuandoDependenteNaoPertenceAoUsuario()
+    {
+        var service = CriarService(out _);
+        var inicio = DateOnly.FromDateTime(Agora.Date);
+        var usuarioA = await service.CreateAsync(new CreateUsuarioDto { Nome = "Ana", Email = "ana@empresa.com", DataInicio = inicio });
+        var usuarioB = await service.CreateAsync(new CreateUsuarioDto { Nome = "Bruno", Email = "bruno@empresa.com", DataInicio = inicio });
+        var comDependente = await service.AdicionarDependenteAsync(usuarioA.Id, new CreateDependenteDto { Nome = "Maria" });
+        var dependenteId = comDependente.Dependentes[0].Id;
+
+        await Assert.ThrowsAsync<NotFoundException>(() => service.RemoverDependenteAsync(usuarioB.Id, dependenteId));
+    }
+
+    private static async Task<EmpresaPj> CriarEmpresaPjAsync(AppDbContext context)
+    {
+        var empresa = new EmpresaPj
+        {
+            RazaoSocial = "Consultoria XYZ Ltda",
+            Cnpj = "12.345.678/0001-90",
+            Ativa = true,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.EmpresasPj.Add(empresa);
+        await context.SaveChangesAsync();
+        return empresa;
+    }
 }

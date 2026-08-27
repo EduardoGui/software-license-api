@@ -19,4 +19,9 @@ public class UpdateUsuarioDto
     public DateOnly? DataFim { get; set; }
 
     public string? Observacao { get; set; }
+
+    // Pj | Clt | Estagio (constantes em UsuarioTipo).
+    public string? Tipo { get; set; }
+
+    public int? EmpresaPjId { get; set; }
 }

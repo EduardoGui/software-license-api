@@ -51,8 +51,12 @@ public class UsuarioService : IUsuarioService
         var usuarios = await query.OrderBy(u => u.Nome).ToListAsync();
         var emUsoPorUsuario = await ContarEmUsoPorUsuarioAsync(usuarios.Select(u => u.Id));
         var nomesSetores = await ObterNomesSetoresAsync(usuarios.Where(u => u.SetorId is not null).Select(u => u.SetorId!.Value));
+        var nomesEmpresasPj = await ObterNomesEmpresasPjAsync(usuarios.Where(u => u.EmpresaPjId is not null).Select(u => u.EmpresaPjId!.Value));
+        var dependentesPorUsuario = await BuscarDependentesPorUsuarioAsync(usuarios.Select(u => u.Id));
 
-        var resultado = usuarios.Select(u => ParaDto(u, hoje, emUsoPorUsuario.GetValueOrDefault(u.Id), NomeSetorOuNulo(u.SetorId, nomesSetores)));
+        var resultado = usuarios.Select(u => ParaDto(
+            u, hoje, emUsoPorUsuario.GetValueOrDefault(u.Id), NomeSetorOuNulo(u.SetorId, nomesSetores),
+            NomeEmpresaPjOuNulo(u.EmpresaPjId, nomesEmpresasPj), dependentesPorUsuario.GetValueOrDefault(u.Id, [])));
 
         if (!string.IsNullOrWhiteSpace(filtro.Status))
         {
@@ -65,13 +69,16 @@ public class UsuarioService : IUsuarioService
     public async Task<UsuarioDto> GetByIdAsync(int id)
     {
         var usuario = await BuscarOuFalhar(id);
-        return ParaDto(usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId));
+        return ParaDto(
+            usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId),
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await BuscarDependentesAsync(usuario.Id));
     }
 
     public async Task<UsuarioDto> CreateAsync(CreateUsuarioDto dto)
     {
         await ValidarDatas(dto.DataInicio, dto.DataFim);
         await ValidarEmailUnico(dto.Email, usuarioIdAtual: null);
+        await ValidarTipoEEmpresaPj(dto.Tipo, dto.EmpresaPjId);
 
         var emailNormalizado = dto.Email.Trim();
         if (await _userManager.FindByEmailAsync(emailNormalizado) is not null)
@@ -87,6 +94,8 @@ public class UsuarioService : IUsuarioService
             DataInicio = dto.DataInicio,
             DataFim = dto.DataFim,
             Observacao = dto.Observacao,
+            Tipo = dto.Tipo,
+            EmpresaPjId = dto.EmpresaPjId,
             DataCriacao = agora,
             DataAtualizacao = agora,
         };
@@ -127,7 +136,8 @@ public class UsuarioService : IUsuarioService
             _logger.LogError(ex, "Usuário {UsuarioId} criado, mas o envio do convite de senha falhou", usuario.Id);
         }
 
-        return ParaDto(usuario, Hoje(), licencasEmUso: 0, setorNome: null);
+        return ParaDto(
+            usuario, Hoje(), licencasEmUso: 0, setorNome: null, await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), dependentes: []);
     }
 
     public async Task ReenviarConviteAsync(int id)
@@ -165,19 +175,24 @@ public class UsuarioService : IUsuarioService
 
         await ValidarDatas(dto.DataInicio, dto.DataFim);
         await ValidarEmailUnico(dto.Email, usuarioIdAtual: id);
+        await ValidarTipoEEmpresaPj(dto.Tipo, dto.EmpresaPjId);
 
         usuario.Nome = dto.Nome.Trim();
         usuario.Email = dto.Email.Trim();
         usuario.DataInicio = dto.DataInicio;
         usuario.DataFim = dto.DataFim;
         usuario.Observacao = dto.Observacao;
+        usuario.Tipo = dto.Tipo;
+        usuario.EmpresaPjId = dto.EmpresaPjId;
         usuario.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
 
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Usuário {UsuarioId} atualizado", usuario.Id);
 
-        return ParaDto(usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId));
+        return ParaDto(
+            usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId),
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await BuscarDependentesAsync(usuario.Id));
     }
 
     public async Task<UsuarioDto> DesativarAsync(int id, DesativarUsuarioDto dto)
@@ -223,7 +238,9 @@ public class UsuarioService : IUsuarioService
             "Usuário {UsuarioId} desativado, encerrando {QuantidadeMovimentacoes} movimentação(ões) e {QuantidadeAlocacoes} alocação(ões) de equipamento ativa(s)",
             usuario.Id, movimentacoesAtivas.Count, alocacoesAtivas.Count);
 
-        return ParaDto(usuario, Hoje(), licencasEmUso: 0, await ObterNomeSetorAsync(usuario.SetorId));
+        return ParaDto(
+            usuario, Hoje(), licencasEmUso: 0, await ObterNomeSetorAsync(usuario.SetorId),
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await BuscarDependentesAsync(usuario.Id));
     }
 
     public async Task<UsuarioDto> AtualizarPerfilAsync(int id, AtualizarPerfilDto dto)
@@ -248,7 +265,116 @@ public class UsuarioService : IUsuarioService
 
         _logger.LogInformation("Perfil do usuário {UsuarioId} atualizado", usuario.Id);
 
-        return ParaDto(usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId));
+        return ParaDto(
+            usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId),
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await BuscarDependentesAsync(usuario.Id));
+    }
+
+    public async Task<UsuarioDto> AdicionarDependenteAsync(int usuarioId, CreateDependenteDto dto)
+    {
+        var usuario = await BuscarOuFalhar(usuarioId);
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+
+        _context.Dependentes.Add(new Dependente
+        {
+            UsuarioId = usuarioId,
+            Nome = dto.Nome.Trim(),
+            Ativo = true,
+            DataCriacao = agora,
+            DataAtualizacao = agora,
+        });
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Dependente adicionado ao usuário {UsuarioId}", usuarioId);
+
+        return ParaDto(
+            usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId),
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await BuscarDependentesAsync(usuario.Id));
+    }
+
+    public async Task<UsuarioDto> AtualizarDependenteAsync(int usuarioId, int dependenteId, UpdateDependenteDto dto)
+    {
+        var usuario = await BuscarOuFalhar(usuarioId);
+        var dependente = await BuscarDependenteOuFalhar(usuarioId, dependenteId);
+
+        dependente.Nome = dto.Nome.Trim();
+        dependente.Ativo = dto.Ativo;
+        dependente.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Dependente {DependenteId} do usuário {UsuarioId} atualizado", dependenteId, usuarioId);
+
+        return ParaDto(
+            usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId),
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await BuscarDependentesAsync(usuario.Id));
+    }
+
+    public async Task<UsuarioDto> RemoverDependenteAsync(int usuarioId, int dependenteId)
+    {
+        var usuario = await BuscarOuFalhar(usuarioId);
+        var dependente = await BuscarDependenteOuFalhar(usuarioId, dependenteId);
+
+        _context.Dependentes.Remove(dependente);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Dependente {DependenteId} removido do usuário {UsuarioId}", dependenteId, usuarioId);
+
+        return ParaDto(
+            usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId),
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await BuscarDependentesAsync(usuario.Id));
+    }
+
+    private async Task<Dependente> BuscarDependenteOuFalhar(int usuarioId, int dependenteId)
+    {
+        var dependente = await _context.Dependentes.FirstOrDefaultAsync(d => d.Id == dependenteId && d.UsuarioId == usuarioId);
+        if (dependente is null)
+        {
+            throw new NotFoundException($"Dependente {dependenteId} não encontrado.");
+        }
+
+        return dependente;
+    }
+
+    private Task<List<DependenteDto>> BuscarDependentesAsync(int usuarioId) =>
+        _context.Dependentes
+            .Where(d => d.UsuarioId == usuarioId)
+            .OrderBy(d => d.Nome)
+            .Select(d => new DependenteDto { Id = d.Id, Nome = d.Nome, Ativo = d.Ativo })
+            .ToListAsync();
+
+    private async Task<Dictionary<int, List<DependenteDto>>> BuscarDependentesPorUsuarioAsync(IEnumerable<int> usuarioIds) =>
+        (await _context.Dependentes
+            .Where(d => usuarioIds.Contains(d.UsuarioId))
+            .OrderBy(d => d.Nome)
+            .Select(d => new { d.UsuarioId, Dependente = new DependenteDto { Id = d.Id, Nome = d.Nome, Ativo = d.Ativo } })
+            .ToListAsync())
+            .GroupBy(x => x.UsuarioId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Dependente).ToList());
+
+    private async Task ValidarTipoEEmpresaPj(string? tipo, int? empresaPjId)
+    {
+        if (tipo is not null && tipo != UsuarioTipo.Pj && tipo != UsuarioTipo.Clt && tipo != UsuarioTipo.Estagio)
+        {
+            throw new BusinessRuleException("Tipo deve ser 'Pj', 'Clt' ou 'Estagio'.");
+        }
+
+        if (tipo == UsuarioTipo.Pj)
+        {
+            if (empresaPjId is null)
+            {
+                throw new BusinessRuleException("Empresa PJ é obrigatória para usuários do tipo PJ.");
+            }
+
+            if (await _context.EmpresasPj.FindAsync(empresaPjId) is null)
+            {
+                throw new NotFoundException($"Empresa PJ {empresaPjId} não encontrada.");
+            }
+        }
+        else if (empresaPjId is not null)
+        {
+            throw new BusinessRuleException("Empresa PJ só pode ser informada para usuários do tipo PJ.");
+        }
     }
 
     private Task<int> ContarEmUsoAsync(int usuarioId) =>
@@ -309,7 +435,21 @@ public class UsuarioService : IUsuarioService
     private static string? NomeSetorOuNulo(int? setorId, Dictionary<int, string> nomesSetores) =>
         setorId is not null && nomesSetores.TryGetValue(setorId.Value, out var nome) ? nome : null;
 
-    private static UsuarioDto ParaDto(Usuario u, DateOnly hoje, int licencasEmUso, string? setorNome) => new()
+    private Task<string?> ObterNomeEmpresaPjAsync(int? empresaPjId) =>
+        empresaPjId is null
+            ? Task.FromResult<string?>(null)
+            : _context.EmpresasPj.Where(e => e.Id == empresaPjId).Select(e => e.RazaoSocial).FirstOrDefaultAsync();
+
+    private async Task<Dictionary<int, string>> ObterNomesEmpresasPjAsync(IEnumerable<int> empresaPjIds) =>
+        await _context.EmpresasPj
+            .Where(e => empresaPjIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id, e => e.RazaoSocial);
+
+    private static string? NomeEmpresaPjOuNulo(int? empresaPjId, Dictionary<int, string> nomesEmpresasPj) =>
+        empresaPjId is not null && nomesEmpresasPj.TryGetValue(empresaPjId.Value, out var nome) ? nome : null;
+
+    private static UsuarioDto ParaDto(
+        Usuario u, DateOnly hoje, int licencasEmUso, string? setorNome, string? empresaPjNome, List<DependenteDto> dependentes) => new()
     {
         Id = u.Id,
         Nome = u.Nome,
@@ -327,6 +467,10 @@ public class UsuarioService : IUsuarioService
         Banco = u.Banco,
         Agencia = u.Agencia,
         ContaBancaria = u.ContaBancaria,
+        Tipo = u.Tipo,
+        EmpresaPjId = u.EmpresaPjId,
+        EmpresaPjNome = empresaPjNome,
+        Dependentes = dependentes,
         DataCriacao = u.DataCriacao,
         DataAtualizacao = u.DataAtualizacao,
     };

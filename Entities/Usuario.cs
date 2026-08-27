@@ -16,6 +16,10 @@ public class Usuario
     public string? Banco { get; set; }
     public string? Agencia { get; set; }
     public string? ContaBancaria { get; set; }
+    // Pj | Clt | Estagio (constantes em UsuarioTipo) - null pra usuários cadastrados antes desse campo existir.
+    public string? Tipo { get; set; }
+    public int? EmpresaPjId { get; set; }
+    public EmpresaPj? EmpresaPj { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
 }

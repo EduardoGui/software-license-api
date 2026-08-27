@@ -82,4 +82,28 @@ public class UsuariosController : ControllerBase
         await _usuarioService.ReenviarConviteAsync(id);
         return NoContent();
     }
+
+    [HttpPost("{id:int}/dependentes")]
+    [Authorize(Roles = Roles.Administrador)]
+    public async Task<ActionResult<UsuarioDto>> AdicionarDependente(int id, CreateDependenteDto dto)
+    {
+        var usuario = await _usuarioService.AdicionarDependenteAsync(id, dto);
+        return Ok(usuario);
+    }
+
+    [HttpPut("{id:int}/dependentes/{dependenteId:int}")]
+    [Authorize(Roles = Roles.Administrador)]
+    public async Task<ActionResult<UsuarioDto>> AtualizarDependente(int id, int dependenteId, UpdateDependenteDto dto)
+    {
+        var usuario = await _usuarioService.AtualizarDependenteAsync(id, dependenteId, dto);
+        return Ok(usuario);
+    }
+
+    [HttpDelete("{id:int}/dependentes/{dependenteId:int}")]
+    [Authorize(Roles = Roles.Administrador)]
+    public async Task<ActionResult<UsuarioDto>> RemoverDependente(int id, int dependenteId)
+    {
+        var usuario = await _usuarioService.RemoverDependenteAsync(id, dependenteId);
+        return Ok(usuario);
+    }
 }

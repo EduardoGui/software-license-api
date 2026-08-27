@@ -34,6 +34,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<PatrimonioItem> PatrimonioItens => Set<PatrimonioItem>();
     public DbSet<PatrimonioItemAnexo> PatrimonioItemAnexos => Set<PatrimonioItemAnexo>();
     public DbSet<LogAuditoria> LogsAuditoria => Set<LogAuditoria>();
+    public DbSet<EmpresaPj> EmpresasPj => Set<EmpresaPj>();
+    public DbSet<Dependente> Dependentes => Set<Dependente>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -56,8 +58,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(u => u.Banco).HasMaxLength(100);
             entity.Property(u => u.Agencia).HasMaxLength(20);
             entity.Property(u => u.ContaBancaria).HasMaxLength(30);
+            entity.Property(u => u.Tipo).HasMaxLength(20);
             entity.HasIndex(u => u.Email).IsUnique();
             entity.HasOne(u => u.Setor).WithMany().HasForeignKey(u => u.SetorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(u => u.EmpresaPj).WithMany().HasForeignKey(u => u.EmpresaPjId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Setor>(entity =>
@@ -126,6 +130,20 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(l => l.Nome).IsRequired().HasMaxLength(100);
             entity.Property(l => l.Endereco).HasMaxLength(300);
             entity.HasIndex(l => l.Nome).IsUnique();
+        });
+
+        modelBuilder.Entity<EmpresaPj>(entity =>
+        {
+            entity.Property(e => e.RazaoSocial).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Cnpj).IsRequired().HasMaxLength(20);
+            entity.HasIndex(e => e.Cnpj).IsUnique();
+        });
+
+        modelBuilder.Entity<Dependente>(entity =>
+        {
+            entity.Property(d => d.Nome).IsRequired().HasMaxLength(200);
+            entity.HasIndex(d => d.UsuarioId);
+            entity.HasOne(d => d.Usuario).WithMany().HasForeignKey(d => d.UsuarioId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Licenca>(entity =>
