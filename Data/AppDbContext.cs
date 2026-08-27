@@ -36,6 +36,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<LogAuditoria> LogsAuditoria => Set<LogAuditoria>();
     public DbSet<EmpresaPj> EmpresasPj => Set<EmpresaPj>();
     public DbSet<Dependente> Dependentes => Set<Dependente>();
+    public DbSet<PlanoSaudeCusto> PlanoSaudeCustos => Set<PlanoSaudeCusto>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -144,6 +145,16 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(d => d.Nome).IsRequired().HasMaxLength(200);
             entity.HasIndex(d => d.UsuarioId);
             entity.HasOne(d => d.Usuario).WithMany().HasForeignKey(d => d.UsuarioId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<PlanoSaudeCusto>(entity =>
+        {
+            entity.Property(p => p.ValorMensal).HasPrecision(18, 2);
+            entity.Property(p => p.ValorCoparticipacao).HasPrecision(18, 2);
+            entity.HasIndex(p => new { p.UsuarioId, p.Ano, p.Mes });
+            entity.HasIndex(p => p.DependenteId);
+            entity.HasOne(p => p.Usuario).WithMany().HasForeignKey(p => p.UsuarioId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(p => p.Dependente).WithMany().HasForeignKey(p => p.DependenteId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Licenca>(entity =>

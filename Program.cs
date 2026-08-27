@@ -120,6 +120,7 @@ builder.Services.AddScoped<IReembolsoDespesaService, ReembolsoDespesaService>();
 builder.Services.AddScoped<IEmailNotificacaoReembolsoService, EmailNotificacaoReembolsoService>();
 builder.Services.AddScoped<IAuditoriaService, AuditoriaService>();
 builder.Services.AddScoped<IEmpresaPjService, EmpresaPjService>();
+builder.Services.AddScoped<IPlanoSaudeCustoService, PlanoSaudeCustoService>();
 
 builder.Services.AddCors(options =>
 {
