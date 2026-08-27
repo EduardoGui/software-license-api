@@ -11,10 +11,13 @@ namespace SoftwareLicense.Api.Controllers;
 public class PlanoSaudeCustosController : ControllerBase
 {
     private readonly IPlanoSaudeCustoService _planoSaudeCustoService;
+    private readonly IRelatorioMensalPlanoSaudeService _relatorioMensalPlanoSaudeService;
 
-    public PlanoSaudeCustosController(IPlanoSaudeCustoService planoSaudeCustoService)
+    public PlanoSaudeCustosController(
+        IPlanoSaudeCustoService planoSaudeCustoService, IRelatorioMensalPlanoSaudeService relatorioMensalPlanoSaudeService)
     {
         _planoSaudeCustoService = planoSaudeCustoService;
+        _relatorioMensalPlanoSaudeService = relatorioMensalPlanoSaudeService;
     }
 
     [HttpGet("mes")]
@@ -36,5 +39,20 @@ public class PlanoSaudeCustosController : ControllerBase
     {
         await _planoSaudeCustoService.RemoverAsync(id);
         return NoContent();
+    }
+
+    [HttpGet("relatorio-mensal")]
+    public async Task<IActionResult> RelatorioMensal([FromQuery] RelatorioMensalPlanoSaudeFiltroDto filtro, [FromQuery] string? formato)
+    {
+        var relatorio = await _relatorioMensalPlanoSaudeService.GerarAsync(filtro);
+
+        if (string.Equals(formato, "xlsx", StringComparison.OrdinalIgnoreCase))
+        {
+            var arquivo = _relatorioMensalPlanoSaudeService.GerarExcel(relatorio);
+            var nomeArquivo = $"relatorio-plano-saude-{filtro.Ano:D4}-{filtro.Mes:D2}.xlsx";
+            return File(arquivo, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", nomeArquivo);
+        }
+
+        return Ok(relatorio);
     }
 }
