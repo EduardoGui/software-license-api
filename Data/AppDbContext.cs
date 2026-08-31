@@ -231,7 +231,6 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<NotaFiscalEntrada>(entity =>
         {
             entity.Property(n => n.Numero).IsRequired().HasMaxLength(50);
-            entity.Property(n => n.FornecedorNome).HasMaxLength(200);
             entity.Property(n => n.Observacao).HasMaxLength(1000);
             entity.HasIndex(n => n.Numero);
             entity.HasOne(n => n.Fornecedor).WithMany().HasForeignKey(n => n.FornecedorId).OnDelete(DeleteBehavior.Restrict);

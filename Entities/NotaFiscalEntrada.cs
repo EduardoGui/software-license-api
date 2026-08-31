@@ -5,7 +5,6 @@ public class NotaFiscalEntrada
     public int Id { get; set; }
     public string Numero { get; set; } = string.Empty;
     public DateOnly DataEntrada { get; set; }
-    public string? FornecedorNome { get; set; }
     public int? FornecedorId { get; set; }
     public Fornecedor? Fornecedor { get; set; }
     public string? Observacao { get; set; }
