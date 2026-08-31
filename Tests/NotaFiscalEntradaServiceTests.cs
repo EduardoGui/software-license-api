@@ -49,6 +49,14 @@ public class NotaFiscalEntradaServiceTests
         return local;
     }
 
+    private static Fornecedor CriarFornecedor(AppDbContext context, string nome = "Brain")
+    {
+        var fornecedor = new Fornecedor { Nome = nome, Ativo = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        context.Fornecedores.Add(fornecedor);
+        context.SaveChanges();
+        return fornecedor;
+    }
+
     [Fact]
     public async Task AdicionarItemAsync_DeveGerarUmEquipamentoPorUnidadeDeQuantidade()
     {
@@ -214,6 +222,60 @@ public class NotaFiscalEntradaServiceTests
         });
 
         Assert.Equal(NotaFiscalItemDestino.Equipamento, itemDto.Destino);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ComFornecedorInformado_DeveResolverNomeDoFornecedor()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+
+        var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-016", DataEntrada = Hoje, FornecedorId = fornecedor.Id });
+
+        Assert.Equal("Brain", nota.FornecedorNome);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveLancarNotFoundParaFornecedorInexistente()
+    {
+        var (service, _) = CriarService();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-017", DataEntrada = Hoje, FornecedorId = 999 }));
+    }
+
+    [Fact]
+    public async Task GetAllAsync_DeveFiltrarPorFornecedor()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var outroFornecedor = CriarFornecedor(context, "Outra Empresa");
+        var notaDoFornecedor = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-018", DataEntrada = Hoje, FornecedorId = fornecedor.Id });
+        await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-019", DataEntrada = Hoje, FornecedorId = outroFornecedor.Id });
+
+        var resultado = await service.GetAllAsync(new NotaFiscalEntradaFiltroDto { FornecedorId = fornecedor.Id });
+
+        Assert.Single(resultado);
+        Assert.Equal(notaDoFornecedor.Id, resultado[0].Id);
+    }
+
+    [Fact]
+    public async Task AdicionarItemAsync_DeveCopiarNomeDoFornecedorParaOEquipamentoGerado()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-020", DataEntrada = Hoje, FornecedorId = fornecedor.Id });
+        var tipo = CriarTipo(context);
+
+        await service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto
+        {
+            TipoEquipamentoId = tipo.Id,
+            Quantidade = 1,
+            Origem = EquipamentoOrigem.Comprado,
+        });
+
+        var equipamento = await context.Equipamentos.SingleAsync(e => e.TipoEquipamentoId == tipo.Id);
+        Assert.Equal("Brain", equipamento.FornecedorNome);
     }
 
     [Fact]

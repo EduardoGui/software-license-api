@@ -39,6 +39,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<PlanoSaudeCusto> PlanoSaudeCustos => Set<PlanoSaudeCusto>();
     public DbSet<NotaDebitoPj> NotasDebitoPj => Set<NotaDebitoPj>();
     public DbSet<NotaDebitoPjAnexo> NotasDebitoPjAnexos => Set<NotaDebitoPjAnexo>();
+    public DbSet<Fornecedor> Fornecedores => Set<Fornecedor>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -219,12 +220,21 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(t => t.Nome).IsUnique();
         });
 
+        modelBuilder.Entity<Fornecedor>(entity =>
+        {
+            entity.Property(f => f.Nome).IsRequired().HasMaxLength(200);
+            entity.Property(f => f.Cnpj).HasMaxLength(20);
+            entity.HasIndex(f => f.Nome).IsUnique();
+            entity.HasIndex(f => f.Cnpj).IsUnique().HasFilter("\"Cnpj\" IS NOT NULL");
+        });
+
         modelBuilder.Entity<NotaFiscalEntrada>(entity =>
         {
             entity.Property(n => n.Numero).IsRequired().HasMaxLength(50);
             entity.Property(n => n.FornecedorNome).HasMaxLength(200);
             entity.Property(n => n.Observacao).HasMaxLength(1000);
             entity.HasIndex(n => n.Numero);
+            entity.HasOne(n => n.Fornecedor).WithMany().HasForeignKey(n => n.FornecedorId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<NotaFiscalItem>(entity =>

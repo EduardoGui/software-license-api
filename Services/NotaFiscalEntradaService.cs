@@ -24,16 +24,16 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
 
     public async Task<List<NotaFiscalEntradaDto>> GetAllAsync(NotaFiscalEntradaFiltroDto filtro)
     {
-        var query = _context.NotasFiscaisEntrada.AsQueryable();
+        var query = _context.NotasFiscaisEntrada.Include(n => n.Fornecedor).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(filtro.Numero))
         {
             query = query.Where(n => EF.Functions.ILike(n.Numero, $"%{filtro.Numero}%"));
         }
 
-        if (!string.IsNullOrWhiteSpace(filtro.FornecedorNome))
+        if (filtro.FornecedorId is not null)
         {
-            query = query.Where(n => n.FornecedorNome != null && EF.Functions.ILike(n.FornecedorNome, $"%{filtro.FornecedorNome}%"));
+            query = query.Where(n => n.FornecedorId == filtro.FornecedorId);
         }
 
         var notas = await query.OrderByDescending(n => n.DataEntrada).ToListAsync();
@@ -45,6 +45,7 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
     public async Task<NotaFiscalEntradaDetalheDto> GetByIdAsync(int id)
     {
         var nota = await _context.NotasFiscaisEntrada
+            .Include(n => n.Fornecedor)
             .Include(n => n.Itens)
             .ThenInclude(i => i.TipoEquipamento)
             .Include(n => n.Itens)
@@ -63,7 +64,7 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
             Id = nota.Id,
             Numero = nota.Numero,
             DataEntrada = nota.DataEntrada,
-            FornecedorNome = nota.FornecedorNome,
+            FornecedorNome = nota.Fornecedor?.Nome,
             Observacao = nota.Observacao,
             DataCriacao = nota.DataCriacao,
             DataAtualizacao = nota.DataAtualizacao,
@@ -73,12 +74,22 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
 
     public async Task<NotaFiscalEntradaDto> CreateAsync(CreateNotaFiscalEntradaDto dto)
     {
+        Fornecedor? fornecedor = null;
+        if (dto.FornecedorId is not null)
+        {
+            fornecedor = await _context.Fornecedores.FindAsync(dto.FornecedorId.Value);
+            if (fornecedor is null)
+            {
+                throw new NotFoundException($"Fornecedor {dto.FornecedorId} não encontrado.");
+            }
+        }
+
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var nota = new NotaFiscalEntrada
         {
             Numero = dto.Numero.Trim(),
             DataEntrada = dto.DataEntrada,
-            FornecedorNome = dto.FornecedorNome,
+            FornecedorId = dto.FornecedorId,
             Observacao = dto.Observacao,
             DataCriacao = agora,
             DataAtualizacao = agora,
@@ -89,12 +100,15 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
 
         _logger.LogInformation("Nota fiscal de entrada {NotaFiscalEntradaId} criada", nota.Id);
 
+        nota.Fornecedor = fornecedor;
         return ParaDto(nota, quantidadeItens: 0);
     }
 
     public async Task<NotaFiscalItemDto> AdicionarItemAsync(int notaFiscalEntradaId, CreateNotaFiscalItemDto dto)
     {
-        var nota = await _context.NotasFiscaisEntrada.FindAsync(notaFiscalEntradaId);
+        var nota = await _context.NotasFiscaisEntrada
+            .Include(n => n.Fornecedor)
+            .FirstOrDefaultAsync(n => n.Id == notaFiscalEntradaId);
         if (nota is null)
         {
             throw new NotFoundException($"Nota fiscal de entrada {notaFiscalEntradaId} não encontrada.");
@@ -153,7 +167,7 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
                 TipoEquipamentoId = tipoEquipamento.Id,
                 NotaFiscalItemId = item.Id,
                 Origem = origem,
-                FornecedorNome = nota.FornecedorNome,
+                FornecedorNome = nota.Fornecedor?.Nome,
                 ValorMensal = origem == EquipamentoOrigem.Locado ? item.ValorUnitario : null,
                 DataInicioContrato = nota.DataEntrada,
                 Status = EquipamentoStatus.Disponivel,
@@ -361,7 +375,7 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
             Id = n.Id,
             Numero = n.Numero,
             DataEntrada = n.DataEntrada,
-            FornecedorNome = n.FornecedorNome,
+            FornecedorNome = n.Fornecedor?.Nome,
             Observacao = n.Observacao,
             QuantidadeItens = quantidadeItens,
             DataCriacao = n.DataCriacao,

@@ -11,8 +11,7 @@ public class CreateNotaFiscalEntradaDto
     [Required(ErrorMessage = "Data de entrada é obrigatória.")]
     public DateOnly DataEntrada { get; set; }
 
-    [MaxLength(200)]
-    public string? FornecedorNome { get; set; }
+    public int? FornecedorId { get; set; }
 
     public string? Observacao { get; set; }
 }
