@@ -1,3 +1,4 @@
+using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
 using SoftwareLicense.Api.Data;
 using SoftwareLicense.Api.DTOs;
@@ -50,6 +51,37 @@ public class PatrimonioItemService : IPatrimonioItemService
 
         var itens = await query.OrderBy(p => p.TipoPatrimonio.Nome).ThenBy(p => p.Id).ToListAsync();
         return itens.Select(ParaDto).ToList();
+    }
+
+    public byte[] GerarExcel(List<PatrimonioItemDto> itens)
+    {
+        using var workbook = new XLWorkbook();
+        var planilha = workbook.Worksheets.Add("Patrimonio");
+
+        string[] cabecalhos = ["Tipo", "Descrição", "Nº Patrimônio", "Local", "Nota Fiscal", "Status"];
+        for (var coluna = 0; coluna < cabecalhos.Length; coluna++)
+        {
+            planilha.Cell(1, coluna + 1).Value = cabecalhos[coluna];
+        }
+        planilha.Row(1).Style.Font.Bold = true;
+
+        var linha = 2;
+        foreach (var item in itens)
+        {
+            planilha.Cell(linha, 1).Value = item.TipoPatrimonioNome;
+            planilha.Cell(linha, 2).Value = item.Descricao ?? "-";
+            planilha.Cell(linha, 3).Value = item.NumeroPatrimonio ?? "-";
+            planilha.Cell(linha, 4).Value = item.LocalNome ?? "-";
+            planilha.Cell(linha, 5).Value = item.NumeroNotaFiscal ?? "-";
+            planilha.Cell(linha, 6).Value = item.Status;
+            linha++;
+        }
+
+        planilha.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
     }
 
     public async Task<PatrimonioItemDto> GetByIdAsync(int id)

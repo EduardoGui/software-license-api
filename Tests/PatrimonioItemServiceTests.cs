@@ -152,6 +152,20 @@ public class PatrimonioItemServiceTests
     }
 
     [Fact]
+    public async Task GerarExcel_DeveGerarArquivoNaoVazio()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        var local = CriarLocal(context);
+        CriarItem(context, tipo, local);
+        var itens = await service.GetAllAsync(new PatrimonioItemFiltroDto());
+
+        var arquivo = service.GerarExcel(itens);
+
+        Assert.NotEmpty(arquivo);
+    }
+
+    [Fact]
     public async Task AdicionarAnexoAsync_DeveSalvarAnexoValido()
     {
         var (service, context) = CriarService();

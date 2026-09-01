@@ -18,9 +18,17 @@ public class PatrimonioItensController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<List<PatrimonioItemDto>>> GetAll([FromQuery] PatrimonioItemFiltroDto filtro)
+    public async Task<IActionResult> GetAll([FromQuery] PatrimonioItemFiltroDto filtro, [FromQuery] string? formato)
     {
         var itens = await _patrimonioItemService.GetAllAsync(filtro);
+
+        if (string.Equals(formato, "xlsx", StringComparison.OrdinalIgnoreCase))
+        {
+            var arquivo = _patrimonioItemService.GerarExcel(itens);
+            var nomeArquivo = $"patrimonio-{DateTime.Now:yyyyMMdd}.xlsx";
+            return File(arquivo, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", nomeArquivo);
+        }
+
         return Ok(itens);
     }
 

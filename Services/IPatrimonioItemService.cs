@@ -5,6 +5,7 @@ namespace SoftwareLicense.Api.Services;
 public interface IPatrimonioItemService
 {
     Task<List<PatrimonioItemDto>> GetAllAsync(PatrimonioItemFiltroDto filtro);
+    byte[] GerarExcel(List<PatrimonioItemDto> itens);
     Task<PatrimonioItemDto> GetByIdAsync(int id);
     Task<PatrimonioItemDto> UpdateAsync(int id, UpdatePatrimonioItemDto dto);
     Task<PatrimonioItemDto> BaixarAsync(int id);
