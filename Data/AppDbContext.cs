@@ -40,6 +40,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<NotaDebitoPj> NotasDebitoPj => Set<NotaDebitoPj>();
     public DbSet<NotaDebitoPjAnexo> NotasDebitoPjAnexos => Set<NotaDebitoPjAnexo>();
     public DbSet<Fornecedor> Fornecedores => Set<Fornecedor>();
+    public DbSet<Contrato> Contratos => Set<Contrato>();
+    public DbSet<ContratoItem> ContratoItens => Set<ContratoItem>();
+    public DbSet<ContratoMedicaoConfig> ContratoMedicaoConfigs => Set<ContratoMedicaoConfig>();
+    public DbSet<ContratoFaturamentoConfig> ContratoFaturamentoConfigs => Set<ContratoFaturamentoConfig>();
+    public DbSet<ContratoAnexo> ContratoAnexos => Set<ContratoAnexo>();
+    public DbSet<Aditivo> Aditivos => Set<Aditivo>();
+    public DbSet<AditivoItem> AditivoItens => Set<AditivoItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -234,6 +241,74 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(n => n.Observacao).HasMaxLength(1000);
             entity.HasIndex(n => n.Numero);
             entity.HasOne(n => n.Fornecedor).WithMany().HasForeignKey(n => n.FornecedorId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Contrato>(entity =>
+        {
+            entity.Property(c => c.Numero).IsRequired().HasMaxLength(200);
+            entity.Property(c => c.Objeto).IsRequired().HasMaxLength(500);
+            entity.Property(c => c.Natureza).HasMaxLength(100);
+            entity.Property(c => c.ValorOriginal).HasPrecision(18, 2);
+            entity.Property(c => c.Status).IsRequired().HasMaxLength(20);
+            entity.Property(c => c.Observacoes).HasMaxLength(2000);
+            entity.HasIndex(c => c.Numero).IsUnique();
+            entity.HasOne(c => c.Fornecedor).WithMany().HasForeignKey(c => c.FornecedorId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ContratoItem>(entity =>
+        {
+            entity.Property(i => i.Codigo).HasMaxLength(50);
+            entity.Property(i => i.Descricao).IsRequired().HasMaxLength(300);
+            entity.Property(i => i.Unidade).IsRequired().HasMaxLength(20);
+            entity.Property(i => i.QuantidadeContratada).HasPrecision(18, 6);
+            entity.Property(i => i.ValorUnitario).HasPrecision(18, 2);
+            entity.HasIndex(i => i.ContratoId);
+            entity.HasOne(i => i.Contrato).WithMany(c => c.Itens).HasForeignKey(i => i.ContratoId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ContratoMedicaoConfig>(entity =>
+        {
+            entity.Property(m => m.TipoMedicao).IsRequired().HasMaxLength(30);
+            entity.Property(m => m.MetodoProRata).HasMaxLength(30);
+            entity.HasIndex(m => m.ContratoId).IsUnique();
+            entity.HasOne(m => m.Contrato).WithOne().HasForeignKey<ContratoMedicaoConfig>(m => m.ContratoId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ContratoFaturamentoConfig>(entity =>
+        {
+            entity.HasIndex(f => f.ContratoId).IsUnique();
+            entity.HasOne(f => f.Contrato).WithOne().HasForeignKey<ContratoFaturamentoConfig>(f => f.ContratoId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ContratoAnexo>(entity =>
+        {
+            entity.Property(a => a.NomeArquivo).IsRequired().HasMaxLength(255);
+            entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
+            entity.HasIndex(a => a.ContratoId);
+            entity.HasOne(a => a.Contrato).WithMany().HasForeignKey(a => a.ContratoId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Aditivo>(entity =>
+        {
+            entity.Property(a => a.Descricao).IsRequired().HasMaxLength(500);
+            entity.Property(a => a.DeltaValor).HasPrecision(18, 2);
+            entity.Property(a => a.PercentualReajuste).HasPrecision(9, 4);
+            entity.Property(a => a.Status).IsRequired().HasMaxLength(20);
+            entity.Property(a => a.Observacao).HasMaxLength(2000);
+            entity.HasIndex(a => new { a.ContratoId, a.Numero }).IsUnique();
+            entity.HasOne(a => a.Contrato).WithMany().HasForeignKey(a => a.ContratoId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<AditivoItem>(entity =>
+        {
+            entity.Property(i => i.DescricaoNovoItem).HasMaxLength(300);
+            entity.Property(i => i.CodigoNovoItem).HasMaxLength(50);
+            entity.Property(i => i.UnidadeNovoItem).HasMaxLength(20);
+            entity.Property(i => i.DeltaQuantidade).HasPrecision(18, 6);
+            entity.Property(i => i.NovoValorUnitario).HasPrecision(18, 2);
+            entity.HasIndex(i => i.AditivoId);
+            entity.HasOne(i => i.Aditivo).WithMany(a => a.Itens).HasForeignKey(i => i.AditivoId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(i => i.ContratoItem).WithMany().HasForeignKey(i => i.ContratoItemId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<NotaFiscalItem>(entity =>

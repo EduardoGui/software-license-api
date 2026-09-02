@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SoftwareLicense.Api.Data;
@@ -11,9 +12,11 @@ using SoftwareLicense.Api.Data;
 namespace SoftwareLicense.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260902183728_AddContratoModuloBase")]
+    partial class AddContratoModuloBase
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -152,111 +155,6 @@ namespace SoftwareLicense.Api.Migrations
                     b.HasKey("UserId", "LoginProvider", "Name");
 
                     b.ToTable("AspNetUserTokens", (string)null);
-                });
-
-            modelBuilder.Entity("SoftwareLicense.Api.Entities.Aditivo", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("ContratoId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateOnly>("DataAssinatura")
-                        .HasColumnType("date");
-
-                    b.Property<DateTime>("DataAtualizacao")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("DataCriacao")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateOnly>("DataEfeito")
-                        .HasColumnType("date");
-
-                    b.Property<DateTime?>("DataFormalizacao")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<decimal?>("DeltaValor")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("Descricao")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<DateOnly?>("NovaDataFimVigencia")
-                        .HasColumnType("date");
-
-                    b.Property<int>("Numero")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Observacao")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<decimal?>("PercentualReajuste")
-                        .HasPrecision(9, 4)
-                        .HasColumnType("numeric(9,4)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ContratoId", "Numero")
-                        .IsUnique();
-
-                    b.ToTable("Aditivos");
-                });
-
-            modelBuilder.Entity("SoftwareLicense.Api.Entities.AditivoItem", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AditivoId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("CodigoNovoItem")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<int?>("ContratoItemId")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("DeltaQuantidade")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)");
-
-                    b.Property<string>("DescricaoNovoItem")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<decimal?>("NovoValorUnitario")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("UnidadeNovoItem")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AditivoId");
-
-                    b.HasIndex("ContratoItemId");
-
-                    b.ToTable("AditivoItens");
                 });
 
             modelBuilder.Entity("SoftwareLicense.Api.Entities.ApplicationUser", b =>
@@ -1901,35 +1799,6 @@ namespace SoftwareLicense.Api.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("SoftwareLicense.Api.Entities.Aditivo", b =>
-                {
-                    b.HasOne("SoftwareLicense.Api.Entities.Contrato", "Contrato")
-                        .WithMany()
-                        .HasForeignKey("ContratoId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Contrato");
-                });
-
-            modelBuilder.Entity("SoftwareLicense.Api.Entities.AditivoItem", b =>
-                {
-                    b.HasOne("SoftwareLicense.Api.Entities.Aditivo", "Aditivo")
-                        .WithMany("Itens")
-                        .HasForeignKey("AditivoId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SoftwareLicense.Api.Entities.ContratoItem", "ContratoItem")
-                        .WithMany()
-                        .HasForeignKey("ContratoItemId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("Aditivo");
-
-                    b.Navigation("ContratoItem");
-                });
-
             modelBuilder.Entity("SoftwareLicense.Api.Entities.ApplicationUser", b =>
                 {
                     b.HasOne("SoftwareLicense.Api.Entities.Usuario", "Usuario")
@@ -2320,11 +2189,6 @@ namespace SoftwareLicense.Api.Migrations
                     b.Navigation("Licenca");
 
                     b.Navigation("Usuario");
-                });
-
-            modelBuilder.Entity("SoftwareLicense.Api.Entities.Aditivo", b =>
-                {
-                    b.Navigation("Itens");
                 });
 
             modelBuilder.Entity("SoftwareLicense.Api.Entities.Contrato", b =>

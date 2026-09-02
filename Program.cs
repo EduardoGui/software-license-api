@@ -124,6 +124,7 @@ builder.Services.AddScoped<IPlanoSaudeCustoService, PlanoSaudeCustoService>();
 builder.Services.AddScoped<IRelatorioMensalPlanoSaudeService, RelatorioMensalPlanoSaudeService>();
 builder.Services.AddScoped<INotaDebitoPjService, NotaDebitoPjService>();
 builder.Services.AddScoped<IFornecedorService, FornecedorService>();
+builder.Services.AddScoped<IContratoService, ContratoService>();
 
 builder.Services.AddCors(options =>
 {
