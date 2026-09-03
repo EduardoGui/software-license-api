@@ -319,6 +319,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<MedicaoBm>(entity =>
         {
             entity.Property(m => m.Status).IsRequired().HasMaxLength(30);
+            entity.Property(m => m.NumeroReferencia).HasMaxLength(50);
             entity.Property(m => m.ObservacaoAprovador).HasMaxLength(2000);
             entity.Property(m => m.ValorTotalMedido).HasPrecision(18, 2);
             entity.Property(m => m.Observacao).HasMaxLength(2000);

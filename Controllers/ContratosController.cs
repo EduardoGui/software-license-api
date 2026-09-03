@@ -151,6 +151,13 @@ public class ContratosController : ControllerBase
         return Ok(medicao);
     }
 
+    [HttpDelete("{id:int}/medicoes/{medicaoId:int}")]
+    public async Task<IActionResult> ExcluirMedicao(int id, int medicaoId)
+    {
+        await _contratoService.ExcluirMedicaoBmAsync(id, medicaoId);
+        return NoContent();
+    }
+
     [HttpPatch("{id:int}/medicoes/{medicaoId:int}/aprovar")]
     public async Task<ActionResult<MedicaoBmDto>> AprovarMedicao(int id, int medicaoId)
     {

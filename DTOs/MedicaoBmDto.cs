@@ -5,6 +5,7 @@ public class MedicaoBmDto
     public int Id { get; set; }
     public int ContratoId { get; set; }
     public int Numero { get; set; }
+    public string? NumeroReferencia { get; set; }
     public DateOnly PeriodoInicio { get; set; }
     public DateOnly PeriodoFim { get; set; }
     public DateOnly? DataEnvio { get; set; }

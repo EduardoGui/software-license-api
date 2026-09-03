@@ -659,6 +659,62 @@ public class ContratoServiceTests
     }
 
     [Fact]
+    public async Task ExcluirMedicaoBmAsync_DeveExcluirBmEmRascunho()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+
+        await service.ExcluirMedicaoBmAsync(contrato.Id, bm.Id);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => service.ObterMedicaoAsync(contrato.Id, bm.Id));
+        Assert.Empty(await context.MedicaoBmItens.Where(i => i.MedicaoBmId == bm.Id).ToListAsync());
+    }
+
+    [Fact]
+    public async Task ExcluirMedicaoBmAsync_DeveRejeitarBmAprovado()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        await service.AprovarMedicaoBmAsync(contrato.Id, bm.Id, 7);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.ExcluirMedicaoBmAsync(contrato.Id, bm.Id));
+    }
+
+    [Fact]
+    public async Task ExcluirMedicaoBmAsync_DeveRejeitarBmReprovado()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        await service.ReprovarMedicaoBmAsync(contrato.Id, bm.Id, 7, new ReprovarMedicaoBmDto());
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.ExcluirMedicaoBmAsync(contrato.Id, bm.Id));
+    }
+
+    [Fact]
+    public async Task AtualizarMedicaoBmAsync_DeveSalvarNumeroReferencia()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+
+        var atualizado = await service.AtualizarMedicaoBmAsync(contrato.Id, bm.Id, new UpdateMedicaoBmDto
+        {
+            NumeroReferencia = "006",
+            Itens = [new UpdateMedicaoBmItemDto { ItemId = bm.Itens[0].Id, QuantidadeMedidaNestaBm = 1m }],
+        });
+
+        Assert.Equal("006", atualizado.NumeroReferencia);
+        Assert.Equal(bm.Numero, atualizado.Numero);
+    }
+
+    [Fact]
     public async Task ListarMedicoesAsync_DeveRetornarEmOrdemDeNumero()
     {
         var (service, context) = CriarService();

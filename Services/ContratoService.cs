@@ -621,6 +621,7 @@ public class ContratoService : IContratoService
 
         medicao.DataEnvio = dto.DataEnvio ?? medicao.DataEnvio;
         medicao.Observacao = dto.Observacao;
+        medicao.NumeroReferencia = dto.NumeroReferencia?.Trim();
         medicao.ValorTotalMedido = medicao.Itens.Sum(i => i.ValorTotalItem);
         medicao.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
 
@@ -629,6 +630,27 @@ public class ContratoService : IContratoService
         _logger.LogInformation("BM {MedicaoId} do contrato {ContratoId} atualizado", medicaoId, contratoId);
 
         return ParaMedicaoBmDto(medicao);
+    }
+
+    public async Task ExcluirMedicaoBmAsync(int contratoId, int medicaoId)
+    {
+        var medicao = await BuscarMedicaoOuFalhar(contratoId, medicaoId);
+
+        if (medicao.Status != MedicaoBmStatus.Rascunho)
+        {
+            throw new BusinessRuleException("Só é possível excluir um BM enquanto estiver em Rascunho.");
+        }
+
+        var anexos = await _context.MedicaoBmAnexos.Where(a => a.MedicaoBmId == medicaoId).ToListAsync();
+        _context.MedicaoBmAnexos.RemoveRange(anexos);
+        _context.MedicaoBmImpostos.RemoveRange(medicao.Impostos);
+        _context.MedicaoBmAcertos.RemoveRange(medicao.Acertos);
+        _context.MedicaoBmItens.RemoveRange(medicao.Itens);
+        _context.MedicaoBms.Remove(medicao);
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("BM {MedicaoId} do contrato {ContratoId} excluído", medicaoId, contratoId);
     }
 
     // Prioridade: AjusteManual sempre sobrepuja (equivale ao método ValorManual, mas serve como
@@ -1105,6 +1127,7 @@ public class ContratoService : IContratoService
         Id = m.Id,
         ContratoId = m.ContratoId,
         Numero = m.Numero,
+        NumeroReferencia = m.NumeroReferencia,
         PeriodoInicio = m.PeriodoInicio,
         PeriodoFim = m.PeriodoFim,
         DataEnvio = m.DataEnvio,

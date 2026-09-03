@@ -21,6 +21,7 @@ public interface IContratoService
     Task<MedicaoBmDto> ObterMedicaoAsync(int contratoId, int medicaoId);
     Task<MedicaoBmDto> CriarMedicaoBmAsync(int contratoId, CreateMedicaoBmDto dto);
     Task<MedicaoBmDto> AtualizarMedicaoBmAsync(int contratoId, int medicaoId, UpdateMedicaoBmDto dto);
+    Task ExcluirMedicaoBmAsync(int contratoId, int medicaoId);
     Task<MedicaoBmDto> AprovarMedicaoBmAsync(int contratoId, int medicaoId, int? aprovadorUsuarioId);
     Task<MedicaoBmDto> ReprovarMedicaoBmAsync(int contratoId, int medicaoId, int? aprovadorUsuarioId, ReprovarMedicaoBmDto dto);
     Task<List<ContratoSaldoItemDto>> ObterSaldoAsync(int contratoId);

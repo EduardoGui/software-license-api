@@ -6,6 +6,7 @@ public class MedicaoBm
     public int ContratoId { get; set; }
     public Contrato Contrato { get; set; } = null!;
     public int Numero { get; set; }
+    public string? NumeroReferencia { get; set; }
     public DateOnly PeriodoInicio { get; set; }
     public DateOnly PeriodoFim { get; set; }
     public DateOnly? DataEnvio { get; set; }
