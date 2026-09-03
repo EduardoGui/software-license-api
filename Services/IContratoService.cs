@@ -17,4 +17,15 @@ public interface IContratoService
     Task<List<AditivoDto>> ListarAditivosAsync(int contratoId);
     Task<AditivoDto> CriarAditivoAsync(int contratoId, CreateAditivoDto dto);
     Task<AditivoDto> FormalizarAditivoAsync(int contratoId, int aditivoId);
+    Task<List<MedicaoBmDto>> ListarMedicoesAsync(int contratoId);
+    Task<MedicaoBmDto> ObterMedicaoAsync(int contratoId, int medicaoId);
+    Task<MedicaoBmDto> CriarMedicaoBmAsync(int contratoId, CreateMedicaoBmDto dto);
+    Task<MedicaoBmDto> AtualizarMedicaoBmAsync(int contratoId, int medicaoId, UpdateMedicaoBmDto dto);
+    Task<MedicaoBmDto> AprovarMedicaoBmAsync(int contratoId, int medicaoId, int? aprovadorUsuarioId);
+    Task<MedicaoBmDto> ReprovarMedicaoBmAsync(int contratoId, int medicaoId, int? aprovadorUsuarioId, ReprovarMedicaoBmDto dto);
+    Task<List<ContratoSaldoItemDto>> ObterSaldoAsync(int contratoId);
+    Task<List<AnexoDto>> ListarAnexosMedicaoAsync(int contratoId, int medicaoId);
+    Task<AnexoDto> AdicionarAnexoMedicaoAsync(int contratoId, int medicaoId, AdicionarAnexoDto dto);
+    Task<AnexoArquivoDto> ObterAnexoMedicaoAsync(int contratoId, int medicaoId, int anexoId);
+    Task ExcluirAnexoMedicaoAsync(int contratoId, int medicaoId, int anexoId);
 }

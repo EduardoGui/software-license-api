@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SoftwareLicense.Api.Data;
@@ -11,9 +12,11 @@ using SoftwareLicense.Api.Data;
 namespace SoftwareLicense.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260902205220_AddMedicaoBmModuloBase")]
+    partial class AddMedicaoBmModuloBase
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1096,50 +1099,6 @@ namespace SoftwareLicense.Api.Migrations
                     b.ToTable("MedicaoBms");
                 });
 
-            modelBuilder.Entity("SoftwareLicense.Api.Entities.MedicaoBmAcerto", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Descricao")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<int>("MedicaoBmId")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("MedicaoBmItemId")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("PrecoTotal")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal?>("PrecoUnitario")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal?>("Quantidade")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)");
-
-                    b.Property<string>("Unidade")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MedicaoBmId");
-
-                    b.HasIndex("MedicaoBmItemId");
-
-                    b.ToTable("MedicaoBmAcertos");
-                });
-
             modelBuilder.Entity("SoftwareLicense.Api.Entities.MedicaoBmAnexo", b =>
                 {
                     b.Property<int>("Id")
@@ -1176,46 +1135,6 @@ namespace SoftwareLicense.Api.Migrations
                     b.HasIndex("MedicaoBmId");
 
                     b.ToTable("MedicaoBmAnexos");
-                });
-
-            modelBuilder.Entity("SoftwareLicense.Api.Entities.MedicaoBmImposto", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<decimal>("Aliquota")
-                        .HasPrecision(9, 4)
-                        .HasColumnType("numeric(9,4)");
-
-                    b.Property<decimal>("Base")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("Descricao")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<int>("MedicaoBmId")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("MedicaoBmItemId")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("ValorTotal")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MedicaoBmId");
-
-                    b.HasIndex("MedicaoBmItemId");
-
-                    b.ToTable("MedicaoBmImpostos");
                 });
 
             modelBuilder.Entity("SoftwareLicense.Api.Entities.MedicaoBmItem", b =>
@@ -1289,14 +1208,6 @@ namespace SoftwareLicense.Api.Migrations
                     b.Property<decimal>("SaldoDepois")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)");
-
-                    b.Property<decimal>("SaldoValorAntes")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("SaldoValorDepois")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
 
                     b.Property<string>("UnidadeNoMomento")
                         .IsRequired()
@@ -2381,24 +2292,6 @@ namespace SoftwareLicense.Api.Migrations
                     b.Navigation("Contrato");
                 });
 
-            modelBuilder.Entity("SoftwareLicense.Api.Entities.MedicaoBmAcerto", b =>
-                {
-                    b.HasOne("SoftwareLicense.Api.Entities.MedicaoBm", "MedicaoBm")
-                        .WithMany("Acertos")
-                        .HasForeignKey("MedicaoBmId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SoftwareLicense.Api.Entities.MedicaoBmItem", "MedicaoBmItem")
-                        .WithMany()
-                        .HasForeignKey("MedicaoBmItemId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("MedicaoBm");
-
-                    b.Navigation("MedicaoBmItem");
-                });
-
             modelBuilder.Entity("SoftwareLicense.Api.Entities.MedicaoBmAnexo", b =>
                 {
                     b.HasOne("SoftwareLicense.Api.Entities.MedicaoBm", "MedicaoBm")
@@ -2408,24 +2301,6 @@ namespace SoftwareLicense.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("MedicaoBm");
-                });
-
-            modelBuilder.Entity("SoftwareLicense.Api.Entities.MedicaoBmImposto", b =>
-                {
-                    b.HasOne("SoftwareLicense.Api.Entities.MedicaoBm", "MedicaoBm")
-                        .WithMany("Impostos")
-                        .HasForeignKey("MedicaoBmId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SoftwareLicense.Api.Entities.MedicaoBmItem", "MedicaoBmItem")
-                        .WithMany()
-                        .HasForeignKey("MedicaoBmItemId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("MedicaoBm");
-
-                    b.Navigation("MedicaoBmItem");
                 });
 
             modelBuilder.Entity("SoftwareLicense.Api.Entities.MedicaoBmItem", b =>
@@ -2712,10 +2587,6 @@ namespace SoftwareLicense.Api.Migrations
 
             modelBuilder.Entity("SoftwareLicense.Api.Entities.MedicaoBm", b =>
                 {
-                    b.Navigation("Acertos");
-
-                    b.Navigation("Impostos");
-
                     b.Navigation("Itens");
                 });
 

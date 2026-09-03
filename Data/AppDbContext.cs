@@ -47,6 +47,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<ContratoAnexo> ContratoAnexos => Set<ContratoAnexo>();
     public DbSet<Aditivo> Aditivos => Set<Aditivo>();
     public DbSet<AditivoItem> AditivoItens => Set<AditivoItem>();
+    public DbSet<MedicaoBm> MedicaoBms => Set<MedicaoBm>();
+    public DbSet<MedicaoBmItem> MedicaoBmItens => Set<MedicaoBmItem>();
+    public DbSet<MedicaoBmAnexo> MedicaoBmAnexos => Set<MedicaoBmAnexo>();
+    public DbSet<MedicaoBmAcerto> MedicaoBmAcertos => Set<MedicaoBmAcerto>();
+    public DbSet<MedicaoBmImposto> MedicaoBmImpostos => Set<MedicaoBmImposto>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -309,6 +314,70 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(i => i.AditivoId);
             entity.HasOne(i => i.Aditivo).WithMany(a => a.Itens).HasForeignKey(i => i.AditivoId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(i => i.ContratoItem).WithMany().HasForeignKey(i => i.ContratoItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<MedicaoBm>(entity =>
+        {
+            entity.Property(m => m.Status).IsRequired().HasMaxLength(30);
+            entity.Property(m => m.ObservacaoAprovador).HasMaxLength(2000);
+            entity.Property(m => m.ValorTotalMedido).HasPrecision(18, 2);
+            entity.Property(m => m.Observacao).HasMaxLength(2000);
+            entity.HasIndex(m => new { m.ContratoId, m.Numero }).IsUnique();
+            entity.HasOne(m => m.Contrato).WithMany().HasForeignKey(m => m.ContratoId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(m => m.Aprovador).WithMany().HasForeignKey(m => m.AprovadorId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<MedicaoBmItem>(entity =>
+        {
+            entity.Property(i => i.DescricaoNoMomento).IsRequired().HasMaxLength(300);
+            entity.Property(i => i.UnidadeNoMomento).IsRequired().HasMaxLength(20);
+            entity.Property(i => i.QuantidadeContratadaNoMomento).HasPrecision(18, 6);
+            entity.Property(i => i.QuantidadeJaMedidaAntes).HasPrecision(18, 6);
+            entity.Property(i => i.SaldoAntes).HasPrecision(18, 6);
+            entity.Property(i => i.QuantidadeMedidaNestaBm).HasPrecision(18, 6);
+            entity.Property(i => i.SaldoDepois).HasPrecision(18, 6);
+            entity.Property(i => i.ValorUnitarioNoMomento).HasPrecision(18, 2);
+            entity.Property(i => i.ValorTotalItem).HasPrecision(18, 2);
+            entity.Property(i => i.SaldoValorAntes).HasPrecision(18, 2);
+            entity.Property(i => i.SaldoValorDepois).HasPrecision(18, 2);
+            entity.Property(i => i.PercentualProRata).HasPrecision(9, 4);
+            entity.Property(i => i.AjusteManual).HasPrecision(18, 2);
+            entity.Property(i => i.JustificativaAjuste).HasMaxLength(1000);
+            entity.HasIndex(i => i.MedicaoBmId);
+            entity.HasOne(i => i.MedicaoBm).WithMany(m => m.Itens).HasForeignKey(i => i.MedicaoBmId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(i => i.ContratoItem).WithMany().HasForeignKey(i => i.ContratoItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(i => i.AditivoItem).WithMany().HasForeignKey(i => i.AditivoItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<MedicaoBmAnexo>(entity =>
+        {
+            entity.Property(a => a.NomeArquivo).IsRequired().HasMaxLength(255);
+            entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
+            entity.HasIndex(a => a.MedicaoBmId);
+            entity.HasOne(a => a.MedicaoBm).WithMany().HasForeignKey(a => a.MedicaoBmId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<MedicaoBmAcerto>(entity =>
+        {
+            entity.Property(a => a.Descricao).IsRequired().HasMaxLength(300);
+            entity.Property(a => a.Unidade).HasMaxLength(20);
+            entity.Property(a => a.Quantidade).HasPrecision(18, 6);
+            entity.Property(a => a.PrecoUnitario).HasPrecision(18, 2);
+            entity.Property(a => a.PrecoTotal).HasPrecision(18, 2);
+            entity.HasIndex(a => a.MedicaoBmId);
+            entity.HasOne(a => a.MedicaoBm).WithMany(m => m.Acertos).HasForeignKey(a => a.MedicaoBmId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(a => a.MedicaoBmItem).WithMany().HasForeignKey(a => a.MedicaoBmItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<MedicaoBmImposto>(entity =>
+        {
+            entity.Property(i => i.Descricao).IsRequired().HasMaxLength(100);
+            entity.Property(i => i.Aliquota).HasPrecision(9, 4);
+            entity.Property(i => i.Base).HasPrecision(18, 2);
+            entity.Property(i => i.ValorTotal).HasPrecision(18, 2);
+            entity.HasIndex(i => i.MedicaoBmId);
+            entity.HasOne(i => i.MedicaoBm).WithMany(m => m.Impostos).HasForeignKey(i => i.MedicaoBmId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(i => i.MedicaoBmItem).WithMany().HasForeignKey(i => i.MedicaoBmItemId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<NotaFiscalItem>(entity =>
