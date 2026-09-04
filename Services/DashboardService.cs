@@ -75,6 +75,8 @@ public class DashboardService : IDashboardService
             })
             .ToList();
 
+        var alertasMedicao = await ObterAlertasMedicaoAsync(hoje);
+
         return new DashboardDto
         {
             UsuariosAtivos = usuariosAtivos,
@@ -87,8 +89,89 @@ public class DashboardService : IDashboardService
             EquipamentosLocadosAtivosPorTipo = equipamentosLocadosAtivosPorTipo,
             CustoMensalLocacaoAtual = relatorioMesAtual.TotalGeral,
             ProximosVencimentosContratos = proximosVencimentosContratos,
+            AlertasMedicao = alertasMedicao,
         };
     }
+
+    // Alerta de medição: pra cada contrato Ativo cuja configuração de medição exige BM e tem
+    // "dias de antecedência do alerta" preenchido, calcula o fim do período de medição corrente
+    // (baseado em DiaFimPeriodo, rolando pro mês seguinte se hoje já passou do fim deste mês) e
+    // avisa quando esse fim estiver a N dias ou menos (negativo = já vencido) — mas só se ainda não
+    // existe nenhum BM (de qualquer status) criado pra esse período.
+    private async Task<List<AlertaMedicaoDto>> ObterAlertasMedicaoAsync(DateOnly hoje)
+    {
+        var configs = await _context.ContratoMedicaoConfigs
+            .Where(c => c.ExigeBm && c.DiasAntecedenciaAlerta != null && c.DiaFimPeriodo != null)
+            .ToListAsync();
+
+        if (configs.Count == 0)
+        {
+            return [];
+        }
+
+        var contratoIds = configs.Select(c => c.ContratoId).ToList();
+        var contratos = await _context.Contratos
+            .Include(c => c.Fornecedor)
+            .Where(c => contratoIds.Contains(c.Id) && c.Status == ContratoStatus.Ativo)
+            .ToDictionaryAsync(c => c.Id);
+
+        var periodosComBm = (await _context.MedicaoBms
+                .Where(m => contratoIds.Contains(m.ContratoId))
+                .Select(m => new { m.ContratoId, m.PeriodoFim })
+                .ToListAsync())
+            .Select(m => (m.ContratoId, m.PeriodoFim))
+            .ToHashSet();
+
+        var alertas = new List<AlertaMedicaoDto>();
+
+        foreach (var config in configs)
+        {
+            if (!contratos.TryGetValue(config.ContratoId, out var contrato))
+            {
+                continue;
+            }
+
+            var diaFimPeriodo = config.DiaFimPeriodo!.Value;
+            var periodoFimAtual = FimDoPeriodoCorrente(hoje, diaFimPeriodo);
+            var diasParaVencer = periodoFimAtual.DayNumber - hoje.DayNumber;
+
+            if (diasParaVencer > config.DiasAntecedenciaAlerta!.Value)
+            {
+                continue;
+            }
+
+            if (periodosComBm.Contains((contrato.Id, periodoFimAtual)))
+            {
+                continue;
+            }
+
+            alertas.Add(new AlertaMedicaoDto
+            {
+                ContratoId = contrato.Id,
+                ContratoNumero = contrato.Numero,
+                FornecedorNome = contrato.Fornecedor.Nome,
+                PeriodoFim = periodoFimAtual,
+                DiasParaVencer = diasParaVencer,
+            });
+        }
+
+        return alertas.OrderBy(a => a.DiasParaVencer).Take(10).ToList();
+    }
+
+    private static DateOnly FimDoPeriodoCorrente(DateOnly hoje, int diaFimPeriodo)
+    {
+        var fim = ClampAoMes(hoje.Year, hoje.Month, diaFimPeriodo);
+        if (hoje > fim)
+        {
+            var proximoMes = hoje.AddMonths(1);
+            fim = ClampAoMes(proximoMes.Year, proximoMes.Month, diaFimPeriodo);
+        }
+
+        return fim;
+    }
+
+    private static DateOnly ClampAoMes(int ano, int mes, int dia) =>
+        new(ano, mes, Math.Min(dia, DateTime.DaysInMonth(ano, mes)));
 
     private static List<EquipamentoContagemPorTipoDto> AgruparPorTipo(IEnumerable<Equipamento> equipamentos) =>
         equipamentos

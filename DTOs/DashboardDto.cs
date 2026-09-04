@@ -12,4 +12,5 @@ public class DashboardDto
     public List<EquipamentoContagemPorTipoDto> EquipamentosLocadosAtivosPorTipo { get; set; } = [];
     public decimal CustoMensalLocacaoAtual { get; set; }
     public List<VencimentoContratoDto> ProximosVencimentosContratos { get; set; } = [];
+    public List<AlertaMedicaoDto> AlertasMedicao { get; set; } = [];
 }

@@ -246,6 +246,130 @@ public class DashboardServiceTests
         Assert.Equal(160m, dashboard.CustoMensalLocacaoAtual);
     }
 
+    private static Fornecedor CriarFornecedor(AppDbContext context, string nome = "Fornecedor Teste")
+    {
+        var fornecedor = new Fornecedor { Nome = nome, Ativo = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        context.Fornecedores.Add(fornecedor);
+        context.SaveChanges();
+        return fornecedor;
+    }
+
+    private static Contrato CriarContratoComMedicao(
+        AppDbContext context,
+        Fornecedor fornecedor,
+        string numero,
+        int? diaFimPeriodo,
+        int? diasAntecedenciaAlerta,
+        bool exigeBm = true,
+        string status = "Ativo")
+    {
+        var contrato = new Contrato
+        {
+            Numero = numero,
+            FornecedorId = fornecedor.Id,
+            Objeto = "Teste",
+            DataAssinatura = Hoje.AddYears(-1),
+            DataInicioVigencia = Hoje.AddYears(-1),
+            DataFimVigenciaOriginal = Hoje.AddYears(1),
+            ValorOriginal = 1000m,
+            Status = status,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Contratos.Add(contrato);
+        context.SaveChanges();
+
+        context.ContratoMedicaoConfigs.Add(new ContratoMedicaoConfig
+        {
+            ContratoId = contrato.Id,
+            TipoMedicao = "QuantidadeXPrecoUnitario",
+            DiaInicioPeriodo = 1,
+            DiaFimPeriodo = diaFimPeriodo,
+            ExigeBm = exigeBm,
+            DiasAntecedenciaAlerta = diasAntecedenciaAlerta,
+        });
+        context.SaveChanges();
+
+        return contrato;
+    }
+
+    [Fact]
+    public async Task ObterAsync_DeveAlertarMedicaoQuandoPeriodoAtualEstaDentroDoPrazo()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        // Hoje = 12/08/2026. Período fecha dia 15 (ainda este mês) — faltam 3 dias.
+        CriarContratoComMedicao(context, fornecedor, "CT-001", diaFimPeriodo: 15, diasAntecedenciaAlerta: 5);
+
+        var dashboard = await service.ObterAsync();
+
+        var alerta = Assert.Single(dashboard.AlertasMedicao);
+        Assert.Equal("CT-001", alerta.ContratoNumero);
+        Assert.Equal(new DateOnly(2026, 8, 15), alerta.PeriodoFim);
+        Assert.Equal(3, alerta.DiasParaVencer);
+    }
+
+    [Fact]
+    public async Task ObterAsync_NaoDeveAlertarQuandoPeriodoAindaEstaLonge()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        CriarContratoComMedicao(context, fornecedor, "CT-002", diaFimPeriodo: 28, diasAntecedenciaAlerta: 5);
+
+        var dashboard = await service.ObterAsync();
+
+        Assert.Empty(dashboard.AlertasMedicao);
+    }
+
+    [Fact]
+    public async Task ObterAsync_DeveRolarParaOMesSeguinteQuandoPeriodoAtualJaPassou()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        // Dia de fechamento (5) já passou este mês (hoje é 12) — o período corrente é o de setembro.
+        CriarContratoComMedicao(context, fornecedor, "CT-003", diaFimPeriodo: 5, diasAntecedenciaAlerta: 30);
+
+        var dashboard = await service.ObterAsync();
+
+        var alerta = Assert.Single(dashboard.AlertasMedicao);
+        Assert.Equal(new DateOnly(2026, 9, 5), alerta.PeriodoFim);
+    }
+
+    [Fact]
+    public async Task ObterAsync_NaoDeveAlertarQuandoJaExisteBmParaOPeriodo()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = CriarContratoComMedicao(context, fornecedor, "CT-004", diaFimPeriodo: 15, diasAntecedenciaAlerta: 5);
+        context.MedicaoBms.Add(new MedicaoBm
+        {
+            ContratoId = contrato.Id,
+            Numero = 1,
+            PeriodoInicio = new DateOnly(2026, 8, 1),
+            PeriodoFim = new DateOnly(2026, 8, 15),
+            Status = MedicaoBmStatus.Rascunho,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        });
+        await context.SaveChangesAsync();
+
+        var dashboard = await service.ObterAsync();
+
+        Assert.Empty(dashboard.AlertasMedicao);
+    }
+
+    [Fact]
+    public async Task ObterAsync_NaoDeveAlertarContratoQueNaoExigeBm()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        CriarContratoComMedicao(context, fornecedor, "CT-005", diaFimPeriodo: 15, diasAntecedenciaAlerta: 5, exigeBm: false);
+
+        var dashboard = await service.ObterAsync();
+
+        Assert.Empty(dashboard.AlertasMedicao);
+    }
+
     [Fact]
     public async Task ObterAsync_DeveListarContratosVencendoDentroDoPrazo()
     {
