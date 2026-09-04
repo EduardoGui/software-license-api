@@ -480,14 +480,22 @@ public class ContratoService : IContratoService
             .Where(i => i.ContratoItemId == contratoItemId && i.AditivoItemId == aditivoItemId)
             .Sum(i => i.QuantidadeMedidaNestaBm);
 
-        // Saldo de valor é um saldo corrido (nunca recalculado como quantidade×preço) — a base é o
-        // SaldoValorDepois do BM aprovado mais recente deste item; se não houver nenhum, começa do
-        // valor total do item na íntegra (quantidade atual × valor unitário).
-        decimal? SaldoValorAnteriorDe(int? contratoItemId, int? aditivoItemId) => itensDeMedicoesAprovadas
-            .Where(i => i.ContratoItemId == contratoItemId && i.AditivoItemId == aditivoItemId)
-            .OrderByDescending(i => i.MedicaoBm.Numero)
-            .Select(i => (decimal?)i.SaldoValorDepois)
-            .FirstOrDefault();
+        // Saldo de valor é um saldo corrido (nunca recalculado do zero como quantidade×preço) — a
+        // base é o SaldoValorDepois do BM aprovado mais recente deste item. Se, desde esse BM, um
+        // Aditivo aumentou a quantidade contratada do item, a diferença de quantidade (× valor
+        // unitário atual) é somada ao saldo corrido — senão o valor da quantidade nova nunca entraria
+        // no saldo (ficaria "esquecido" fora do saldo valor, podendo até deixá-lo negativo).
+        decimal SaldoValorAntesDe(int? contratoItemId, int? aditivoItemId, decimal quantidadeAtual, decimal valorUnitario)
+        {
+            var anterior = itensDeMedicoesAprovadas
+                .Where(i => i.ContratoItemId == contratoItemId && i.AditivoItemId == aditivoItemId)
+                .OrderByDescending(i => i.MedicaoBm.Numero)
+                .FirstOrDefault();
+
+            return anterior is null
+                ? quantidadeAtual * valorUnitario
+                : anterior.SaldoValorDepois + (quantidadeAtual - anterior.QuantidadeContratadaNoMomento) * valorUnitario;
+        }
 
         var itensSnapshot = new List<MedicaoBmItem>();
 
@@ -495,7 +503,7 @@ public class ContratoService : IContratoService
         {
             var quantidadeAtual = item.QuantidadeContratada + deltasPorContratoItem.GetValueOrDefault(item.Id, 0m);
             var jaMedido = JaMedido(item.Id, null);
-            var saldoValorAntes = SaldoValorAnteriorDe(item.Id, null) ?? quantidadeAtual * item.ValorUnitario;
+            var saldoValorAntes = SaldoValorAntesDe(item.Id, null, quantidadeAtual, item.ValorUnitario);
 
             itensSnapshot.Add(new MedicaoBmItem
             {
@@ -519,7 +527,7 @@ public class ContratoService : IContratoService
             var quantidadeAtual = novoItem.DeltaQuantidade;
             var jaMedido = JaMedido(null, novoItem.Id);
             var valorUnitario = novoItem.NovoValorUnitario ?? 0m;
-            var saldoValorAntes = SaldoValorAnteriorDe(null, novoItem.Id) ?? quantidadeAtual * valorUnitario;
+            var saldoValorAntes = SaldoValorAntesDe(null, novoItem.Id, quantidadeAtual, valorUnitario);
 
             itensSnapshot.Add(new MedicaoBmItem
             {
@@ -791,11 +799,20 @@ public class ContratoService : IContratoService
             .Where(i => i.ContratoItemId == contratoItemId && i.AditivoItemId == aditivoItemId)
             .Sum(i => i.QuantidadeMedidaNestaBm);
 
-        decimal? SaldoValorAnteriorDe(int? contratoItemId, int? aditivoItemId) => itensDeMedicoesAprovadas
-            .Where(i => i.ContratoItemId == contratoItemId && i.AditivoItemId == aditivoItemId)
-            .OrderByDescending(i => i.MedicaoBm.Numero)
-            .Select(i => (decimal?)i.SaldoValorDepois)
-            .FirstOrDefault();
+        // Mesma lógica de CriarMedicaoBmAsync: soma ao saldo corrido a diferença de quantidade
+        // contratada desde o último BM aprovado (× valor unitário atual), pra não "esquecer" fora do
+        // saldo o valor de uma quantidade nova trazida por Aditivo.
+        decimal SaldoValorAntesDe(int? contratoItemId, int? aditivoItemId, decimal quantidadeAtual, decimal valorUnitario)
+        {
+            var anterior = itensDeMedicoesAprovadas
+                .Where(i => i.ContratoItemId == contratoItemId && i.AditivoItemId == aditivoItemId)
+                .OrderByDescending(i => i.MedicaoBm.Numero)
+                .FirstOrDefault();
+
+            return anterior is null
+                ? quantidadeAtual * valorUnitario
+                : anterior.SaldoValorDepois + (quantidadeAtual - anterior.QuantidadeContratadaNoMomento) * valorUnitario;
+        }
 
         var resultado = new List<ContratoSaldoItemDto>();
 
@@ -815,7 +832,7 @@ public class ContratoService : IContratoService
                 SaldoQuantidade = quantidadeAtual - jaMedido,
                 ValorUnitario = item.ValorUnitario,
                 ValorContratadoAtual = quantidadeAtual * item.ValorUnitario,
-                SaldoValor = SaldoValorAnteriorDe(item.Id, null) ?? quantidadeAtual * item.ValorUnitario,
+                SaldoValor = SaldoValorAntesDe(item.Id, null, quantidadeAtual, item.ValorUnitario),
             });
         }
 
@@ -836,7 +853,7 @@ public class ContratoService : IContratoService
                 SaldoQuantidade = quantidadeAtual - jaMedido,
                 ValorUnitario = valorUnitario,
                 ValorContratadoAtual = quantidadeAtual * valorUnitario,
-                SaldoValor = SaldoValorAnteriorDe(null, novoItem.Id) ?? quantidadeAtual * valorUnitario,
+                SaldoValor = SaldoValorAntesDe(null, novoItem.Id, quantidadeAtual, valorUnitario),
             });
         }
 

@@ -939,6 +939,41 @@ public class ContratoServiceTests
     }
 
     [Fact]
+    public async Task CriarMedicaoBmAsync_SaldoValorCorrido_DeveSomarValorDaQuantidadeNovaTrazidaPorAditivo()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var itemId = (await service.GetByIdAsync(contrato.Id)).Itens[0].Id;
+
+        var bm1 = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        await service.AtualizarMedicaoBmAsync(contrato.Id, bm1.Id, new UpdateMedicaoBmDto
+        {
+            Itens = [new UpdateMedicaoBmItemDto { ItemId = bm1.Itens[0].Id, QuantidadeMedidaNestaBm = 3m }],
+        });
+        await service.AprovarMedicaoBmAsync(contrato.Id, bm1.Id, 1);
+        // Saldo valor depois do BM1: 165000 - (3 × 13750) = 123750.
+
+        var aditivoDto = CriarAditivoDtoValido();
+        aditivoDto.Itens = [new CreateAditivoItemDto { ContratoItemId = itemId, DeltaQuantidade = 5m }];
+        var aditivo = await service.CriarAditivoAsync(contrato.Id, aditivoDto);
+        await service.FormalizarAditivoAsync(contrato.Id, aditivo.Id);
+
+        var bm2 = await service.CriarMedicaoBmAsync(contrato.Id, new CreateMedicaoBmDto
+        {
+            PeriodoInicio = new DateOnly(2026, 2, 1),
+            PeriodoFim = new DateOnly(2026, 2, 28),
+        });
+
+        // As 5 unidades novas do Aditivo (ainda não medidas) valem 5 × 13750 = 68750 — esse valor
+        // precisa entrar no saldo corrido, senão fica "esquecido" fora do saldo (bug real encontrado
+        // ao entrar dados reais do contrato SUB_HOPE_0005_2026: o saldo chegou a ficar negativo).
+        Assert.Equal(17m, bm2.Itens[0].QuantidadeContratadaNoMomento);
+        Assert.Equal(192500m, bm2.Itens[0].SaldoValorAntes);
+        Assert.Equal(192500m, bm2.Itens[0].SaldoValorDepois);
+    }
+
+    [Fact]
     public async Task AtualizarMedicaoBmAsync_SaldoValorDepois_DeveDescontarValorMedido()
     {
         var (service, context) = CriarService();
