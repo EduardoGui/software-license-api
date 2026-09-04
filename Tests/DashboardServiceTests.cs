@@ -134,6 +134,51 @@ public class DashboardServiceTests
     }
 
     [Fact]
+    public async Task ObterAsync_DeveAgruparLicencasEmUsoPorNome()
+    {
+        var (service, context) = CriarService();
+        var m365 = CriarLicenca(context, "Microsoft 365", quantidadeTotal: 20, dataTerminoPrevisto: Hoje.AddYears(1));
+        // 2º lote da mesma licença, cadastrado como registro separado — deve somar na mesma linha.
+        var m365Lote2 = CriarLicenca(context, "Microsoft 365", quantidadeTotal: 10, dataTerminoPrevisto: Hoje.AddYears(1));
+        var autocad = CriarLicenca(context, "AutoCAD", quantidadeTotal: 5, dataTerminoPrevisto: Hoje.AddYears(1));
+        var ana = CriarUsuario(context, "Ana", Hoje.AddDays(-10));
+        var joao = CriarUsuario(context, "Joao", Hoje.AddDays(-10));
+        var maria = CriarUsuario(context, "Maria", Hoje.AddDays(-10));
+
+        context.UsuarioLicencas.Add(new UsuarioLicenca { UsuarioId = ana.Id, LicencaId = m365.Id, DataInicio = Hoje.AddDays(-5), DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime });
+        context.UsuarioLicencas.Add(new UsuarioLicenca { UsuarioId = joao.Id, LicencaId = m365.Id, DataInicio = Hoje.AddDays(-5), DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime });
+        context.UsuarioLicencas.Add(new UsuarioLicenca { UsuarioId = maria.Id, LicencaId = m365Lote2.Id, DataInicio = Hoje.AddDays(-5), DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime });
+        // AutoCAD (autocad) nunca foi alocado — não deve aparecer na lista de "em uso".
+        await context.SaveChangesAsync();
+
+        var dashboard = await service.ObterAsync();
+
+        var item = Assert.Single(dashboard.LicencasEmUsoPorNome);
+        Assert.Equal("Microsoft 365", item.Nome);
+        Assert.Equal(3, item.Quantidade);
+    }
+
+    [Fact]
+    public async Task ObterAsync_DeveAgruparLicencasDisponiveisPorNomeExcluindoZeradasEInativas()
+    {
+        var (service, context) = CriarService();
+        var m365 = CriarLicenca(context, "Microsoft 365", quantidadeTotal: 20, dataTerminoPrevisto: Hoje.AddYears(1));
+        var autocad = CriarLicenca(context, "AutoCAD", quantidadeTotal: 1, dataTerminoPrevisto: Hoje.AddYears(1));
+        CriarLicenca(context, "Adobe (inativa)", quantidadeTotal: 10, dataTerminoPrevisto: Hoje.AddYears(1), ativa: false);
+        var ana = CriarUsuario(context, "Ana", Hoje.AddDays(-10));
+
+        // AutoCAD: única licença, já alocada -> 0 disponíveis, não deve aparecer na lista.
+        context.UsuarioLicencas.Add(new UsuarioLicenca { UsuarioId = ana.Id, LicencaId = autocad.Id, DataInicio = Hoje.AddDays(-5), DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime });
+        await context.SaveChangesAsync();
+
+        var dashboard = await service.ObterAsync();
+
+        var item = Assert.Single(dashboard.LicencasDisponiveisPorNome);
+        Assert.Equal("Microsoft 365", item.Nome);
+        Assert.Equal(20, item.Quantidade);
+    }
+
+    [Fact]
     public async Task ObterAsync_DeveListarApenasLicencasAtivasDentroDoPrazoDeAviso()
     {
         var (service, context) = CriarService();

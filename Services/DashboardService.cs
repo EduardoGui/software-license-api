@@ -32,6 +32,29 @@ public class DashboardService : IDashboardService
         var licencasEmUso = await _context.UsuarioLicencas.CountAsync(m => m.DataFim == null);
         var licencasDisponiveis = licencasAdquiridas - licencasEmUso;
 
+        var usuarioLicencasAtivas = await _context.UsuarioLicencas.Where(m => m.DataFim == null).ToListAsync();
+        var emUsoPorLicencaId = usuarioLicencasAtivas
+            .GroupBy(m => m.LicencaId)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        // Agrupado por nome (não por Id) — pode haver mais de uma Licenca com o mesmo nome (ex.: lotes
+        // de compra diferentes), e nesse caso as quantidades devem somar numa única linha, mesmo
+        // espírito do agrupamento por tipo já usado pros cards de Equipamentos.
+        var licencasEmUsoPorNome = licencas
+            .GroupBy(l => l.Nome)
+            .Select(g => new LicencaContagemPorNomeDto { Nome = g.Key, Quantidade = g.Sum(l => emUsoPorLicencaId.GetValueOrDefault(l.Id, 0)) })
+            .Where(l => l.Quantidade > 0)
+            .OrderBy(l => l.Nome)
+            .ToList();
+
+        var licencasDisponiveisPorNome = licencas
+            .Where(l => l.Ativa)
+            .GroupBy(l => l.Nome)
+            .Select(g => new LicencaContagemPorNomeDto { Nome = g.Key, Quantidade = g.Sum(l => l.QuantidadeTotal - emUsoPorLicencaId.GetValueOrDefault(l.Id, 0)) })
+            .Where(l => l.Quantidade > 0)
+            .OrderBy(l => l.Nome)
+            .ToList();
+
         var proximosVencimentos = licencas
             .Where(l => l.Ativa && l.DataTerminoPrevisto <= hoje.AddDays(l.DiasAntecedenciaAviso))
             .OrderBy(l => l.DataTerminoPrevisto)
@@ -84,6 +107,8 @@ public class DashboardService : IDashboardService
             LicencasEmUso = licencasEmUso,
             LicencasDisponiveis = licencasDisponiveis,
             ProximosVencimentos = proximosVencimentos,
+            LicencasEmUsoPorNome = licencasEmUsoPorNome,
+            LicencasDisponiveisPorNome = licencasDisponiveisPorNome,
             EquipamentosEmUsoPorTipo = equipamentosEmUsoPorTipo,
             EquipamentosDisponiveisPorTipo = equipamentosDisponiveisPorTipo,
             EquipamentosLocadosAtivosPorTipo = equipamentosLocadosAtivosPorTipo,
