@@ -17,18 +17,24 @@ public class NotaDebitoPjService : INotaDebitoPjService
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<NotaDebitoPjService> _logger;
     private readonly IConfiguration _configuration;
+    private readonly IEmailSender _emailSender;
+    private readonly IAuditoriaService _auditoriaService;
 
     static NotaDebitoPjService()
     {
         GlobalFontSettings.FontResolver ??= new PdfFontResolver();
     }
 
-    public NotaDebitoPjService(AppDbContext context, TimeProvider timeProvider, ILogger<NotaDebitoPjService> logger, IConfiguration configuration)
+    public NotaDebitoPjService(
+        AppDbContext context, TimeProvider timeProvider, ILogger<NotaDebitoPjService> logger, IConfiguration configuration,
+        IEmailSender emailSender, IAuditoriaService auditoriaService)
     {
         _context = context;
         _timeProvider = timeProvider;
         _logger = logger;
         _configuration = configuration;
+        _emailSender = emailSender;
+        _auditoriaService = auditoriaService;
     }
 
     public async Task<List<NotaDebitoPjDto>> GetAllAsync(NotaDebitoPjFiltroDto filtro)
@@ -179,8 +185,53 @@ public class NotaDebitoPjService : INotaDebitoPjService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Nota de débito PJ {NotaId} marcada como enviada", nota.Id);
+        await _auditoriaService.RegistrarAsync(null, LogAuditoriaEntidade.NotaDebitoPj, nota.Id, LogAuditoriaAcao.Enviado);
 
-        return ParaDto(nota);
+        var avisoEmail = await EnviarEmailColaboradorAsync(nota);
+
+        var resultado = ParaDto(nota);
+        resultado.AvisoEmail = avisoEmail;
+        return resultado;
+    }
+
+    // A nota já foi marcada como Enviada antes de chamar isto - uma falha aqui não deve reverter a
+    // transição de status, só fica registrada (log + auditoria) e devolve um aviso pra reenvio manual,
+    // mesmo espírito do e-mail de aprovação de Reembolso de Despesa.
+    private async Task<string?> EnviarEmailColaboradorAsync(NotaDebitoPj nota)
+    {
+        if (string.IsNullOrWhiteSpace(nota.Usuario.Email))
+        {
+            _logger.LogWarning("Nota de débito PJ {NotaId} enviada, mas o usuário {UsuarioId} não tem e-mail cadastrado", nota.Id, nota.UsuarioId);
+            return "A nota foi marcada como enviada, mas o colaborador não tem e-mail cadastrado.";
+        }
+
+        try
+        {
+            var pdf = GerarPdfDocumento(nota);
+            var numero = nota.Id.ToString("D4");
+            var valorLiquido = nota.ValorBruto - nota.Desconto - nota.RetencaoTributaria;
+            var assunto = $"Nota de Débito Nº {numero} — Coparticipação {nota.OperadoraSaude} ({nota.Mes:D2}/{nota.Ano})";
+            var corpo = $"""
+                <p>Olá, {nota.Usuario.Nome}!</p>
+                <p>Segue em anexo a Nota de Débito referente à coparticipação do plano de saúde ({nota.Mes:D2}/{nota.Ano}).</p>
+                <p>Valor líquido: <strong>R$ {valorLiquido:N2}</strong></p>
+                <p>O documento em anexo traz um QR code Pix para pagamento direto à Hope.</p>
+                """;
+
+            await _emailSender.EnviarAsync(
+                [nota.Usuario.Email], assunto, corpo, anexos: [new EmailAnexo($"nota-debito-{numero}.pdf", pdf, "application/pdf")]);
+
+            _logger.LogInformation("E-mail da nota de débito PJ {NotaId} enviado ao colaborador {Email}", nota.Id, nota.Usuario.Email);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Nota de débito PJ {NotaId} enviada, mas o envio do e-mail ao colaborador falhou", nota.Id);
+            await _auditoriaService.RegistrarAsync(
+                null, LogAuditoriaEntidade.NotaDebitoPj, nota.Id, LogAuditoriaAcao.EmailNaoEnviado, ex.Message);
+
+            return "A nota foi marcada como enviada, mas o e-mail não pôde ser entregue ao colaborador. Tente reenviar.";
+        }
     }
 
     public async Task<NotaDebitoPjDto> PagarAsync(int id, PagarNotaDebitoPjDto dto)

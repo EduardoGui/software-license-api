@@ -14,7 +14,7 @@ public class NotaDebitoPjServiceTests
 {
     private static readonly DateTimeOffset Agora = new(2026, 8, 27, 12, 0, 0, TimeSpan.Zero);
 
-    private static (NotaDebitoPjService Service, AppDbContext Context) CriarService()
+    private static (NotaDebitoPjService Service, AppDbContext Context, FakeEmailSender EmailSender) CriarService()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -22,7 +22,11 @@ public class NotaDebitoPjServiceTests
 
         var context = new AppDbContext(options);
         var configuracao = new ConfigurationBuilder().AddInMemoryCollection().Build();
-        return (new NotaDebitoPjService(context, new FakeTimeProvider(Agora), NullLogger<NotaDebitoPjService>.Instance, configuracao), context);
+        var emailSender = new FakeEmailSender();
+        var service = new NotaDebitoPjService(
+            context, new FakeTimeProvider(Agora), NullLogger<NotaDebitoPjService>.Instance, configuracao,
+            emailSender, new AuditoriaService(context, new FakeTimeProvider(Agora)));
+        return (service, context, emailSender);
     }
 
     private static (NotaDebitoPjService Service, AppDbContext Context) CriarServiceComConfiguracaoPix()
@@ -40,7 +44,10 @@ public class NotaDebitoPjServiceTests
                 ["ReembolsoDespesa:EmpresaCidade"] = "Belo Horizonte",
             })
             .Build();
-        return (new NotaDebitoPjService(context, new FakeTimeProvider(Agora), NullLogger<NotaDebitoPjService>.Instance, configuracao), context);
+        var service = new NotaDebitoPjService(
+            context, new FakeTimeProvider(Agora), NullLogger<NotaDebitoPjService>.Instance, configuracao,
+            new FakeEmailSender(), new AuditoriaService(context, new FakeTimeProvider(Agora)));
+        return (service, context);
     }
 
     private static EmpresaPj CriarEmpresaPj(AppDbContext context, string razaoSocial, string cnpj)
@@ -103,7 +110,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task CreateAsync_DeveCalcularValorBrutoComoSomaDaCoparticipacao()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
 
@@ -117,7 +124,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task CreateAsync_DeveRejeitarUsuarioQueNaoEhPj()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "Maria Clt", UsuarioTipo.Clt);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
 
@@ -127,7 +134,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task CreateAsync_DeveRejeitarSemCoparticipacaoLancada()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(CriarDto(usuario.Id)));
@@ -136,7 +143,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task CreateAsync_DeveRejeitarSegundaNotaParaMesmoUsuarioEMes()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
         await service.CreateAsync(CriarDto(usuario.Id));
@@ -147,7 +154,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task UpdateAsync_DevePermitirEditarEnquantoRascunho()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
         var criada = await service.CreateAsync(CriarDto(usuario.Id));
@@ -166,7 +173,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task UpdateAsync_DeveRejeitarEdicaoAposEnviada()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
         var criada = await service.CreateAsync(CriarDto(usuario.Id));
@@ -179,7 +186,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task DeleteAsync_DeveRejeitarExclusaoAposEnviada()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
         var criada = await service.CreateAsync(CriarDto(usuario.Id));
@@ -191,7 +198,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task DeleteAsync_DevePermitirExcluirRascunho()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
         var criada = await service.CreateAsync(CriarDto(usuario.Id));
@@ -204,7 +211,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task EnviarAsync_DeveMudarStatusEGravarDataEnvio()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
         var criada = await service.CreateAsync(CriarDto(usuario.Id));
@@ -216,9 +223,42 @@ public class NotaDebitoPjServiceTests
     }
 
     [Fact]
+    public async Task EnviarAsync_DeveMandarEmailAoColaboradorComPdfAnexado()
+    {
+        var (service, context, emailSender) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+        var criada = await service.CreateAsync(CriarDto(usuario.Id));
+
+        var enviada = await service.EnviarAsync(criada.Id);
+
+        Assert.Null(enviada.AvisoEmail);
+        Assert.Equal(1, emailSender.ChamadasComAnexo);
+        Assert.Equal(usuario.Email, Assert.Single(emailSender.UltimosDestinatarios!));
+        Assert.Equal("application/pdf", Assert.Single(emailSender.UltimosAnexos!).TipoConteudo);
+    }
+
+    [Fact]
+    public async Task EnviarAsync_DeveAvisarSemBloquearQuandoColaboradorNaoTemEmail()
+    {
+        var (service, context, emailSender) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        usuario.Email = "";
+        context.SaveChanges();
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+        var criada = await service.CreateAsync(CriarDto(usuario.Id));
+
+        var enviada = await service.EnviarAsync(criada.Id);
+
+        Assert.Equal(NotaDebitoPjStatus.Enviada, enviada.Status);
+        Assert.NotNull(enviada.AvisoEmail);
+        Assert.Equal(0, emailSender.ChamadasComAnexo);
+    }
+
+    [Fact]
     public async Task EnviarAsync_DeveRejeitarSeJaEnviada()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
         var criada = await service.CreateAsync(CriarDto(usuario.Id));
@@ -230,7 +270,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task PagarAsync_DeveRejeitarSeAindaNaoEnviada()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
         var criada = await service.CreateAsync(CriarDto(usuario.Id));
@@ -242,7 +282,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task PagarAsync_DeveMudarStatusEGravarDataPagamento()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
         var criada = await service.CreateAsync(CriarDto(usuario.Id));
@@ -257,7 +297,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task GetAllAsync_DeveFiltrarPorStatus()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario1 = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         var usuario2 = CriarUsuario(context, "Carlos Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario1.Id, 2026, 8, 300m);
@@ -275,7 +315,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task GerarPdfAsync_DeveGerarArquivoNaoVazio()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
         var criada = await service.CreateAsync(CriarDto(usuario.Id));
@@ -295,7 +335,8 @@ public class NotaDebitoPjServiceTests
 
         var pdfSemQrCode = await new NotaDebitoPjService(
             context, new FakeTimeProvider(Agora), NullLogger<NotaDebitoPjService>.Instance,
-            new ConfigurationBuilder().AddInMemoryCollection().Build()).GerarPdfAsync(criada.Id);
+            new ConfigurationBuilder().AddInMemoryCollection().Build(),
+            new FakeEmailSender(), new AuditoriaService(context, new FakeTimeProvider(Agora))).GerarPdfAsync(criada.Id);
         var pdfComQrCode = await service.GerarPdfAsync(criada.Id);
 
         Assert.NotEmpty(pdfComQrCode);
@@ -306,7 +347,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task CreateAsync_DeveIncluirRazaoSocialECnpjDaEmpresaPjNoDto()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var empresa = CriarEmpresaPj(context, "Empresa Teste LTDA", "11.222.333/0001-44");
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj, empresa.Id);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
@@ -320,7 +361,7 @@ public class NotaDebitoPjServiceTests
     [Fact]
     public async Task AnexoFluxoCompleto_DeveAdicionarListarEExcluir()
     {
-        var (service, context) = CriarService();
+        var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
         var criada = await service.CreateAsync(CriarDto(usuario.Id));

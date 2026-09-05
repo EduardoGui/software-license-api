@@ -27,4 +27,8 @@ public class NotaDebitoPjDto
     public DateOnly? DataPagamento { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
+
+    // Preenchido só quando EnviarAsync tentou mandar o e-mail ao colaborador e não conseguiu -
+    // a nota já foi marcada como Enviada mesmo assim, isso é só um aviso pra reenviar manualmente.
+    public string? AvisoEmail { get; set; }
 }
