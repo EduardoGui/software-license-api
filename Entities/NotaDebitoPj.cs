@@ -26,7 +26,7 @@ public class NotaDebitoPj
     public string? ContaContabil { get; set; }
     public string? ProjetoContrato { get; set; }
 
-    // Rascunho | Enviada | Paga (constantes em NotaDebitoPjStatus)
+    // Rascunho | Enviada | Recebida (constantes em NotaDebitoPjStatus)
     public string Status { get; set; } = string.Empty;
     public DateTime? DataEnvio { get; set; }
     public DateOnly? DataPagamento { get; set; }

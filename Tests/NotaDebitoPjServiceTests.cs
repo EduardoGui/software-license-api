@@ -290,7 +290,7 @@ public class NotaDebitoPjServiceTests
 
         var paga = await service.PagarAsync(criada.Id, new PagarNotaDebitoPjDto { DataPagamento = new DateOnly(2026, 9, 5) });
 
-        Assert.Equal(NotaDebitoPjStatus.Paga, paga.Status);
+        Assert.Equal(NotaDebitoPjStatus.Recebida, paga.Status);
         Assert.Equal(new DateOnly(2026, 9, 5), paga.DataPagamento);
     }
 

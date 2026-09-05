@@ -4,5 +4,5 @@ public static class NotaDebitoPjStatus
 {
     public const string Rascunho = "Rascunho";
     public const string Enviada = "Enviada";
-    public const string Paga = "Paga";
+    public const string Recebida = "Recebida";
 }

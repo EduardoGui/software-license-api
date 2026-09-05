@@ -240,16 +240,16 @@ public class NotaDebitoPjService : INotaDebitoPjService
 
         if (nota.Status != NotaDebitoPjStatus.Enviada)
         {
-            throw new BusinessRuleException("Só é possível marcar como paga uma nota de débito que já tenha sido enviada.");
+            throw new BusinessRuleException("Só é possível marcar como recebida uma nota de débito que já tenha sido enviada.");
         }
 
-        nota.Status = NotaDebitoPjStatus.Paga;
+        nota.Status = NotaDebitoPjStatus.Recebida;
         nota.DataPagamento = dto.DataPagamento;
         nota.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
 
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Nota de débito PJ {NotaId} marcada como paga", nota.Id);
+        _logger.LogInformation("Nota de débito PJ {NotaId} marcada como recebida", nota.Id);
 
         return ParaDto(nota);
     }
