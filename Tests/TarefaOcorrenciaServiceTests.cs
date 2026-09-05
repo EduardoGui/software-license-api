@@ -101,6 +101,7 @@ public class TarefaOcorrenciaServiceTests
         context.TarefaOcorrencias.Add(new TarefaOcorrencia
         {
             TarefaRecorrenteId = tarefa.Id,
+            Titulo = tarefa.Titulo,
             MesReferencia = new DateOnly(2026, 6, 1),
             DataPrevistaOriginal = new DateOnly(2026, 6, 28),
             DataPrevistaAtual = new DateOnly(2026, 6, 28),
@@ -182,5 +183,54 @@ public class TarefaOcorrenciaServiceTests
         var (service, _) = CriarService();
 
         await Assert.ThrowsAsync<NotFoundException>(() => service.ConcluirAsync(999));
+    }
+
+    [Fact]
+    public async Task CriarTarefaUnicaAsync_DeveCriarOcorrenciaSemTarefaRecorrenteEAparecerNaAgenda()
+    {
+        var (service, _) = CriarService();
+
+        var criada = await service.CriarTarefaUnicaAsync(new CreateTarefaUnicaDto
+        {
+            Titulo = "Levar carro pra revisão",
+            Data = new DateOnly(2026, 9, 15),
+            Observacao = "Oficina do Sr. João",
+        });
+
+        Assert.Null(criada.TarefaRecorrenteId);
+        Assert.Equal("Levar carro pra revisão", criada.Titulo);
+        Assert.Equal(new DateOnly(2026, 9, 15), criada.DataPrevistaOriginal);
+        Assert.Equal(new DateOnly(2026, 9, 15), criada.DataPrevistaAtual);
+        Assert.Equal(TarefaOcorrenciaStatus.Pendente, criada.Status);
+        Assert.Equal("Oficina do Sr. João", criada.Observacao);
+
+        var agenda = await service.ObterAgendaAsync();
+        Assert.Single(agenda);
+        Assert.Equal(criada.Id, agenda[0].Id);
+    }
+
+    [Fact]
+    public async Task CriarTarefaUnicaAsync_NaoDeveGerarOutraOcorrenciaAoConsultarAgendaDeNovo()
+    {
+        var (service, context) = CriarService();
+        await service.CriarTarefaUnicaAsync(new CreateTarefaUnicaDto { Titulo = "Tarefa avulsa", Data = new DateOnly(2026, 9, 15) });
+
+        await service.ObterAgendaAsync();
+
+        Assert.Equal(1, await context.TarefaOcorrencias.CountAsync());
+    }
+
+    [Fact]
+    public async Task CriarTarefaUnicaAsync_DevePoderSerConcluidaEAdiadaComoQualquerOcorrencia()
+    {
+        var (service, _) = CriarService();
+        var criada = await service.CriarTarefaUnicaAsync(new CreateTarefaUnicaDto { Titulo = "Tarefa avulsa", Data = new DateOnly(2026, 9, 15) });
+
+        var adiada = await service.AdiarAsync(criada.Id, new AdiarTarefaOcorrenciaDto { NovaData = new DateOnly(2026, 9, 20) });
+        Assert.Equal(new DateOnly(2026, 9, 20), adiada.DataPrevistaAtual);
+        Assert.Equal(new DateOnly(2026, 9, 15), adiada.DataPrevistaOriginal);
+
+        var concluida = await service.ConcluirAsync(criada.Id);
+        Assert.Equal(TarefaOcorrenciaStatus.Concluida, concluida.Status);
     }
 }

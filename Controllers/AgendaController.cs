@@ -37,4 +37,11 @@ public class AgendaController : ControllerBase
         var ocorrencia = await _tarefaOcorrenciaService.AdiarAsync(ocorrenciaId, dto);
         return Ok(ocorrencia);
     }
+
+    [HttpPost("tarefa-unica")]
+    public async Task<ActionResult<TarefaOcorrenciaDto>> CriarTarefaUnica(CreateTarefaUnicaDto dto)
+    {
+        var ocorrencia = await _tarefaOcorrenciaService.CriarTarefaUnicaAsync(dto);
+        return CreatedAtAction(nameof(GetAgenda), ocorrencia);
+    }
 }

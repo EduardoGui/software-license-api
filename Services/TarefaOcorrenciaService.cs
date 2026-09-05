@@ -35,8 +35,8 @@ public class TarefaOcorrenciaService : ITarefaOcorrenciaService
 
         var tarefaIds = tarefasAtivas.Select(t => t.Id).ToList();
         var ultimoMesPorTarefa = await _context.TarefaOcorrencias
-            .Where(o => tarefaIds.Contains(o.TarefaRecorrenteId))
-            .GroupBy(o => o.TarefaRecorrenteId)
+            .Where(o => o.TarefaRecorrenteId != null && tarefaIds.Contains(o.TarefaRecorrenteId.Value))
+            .GroupBy(o => o.TarefaRecorrenteId!.Value)
             .Select(g => new { TarefaRecorrenteId = g.Key, UltimoMes = g.Max(o => o.MesReferencia) })
             .ToDictionaryAsync(x => x.TarefaRecorrenteId, x => x.UltimoMes);
 
@@ -57,6 +57,7 @@ public class TarefaOcorrenciaService : ITarefaOcorrenciaService
                 novasOcorrencias.Add(new TarefaOcorrencia
                 {
                     TarefaRecorrenteId = tarefa.Id,
+                    Titulo = tarefa.Titulo,
                     MesReferencia = proximoMes,
                     DataPrevistaOriginal = dataPrevista,
                     DataPrevistaAtual = dataPrevista,
@@ -86,12 +87,38 @@ public class TarefaOcorrenciaService : ITarefaOcorrenciaService
         var hoje = DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
 
         var ocorrencias = await _context.TarefaOcorrencias
-            .Include(o => o.TarefaRecorrente)
             .Where(o => o.Status == TarefaOcorrenciaStatus.Pendente)
             .OrderBy(o => o.DataPrevistaAtual)
             .ToListAsync();
 
         return ocorrencias.Select(o => ParaDto(o, hoje)).ToList();
+    }
+
+    // Tarefa única: sem regra recorrente por trás, só uma ocorrência criada na hora, com a data
+    // já escolhida — não passa por GarantirOcorrenciasDoMesAsync (não há "próximo mês" pra gerar).
+    public async Task<TarefaOcorrenciaDto> CriarTarefaUnicaAsync(CreateTarefaUnicaDto dto)
+    {
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+
+        var ocorrencia = new TarefaOcorrencia
+        {
+            TarefaRecorrenteId = null,
+            Titulo = dto.Titulo.Trim(),
+            MesReferencia = new DateOnly(dto.Data.Year, dto.Data.Month, 1),
+            DataPrevistaOriginal = dto.Data,
+            DataPrevistaAtual = dto.Data,
+            Status = TarefaOcorrenciaStatus.Pendente,
+            Observacao = string.IsNullOrWhiteSpace(dto.Observacao) ? null : dto.Observacao.Trim(),
+            DataCriacao = agora,
+            DataAtualizacao = agora,
+        };
+
+        _context.TarefaOcorrencias.Add(ocorrencia);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Tarefa única {OcorrenciaId} criada para {Data}", ocorrencia.Id, dto.Data);
+
+        return ParaDto(ocorrencia, DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime));
     }
 
     public async Task<TarefaOcorrenciaDto> ConcluirAsync(int ocorrenciaId)
@@ -138,7 +165,6 @@ public class TarefaOcorrenciaService : ITarefaOcorrenciaService
     private async Task<TarefaOcorrencia> BuscarOuFalhar(int id)
     {
         var ocorrencia = await _context.TarefaOcorrencias
-            .Include(o => o.TarefaRecorrente)
             .FirstOrDefaultAsync(o => o.Id == id);
 
         if (ocorrencia is null)
@@ -156,7 +182,7 @@ public class TarefaOcorrenciaService : ITarefaOcorrenciaService
     {
         Id = o.Id,
         TarefaRecorrenteId = o.TarefaRecorrenteId,
-        Titulo = o.TarefaRecorrente.Titulo,
+        Titulo = o.Titulo,
         DataPrevistaOriginal = o.DataPrevistaOriginal,
         DataPrevistaAtual = o.DataPrevistaAtual,
         Status = o.Status,

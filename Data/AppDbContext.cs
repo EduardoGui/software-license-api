@@ -242,6 +242,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
 
         modelBuilder.Entity<TarefaOcorrencia>(entity =>
         {
+            entity.Property(o => o.Titulo).IsRequired().HasMaxLength(200);
             entity.Property(o => o.Status).IsRequired().HasMaxLength(20);
             entity.Property(o => o.Observacao).HasMaxLength(500);
             entity.HasIndex(o => new { o.TarefaRecorrenteId, o.MesReferencia }).IsUnique();
