@@ -131,8 +131,6 @@ public class DashboardServiceTests
 
         var dashboard = await service.ObterAsync();
 
-        Assert.Equal(20, dashboard.LicencasAdquiridas);
-        Assert.Equal(1, dashboard.LicencasEmUso);
         Assert.Equal(19, dashboard.LicencasDisponiveis);
     }
 

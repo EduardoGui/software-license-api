@@ -112,8 +112,6 @@ public class DashboardService : IDashboardService
         return new DashboardDto
         {
             UsuariosAtivos = usuariosAtivos,
-            LicencasAdquiridas = licencasAdquiridas,
-            LicencasEmUso = licencasEmUso,
             LicencasDisponiveis = licencasDisponiveis,
             LicencasEmUsoPorNome = licencasEmUsoPorNome,
             LicencasDisponiveisPorNome = licencasDisponiveisPorNome,
