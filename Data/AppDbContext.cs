@@ -40,6 +40,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<NotaDebitoPj> NotasDebitoPj => Set<NotaDebitoPj>();
     public DbSet<NotaDebitoPjAnexo> NotasDebitoPjAnexos => Set<NotaDebitoPjAnexo>();
     public DbSet<Fornecedor> Fornecedores => Set<Fornecedor>();
+    public DbSet<TarefaRecorrente> TarefasRecorrentes => Set<TarefaRecorrente>();
+    public DbSet<TarefaOcorrencia> TarefaOcorrencias => Set<TarefaOcorrencia>();
     public DbSet<Contrato> Contratos => Set<Contrato>();
     public DbSet<ContratoItem> ContratoItens => Set<ContratoItem>();
     public DbSet<ContratoMedicaoConfig> ContratoMedicaoConfigs => Set<ContratoMedicaoConfig>();
@@ -230,6 +232,20 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         {
             entity.Property(t => t.Nome).IsRequired().HasMaxLength(100);
             entity.HasIndex(t => t.Nome).IsUnique();
+        });
+
+        modelBuilder.Entity<TarefaRecorrente>(entity =>
+        {
+            entity.Property(t => t.Titulo).IsRequired().HasMaxLength(200);
+            entity.Property(t => t.Observacao).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<TarefaOcorrencia>(entity =>
+        {
+            entity.Property(o => o.Status).IsRequired().HasMaxLength(20);
+            entity.Property(o => o.Observacao).HasMaxLength(500);
+            entity.HasIndex(o => new { o.TarefaRecorrenteId, o.MesReferencia }).IsUnique();
+            entity.HasOne(o => o.TarefaRecorrente).WithMany(t => t.Ocorrencias).HasForeignKey(o => o.TarefaRecorrenteId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Fornecedor>(entity =>

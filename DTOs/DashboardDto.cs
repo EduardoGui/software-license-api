@@ -15,4 +15,5 @@ public class DashboardDto
     public decimal CustoMensalLocacaoAtual { get; set; }
     public List<VencimentoContratoDto> ProximosVencimentosContratos { get; set; } = [];
     public List<AlertaMedicaoDto> AlertasMedicao { get; set; } = [];
+    public List<TarefaOcorrenciaDto> TarefasPendentes { get; set; } = [];
 }

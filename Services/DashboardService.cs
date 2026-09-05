@@ -12,12 +12,18 @@ public class DashboardService : IDashboardService
     private readonly AppDbContext _context;
     private readonly TimeProvider _timeProvider;
     private readonly IRelatorioMensalLocacaoService _relatorioMensalLocacaoService;
+    private readonly ITarefaOcorrenciaService _tarefaOcorrenciaService;
 
-    public DashboardService(AppDbContext context, TimeProvider timeProvider, IRelatorioMensalLocacaoService relatorioMensalLocacaoService)
+    public DashboardService(
+        AppDbContext context,
+        TimeProvider timeProvider,
+        IRelatorioMensalLocacaoService relatorioMensalLocacaoService,
+        ITarefaOcorrenciaService tarefaOcorrenciaService)
     {
         _context = context;
         _timeProvider = timeProvider;
         _relatorioMensalLocacaoService = relatorioMensalLocacaoService;
+        _tarefaOcorrenciaService = tarefaOcorrenciaService;
     }
 
     public async Task<DashboardDto> ObterAsync()
@@ -99,6 +105,7 @@ public class DashboardService : IDashboardService
             .ToList();
 
         var alertasMedicao = await ObterAlertasMedicaoAsync(hoje);
+        var tarefasPendentes = (await _tarefaOcorrenciaService.ObterAgendaAsync()).Take(10).ToList();
 
         return new DashboardDto
         {
@@ -115,6 +122,7 @@ public class DashboardService : IDashboardService
             CustoMensalLocacaoAtual = relatorioMesAtual.TotalGeral,
             ProximosVencimentosContratos = proximosVencimentosContratos,
             AlertasMedicao = alertasMedicao,
+            TarefasPendentes = tarefasPendentes,
         };
     }
 

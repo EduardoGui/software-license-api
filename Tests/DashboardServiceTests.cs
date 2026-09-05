@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using SoftwareLicense.Api.Data;
 using SoftwareLicense.Api.Entities;
 using SoftwareLicense.Api.Services;
@@ -18,8 +19,10 @@ public class DashboardServiceTests
             .Options;
 
         var context = new AppDbContext(options);
+        var timeProvider = new FakeTimeProvider(Agora);
         var relatorioMensalLocacaoService = new RelatorioMensalLocacaoService(context);
-        var service = new DashboardService(context, new FakeTimeProvider(Agora), relatorioMensalLocacaoService);
+        var tarefaOcorrenciaService = new TarefaOcorrenciaService(context, timeProvider, NullLogger<TarefaOcorrenciaService>.Instance);
+        var service = new DashboardService(context, timeProvider, relatorioMensalLocacaoService, tarefaOcorrenciaService);
         return (service, context);
     }
 
@@ -431,5 +434,47 @@ public class DashboardServiceTests
 
         Assert.Single(dashboard.ProximosVencimentosContratos);
         Assert.Equal(10, dashboard.ProximosVencimentosContratos[0].DiasParaVencer);
+    }
+
+    [Fact]
+    public async Task ObterAsync_DeveListarTarefaPendenteGerandoOcorrenciaDoMesAtual()
+    {
+        var (service, context) = CriarService();
+        context.TarefasRecorrentes.Add(new TarefaRecorrente
+        {
+            Titulo = "Pedir boleto do estacionamento",
+            DiaDoMes = 20,
+            Ativa = true,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        });
+        await context.SaveChangesAsync();
+
+        var dashboard = await service.ObterAsync();
+
+        var tarefa = Assert.Single(dashboard.TarefasPendentes);
+        Assert.Equal("Pedir boleto do estacionamento", tarefa.Titulo);
+        // Hoje = 12/08/2026, dia configurado = 20 (ainda este mês) — faltam 8 dias.
+        Assert.Equal(new DateOnly(2026, 8, 20), tarefa.DataPrevistaAtual);
+        Assert.Equal(8, tarefa.DiasParaVencer);
+    }
+
+    [Fact]
+    public async Task ObterAsync_NaoDeveListarTarefaInativaNemJaConcluida()
+    {
+        var (service, context) = CriarService();
+        context.TarefasRecorrentes.Add(new TarefaRecorrente
+        {
+            Titulo = "Tarefa inativa",
+            DiaDoMes = 20,
+            Ativa = false,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        });
+        await context.SaveChangesAsync();
+
+        var dashboard = await service.ObterAsync();
+
+        Assert.Empty(dashboard.TarefasPendentes);
     }
 }
