@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using PdfSharp.Drawing;
 using PdfSharp.Fonts;
 using PdfSharp.Pdf;
+using QRCoder;
 using SoftwareLicense.Api.Data;
 using SoftwareLicense.Api.DTOs;
 using SoftwareLicense.Api.Entities;
@@ -32,7 +33,7 @@ public class NotaDebitoPjService : INotaDebitoPjService
 
     public async Task<List<NotaDebitoPjDto>> GetAllAsync(NotaDebitoPjFiltroDto filtro)
     {
-        var query = _context.NotasDebitoPj.Include(n => n.Usuario).AsQueryable();
+        var query = _context.NotasDebitoPj.Include(n => n.Usuario).ThenInclude(u => u.EmpresaPj).AsQueryable();
 
         if (filtro.Ano is not null)
         {
@@ -71,7 +72,7 @@ public class NotaDebitoPjService : INotaDebitoPjService
             throw new BusinessRuleException("Mês deve estar entre 1 e 12.");
         }
 
-        var usuario = await _context.Usuarios.FindAsync(dto.UsuarioId)
+        var usuario = await _context.Usuarios.Include(u => u.EmpresaPj).FirstOrDefaultAsync(u => u.Id == dto.UsuarioId)
             ?? throw new NotFoundException($"Usuário {dto.UsuarioId} não encontrado.");
 
         if (usuario.Tipo != UsuarioTipo.Pj)
@@ -204,7 +205,7 @@ public class NotaDebitoPjService : INotaDebitoPjService
 
     public async Task<byte[]> GerarPdfAsync(int id)
     {
-        var nota = await _context.NotasDebitoPj.Include(n => n.Usuario).FirstOrDefaultAsync(n => n.Id == id)
+        var nota = await _context.NotasDebitoPj.Include(n => n.Usuario).ThenInclude(u => u.EmpresaPj).FirstOrDefaultAsync(n => n.Id == id)
             ?? throw new NotFoundException($"Nota de débito {id} não encontrada.");
 
         return GerarPdfDocumento(nota);
@@ -294,7 +295,7 @@ public class NotaDebitoPjService : INotaDebitoPjService
 
     private async Task<NotaDebitoPj> BuscarOuFalhar(int id)
     {
-        var nota = await _context.NotasDebitoPj.Include(n => n.Usuario).FirstOrDefaultAsync(n => n.Id == id);
+        var nota = await _context.NotasDebitoPj.Include(n => n.Usuario).ThenInclude(u => u.EmpresaPj).FirstOrDefaultAsync(n => n.Id == id);
         if (nota is null)
         {
             throw new NotFoundException($"Nota de débito {id} não encontrada.");
@@ -308,6 +309,8 @@ public class NotaDebitoPjService : INotaDebitoPjService
         Id = n.Id,
         UsuarioId = n.UsuarioId,
         UsuarioNome = n.Usuario.Nome,
+        EmpresaPjNome = n.Usuario.EmpresaPj?.RazaoSocial,
+        EmpresaPjCnpj = n.Usuario.EmpresaPj?.Cnpj,
         Ano = n.Ano,
         Mes = n.Mes,
         ValorBruto = n.ValorBruto,
@@ -375,11 +378,26 @@ public class NotaDebitoPjService : INotaDebitoPjService
         y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Empresa", empresaNome), ("CNPJ", empresaCnpj));
         y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Endereço", empresaEndereco));
 
+        var empresaDestinataria = n.Usuario.EmpresaPj;
+
         y = DesenharSecao(gfx, "DESTINATÁRIO", margem, y, largura, corPrimaria, fontSecao);
-        y = DesenharLinha(
-            gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
-            ("Tipo de Destinatário", "Pessoa Física"), ("CNPJ / CPF", n.Usuario.Cpf ?? "-"));
-        y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Nome Completo", n.Usuario.Nome));
+        if (empresaDestinataria is not null)
+        {
+            y = DesenharLinha(
+                gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
+                ("Tipo de Destinatário", "Pessoa Jurídica"), ("CNPJ", empresaDestinataria.Cnpj));
+            y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Razão Social", empresaDestinataria.RazaoSocial));
+        }
+        else
+        {
+            // Fallback pra cadastro legado sem Empresa PJ vinculada — não deveria ocorrer em dados novos.
+            y = DesenharLinha(
+                gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
+                ("Tipo de Destinatário", "Pessoa Física"), ("CNPJ / CPF", n.Usuario.Cpf ?? "-"));
+            y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Nome Completo", n.Usuario.Nome));
+        }
+
+        y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Colaborador (PJ) responsável", n.Usuario.Nome));
 
         y = DesenharSecao(gfx, "MOTIVO DA COBRANÇA", margem, y, largura, corPrimaria, fontSecao);
         y = DesenharLinha(
@@ -403,10 +421,33 @@ public class NotaDebitoPjService : INotaDebitoPjService
         y = DesenharLinha(
             gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
             ("Vencimento", n.DataVencimento?.ToString("dd/MM/yyyy") ?? "-"), ("Forma de Pagamento", n.FormaPagamento ?? "-"));
-        y = DesenharLinha(
-            gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
-            ("Banco / Agência / Conta", $"{n.Usuario.Banco ?? "-"} / {n.Usuario.Agencia ?? "-"} / {n.Usuario.ContaBancaria ?? "-"}"),
-            ("PIX (chave do titular)", n.Usuario.ChavePix ?? "-"));
+
+        var empresaCnpjPix = _configuration["ReembolsoDespesa:EmpresaCnpj"] ?? "";
+        var empresaNomePix = _configuration["ReembolsoDespesa:EmpresaNome"] ?? "Hope";
+        var empresaCidadePix = _configuration["ReembolsoDespesa:EmpresaCidade"] ?? "";
+        var valorLiquido = n.ValorBruto - n.Desconto - n.RetencaoTributaria;
+
+        y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Pagar via Pix — Chave (CNPJ)", empresaCnpjPix));
+
+        if (!string.IsNullOrWhiteSpace(empresaCnpjPix))
+        {
+            var payload = PixBrCode.GerarPayload(empresaCnpjPix, empresaNomePix, empresaCidadePix, valorLiquido, $"NOTADEB{n.Id:D4}");
+            var qrGenerator = new QRCodeGenerator();
+            var qrCodeData = qrGenerator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.M);
+            // O overload sem cores explícitas gera PNG em tons de cinza de 1 bit por pixel, que o
+            // decodificador de imagem do PdfSharp não lê ("Unsupported image format") — passar as
+            // cores força um PNG indexado que o PdfSharp decodifica sem problema.
+            var qrPng = new PngByteQRCode(qrCodeData).GetGraphic(10, new byte[] { 0, 0, 0, 255 }, new byte[] { 255, 255, 255, 255 }, true);
+            using var qrStream = new MemoryStream(qrPng);
+            var qrImage = XImage.FromStream(qrStream);
+
+            const double tamanhoQrCode = 90;
+            gfx.DrawImage(qrImage, margem, y, tamanhoQrCode, tamanhoQrCode);
+            gfx.DrawString(
+                "Escaneie pra pagar direto pra Hope via Pix", fontRotulo, new XSolidBrush(corRotulo),
+                new XRect(margem + tamanhoQrCode + 10, y, largura - tamanhoQrCode - 10, 14), XStringFormats.TopLeft);
+            y += tamanhoQrCode + 6;
+        }
 
         y = DesenharSecao(gfx, "CLASSIFICAÇÃO CONTÁBIL", margem, y, largura, corPrimaria, fontSecao);
         y = DesenharLinha(

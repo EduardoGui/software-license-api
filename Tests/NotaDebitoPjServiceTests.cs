@@ -25,7 +25,40 @@ public class NotaDebitoPjServiceTests
         return (new NotaDebitoPjService(context, new FakeTimeProvider(Agora), NullLogger<NotaDebitoPjService>.Instance, configuracao), context);
     }
 
-    private static Usuario CriarUsuario(AppDbContext context, string nome, string? tipo = null)
+    private static (NotaDebitoPjService Service, AppDbContext Context) CriarServiceComConfiguracaoPix()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        var context = new AppDbContext(options);
+        var configuracao = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ReembolsoDespesa:EmpresaNome"] = "SPE Hope S.A.",
+                ["ReembolsoDespesa:EmpresaCnpj"] = "63.523.589/0001-22",
+                ["ReembolsoDespesa:EmpresaCidade"] = "Belo Horizonte",
+            })
+            .Build();
+        return (new NotaDebitoPjService(context, new FakeTimeProvider(Agora), NullLogger<NotaDebitoPjService>.Instance, configuracao), context);
+    }
+
+    private static EmpresaPj CriarEmpresaPj(AppDbContext context, string razaoSocial, string cnpj)
+    {
+        var empresa = new EmpresaPj
+        {
+            RazaoSocial = razaoSocial,
+            Cnpj = cnpj,
+            Ativa = true,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.EmpresasPj.Add(empresa);
+        context.SaveChanges();
+        return empresa;
+    }
+
+    private static Usuario CriarUsuario(AppDbContext context, string nome, string? tipo = null, int? empresaPjId = null)
     {
         var usuario = new Usuario
         {
@@ -34,6 +67,7 @@ public class NotaDebitoPjServiceTests
             DataInicio = new DateOnly(2020, 1, 1),
             Tipo = tipo,
             Cpf = "123.456.789-00",
+            EmpresaPjId = empresaPjId,
             DataCriacao = Agora.UtcDateTime,
             DataAtualizacao = Agora.UtcDateTime,
         };
@@ -249,6 +283,38 @@ public class NotaDebitoPjServiceTests
         var pdf = await service.GerarPdfAsync(criada.Id);
 
         Assert.NotEmpty(pdf);
+    }
+
+    [Fact]
+    public async Task GerarPdfAsync_DeveGerarQrCodePixQuandoEmpresaConfigurada()
+    {
+        var (service, context) = CriarServiceComConfiguracaoPix();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+        var criada = await service.CreateAsync(CriarDto(usuario.Id));
+
+        var pdfSemQrCode = await new NotaDebitoPjService(
+            context, new FakeTimeProvider(Agora), NullLogger<NotaDebitoPjService>.Instance,
+            new ConfigurationBuilder().AddInMemoryCollection().Build()).GerarPdfAsync(criada.Id);
+        var pdfComQrCode = await service.GerarPdfAsync(criada.Id);
+
+        Assert.NotEmpty(pdfComQrCode);
+        // A imagem do QR code embutida deve deixar o arquivo sensivelmente maior que a versão sem Pix configurado.
+        Assert.True(pdfComQrCode.Length > pdfSemQrCode.Length);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveIncluirRazaoSocialECnpjDaEmpresaPjNoDto()
+    {
+        var (service, context) = CriarService();
+        var empresa = CriarEmpresaPj(context, "Empresa Teste LTDA", "11.222.333/0001-44");
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj, empresa.Id);
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+
+        var nota = await service.CreateAsync(CriarDto(usuario.Id));
+
+        Assert.Equal("Empresa Teste LTDA", nota.EmpresaPjNome);
+        Assert.Equal("11.222.333/0001-44", nota.EmpresaPjCnpj);
     }
 
     [Fact]

@@ -5,6 +5,8 @@ public class NotaDebitoPjDto
     public int Id { get; set; }
     public int UsuarioId { get; set; }
     public string UsuarioNome { get; set; } = string.Empty;
+    public string? EmpresaPjNome { get; set; }
+    public string? EmpresaPjCnpj { get; set; }
     public int Ano { get; set; }
     public int Mes { get; set; }
     public decimal ValorBruto { get; set; }
