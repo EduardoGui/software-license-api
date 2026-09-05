@@ -107,23 +107,74 @@ public class DashboardService : IDashboardService
         var alertasMedicao = await ObterAlertasMedicaoAsync(hoje);
         var tarefasPendentes = (await _tarefaOcorrenciaService.ObterAgendaAsync()).Take(10).ToList();
 
+        var pendencias = MontarPendencias(tarefasPendentes, proximosVencimentos, proximosVencimentosContratos, alertasMedicao);
+
         return new DashboardDto
         {
             UsuariosAtivos = usuariosAtivos,
             LicencasAdquiridas = licencasAdquiridas,
             LicencasEmUso = licencasEmUso,
             LicencasDisponiveis = licencasDisponiveis,
-            ProximosVencimentos = proximosVencimentos,
             LicencasEmUsoPorNome = licencasEmUsoPorNome,
             LicencasDisponiveisPorNome = licencasDisponiveisPorNome,
             EquipamentosEmUsoPorTipo = equipamentosEmUsoPorTipo,
             EquipamentosDisponiveisPorTipo = equipamentosDisponiveisPorTipo,
             EquipamentosLocadosAtivosPorTipo = equipamentosLocadosAtivosPorTipo,
             CustoMensalLocacaoAtual = relatorioMesAtual.TotalGeral,
-            ProximosVencimentosContratos = proximosVencimentosContratos,
-            AlertasMedicao = alertasMedicao,
-            TarefasPendentes = tarefasPendentes,
+            Pendencias = pendencias,
         };
+    }
+
+    // Junta tarefas da Agenda + os 3 alertas calculados (licença, contrato de locação de
+    // equipamento, medição) numa única lista, ordenada por urgência — mesmo espírito de "o que
+    // precisa da minha atenção", só que num lugar só, com a mesma aparência de tabela.
+    private static List<PendenciaDto> MontarPendencias(
+        List<TarefaOcorrenciaDto> tarefasPendentes, List<VencimentoDto> proximosVencimentos,
+        List<VencimentoContratoDto> proximosVencimentosContratos, List<AlertaMedicaoDto> alertasMedicao)
+    {
+        var pendencias = new List<PendenciaDto>();
+
+        pendencias.AddRange(tarefasPendentes.Select(t => new PendenciaDto
+        {
+            Origem = "Tarefa",
+            Titulo = t.Titulo,
+            Observacao = t.Observacao,
+            Data = t.DataPrevistaAtual,
+            DiasParaVencer = t.DiasParaVencer,
+            TarefaOcorrenciaId = t.Id,
+        }));
+
+        pendencias.AddRange(proximosVencimentos.Select(v => new PendenciaDto
+        {
+            Origem = "Licença",
+            Titulo = v.Nome,
+            Observacao = "Licença vencendo",
+            Data = v.DataTerminoPrevisto,
+            DiasParaVencer = v.DiasParaVencer,
+            LicencaId = v.LicencaId,
+        }));
+
+        pendencias.AddRange(proximosVencimentosContratos.Select(v => new PendenciaDto
+        {
+            Origem = "Equipamento",
+            Titulo = v.Descricao,
+            Observacao = "Contrato de locação vencendo",
+            Data = v.DataFimContrato,
+            DiasParaVencer = v.DiasParaVencer,
+            EquipamentoId = v.EquipamentoId,
+        }));
+
+        pendencias.AddRange(alertasMedicao.Select(a => new PendenciaDto
+        {
+            Origem = "Medição",
+            Titulo = a.ContratoNumero,
+            Observacao = $"Fornecedor: {a.FornecedorNome}",
+            Data = a.PeriodoFim,
+            DiasParaVencer = a.DiasParaVencer,
+            ContratoId = a.ContratoId,
+        }));
+
+        return pendencias.OrderBy(p => p.DiasParaVencer).Take(15).ToList();
     }
 
     // Alerta de medição: pra cada contrato Ativo cuja configuração de medição exige BM e tem

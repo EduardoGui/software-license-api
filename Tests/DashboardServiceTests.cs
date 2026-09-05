@@ -191,9 +191,10 @@ public class DashboardServiceTests
 
         var dashboard = await service.ObterAsync();
 
-        Assert.Single(dashboard.ProximosVencimentos);
-        Assert.Equal("Vence em breve", dashboard.ProximosVencimentos[0].Nome);
-        Assert.Equal(10, dashboard.ProximosVencimentos[0].DiasParaVencer);
+        var pendenciasLicenca = dashboard.Pendencias.Where(p => p.Origem == "Licença").ToList();
+        var pendencia = Assert.Single(pendenciasLicenca);
+        Assert.Equal("Vence em breve", pendencia.Titulo);
+        Assert.Equal(10, pendencia.DiasParaVencer);
     }
 
     [Fact]
@@ -204,8 +205,9 @@ public class DashboardServiceTests
 
         var dashboard = await service.ObterAsync();
 
-        Assert.Single(dashboard.ProximosVencimentos);
-        Assert.Equal(-3, dashboard.ProximosVencimentos[0].DiasParaVencer);
+        var pendenciasLicenca = dashboard.Pendencias.Where(p => p.Origem == "Licença").ToList();
+        var pendencia = Assert.Single(pendenciasLicenca);
+        Assert.Equal(-3, pendencia.DiasParaVencer);
     }
 
     [Fact]
@@ -351,9 +353,9 @@ public class DashboardServiceTests
 
         var dashboard = await service.ObterAsync();
 
-        var alerta = Assert.Single(dashboard.AlertasMedicao);
-        Assert.Equal("CT-001", alerta.ContratoNumero);
-        Assert.Equal(new DateOnly(2026, 8, 15), alerta.PeriodoFim);
+        var alerta = Assert.Single(dashboard.Pendencias.Where(p => p.Origem == "Medição"));
+        Assert.Equal("CT-001", alerta.Titulo);
+        Assert.Equal(new DateOnly(2026, 8, 15), alerta.Data);
         Assert.Equal(3, alerta.DiasParaVencer);
     }
 
@@ -366,7 +368,7 @@ public class DashboardServiceTests
 
         var dashboard = await service.ObterAsync();
 
-        Assert.Empty(dashboard.AlertasMedicao);
+        Assert.Empty(dashboard.Pendencias.Where(p => p.Origem == "Medição"));
     }
 
     [Fact]
@@ -379,8 +381,8 @@ public class DashboardServiceTests
 
         var dashboard = await service.ObterAsync();
 
-        var alerta = Assert.Single(dashboard.AlertasMedicao);
-        Assert.Equal(new DateOnly(2026, 9, 5), alerta.PeriodoFim);
+        var alerta = Assert.Single(dashboard.Pendencias.Where(p => p.Origem == "Medição"));
+        Assert.Equal(new DateOnly(2026, 9, 5), alerta.Data);
     }
 
     [Fact]
@@ -403,7 +405,7 @@ public class DashboardServiceTests
 
         var dashboard = await service.ObterAsync();
 
-        Assert.Empty(dashboard.AlertasMedicao);
+        Assert.Empty(dashboard.Pendencias.Where(p => p.Origem == "Medição"));
     }
 
     [Fact]
@@ -415,7 +417,7 @@ public class DashboardServiceTests
 
         var dashboard = await service.ObterAsync();
 
-        Assert.Empty(dashboard.AlertasMedicao);
+        Assert.Empty(dashboard.Pendencias.Where(p => p.Origem == "Medição"));
     }
 
     [Fact]
@@ -432,8 +434,9 @@ public class DashboardServiceTests
 
         var dashboard = await service.ObterAsync();
 
-        Assert.Single(dashboard.ProximosVencimentosContratos);
-        Assert.Equal(10, dashboard.ProximosVencimentosContratos[0].DiasParaVencer);
+        var pendenciasEquipamento = dashboard.Pendencias.Where(p => p.Origem == "Equipamento").ToList();
+        var pendencia = Assert.Single(pendenciasEquipamento);
+        Assert.Equal(10, pendencia.DiasParaVencer);
     }
 
     [Fact]
@@ -452,10 +455,10 @@ public class DashboardServiceTests
 
         var dashboard = await service.ObterAsync();
 
-        var tarefa = Assert.Single(dashboard.TarefasPendentes);
+        var tarefa = Assert.Single(dashboard.Pendencias.Where(p => p.Origem == "Tarefa"));
         Assert.Equal("Pedir boleto do estacionamento", tarefa.Titulo);
         // Hoje = 12/08/2026, dia configurado = 20 (ainda este mês) — faltam 8 dias.
-        Assert.Equal(new DateOnly(2026, 8, 20), tarefa.DataPrevistaAtual);
+        Assert.Equal(new DateOnly(2026, 8, 20), tarefa.Data);
         Assert.Equal(8, tarefa.DiasParaVencer);
     }
 
@@ -475,6 +478,30 @@ public class DashboardServiceTests
 
         var dashboard = await service.ObterAsync();
 
-        Assert.Empty(dashboard.TarefasPendentes);
+        Assert.Empty(dashboard.Pendencias.Where(p => p.Origem == "Tarefa"));
+    }
+
+    [Fact]
+    public async Task ObterAsync_DeveJuntarPendenciasDeTodasAsOrigensOrdenadasPorUrgencia()
+    {
+        var (service, context) = CriarService();
+        // Tarefa mais urgente (dia 13, faltam 1 dia) do que a licença (10 dias).
+        context.TarefasRecorrentes.Add(new TarefaRecorrente
+        {
+            Titulo = "Pedir boleto",
+            DiaDoMes = 13,
+            Ativa = true,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        });
+        CriarLicenca(context, "Vence em breve", quantidadeTotal: 5, dataTerminoPrevisto: Hoje.AddDays(10), diasAntecedenciaAviso: 30);
+        await context.SaveChangesAsync();
+
+        var dashboard = await service.ObterAsync();
+
+        Assert.Equal(2, dashboard.Pendencias.Count);
+        Assert.Equal("Tarefa", dashboard.Pendencias[0].Origem);
+        Assert.Equal("Licença", dashboard.Pendencias[1].Origem);
+        Assert.True(dashboard.Pendencias[0].DiasParaVencer < dashboard.Pendencias[1].DiasParaVencer);
     }
 }
