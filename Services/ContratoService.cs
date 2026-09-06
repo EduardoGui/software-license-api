@@ -52,7 +52,7 @@ public class ContratoService : IContratoService
             query = query.Where(c => c.Status == filtro.Status);
         }
 
-        var contratos = await query.OrderByDescending(c => c.DataAssinatura).ToListAsync();
+        var contratos = await query.OrderBy(c => c.Numero).ToListAsync();
         var aditivosPorContrato = await ObterAditivosFormalizadosPorContratoAsync(contratos.Select(c => c.Id));
 
         if (filtro.VigenciaFimAte is not null)

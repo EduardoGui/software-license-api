@@ -155,6 +155,20 @@ public class ContratoServiceTests
     }
 
     [Fact]
+    public async Task GetAllAsync_DeveOrdenarPorNumero()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        await service.CreateAsync(CriarDtoValido(fornecedor.Id, "SUB_HOPE_0006_2026"));
+        await service.CreateAsync(CriarDtoValido(fornecedor.Id, "SUB_HOPE_0002_2025"));
+        await service.CreateAsync(CriarDtoValido(fornecedor.Id, "SUB_HOPE_0005_2026"));
+
+        var resultado = await service.GetAllAsync(new ContratoFiltroDto());
+
+        Assert.Equal(["SUB_HOPE_0002_2025", "SUB_HOPE_0005_2026", "SUB_HOPE_0006_2026"], resultado.Select(c => c.Numero));
+    }
+
+    [Fact]
     public async Task GetByIdAsync_DeveLancarNotFoundParaContratoInexistente()
     {
         var (service, _) = CriarService();
