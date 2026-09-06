@@ -34,9 +34,6 @@ public class DashboardService : IDashboardService
         var usuariosAtivos = usuarios.Count(u => UsuarioStatus.Calcular(u, hoje) == UsuarioStatus.Ativo);
 
         var licencas = await _context.Licencas.ToListAsync();
-        var licencasAdquiridas = licencas.Sum(l => l.QuantidadeTotal);
-        var licencasEmUso = await _context.UsuarioLicencas.CountAsync(m => m.DataFim == null);
-        var licencasDisponiveis = licencasAdquiridas - licencasEmUso;
 
         var usuarioLicencasAtivas = await _context.UsuarioLicencas.Where(m => m.DataFim == null).ToListAsync();
         var emUsoPorLicencaId = usuarioLicencasAtivas
@@ -112,7 +109,6 @@ public class DashboardService : IDashboardService
         return new DashboardDto
         {
             UsuariosAtivos = usuariosAtivos,
-            LicencasDisponiveis = licencasDisponiveis,
             LicencasEmUsoPorNome = licencasEmUsoPorNome,
             LicencasDisponiveisPorNome = licencasDisponiveisPorNome,
             EquipamentosEmUsoPorTipo = equipamentosEmUsoPorTipo,

@@ -3,7 +3,6 @@ namespace SoftwareLicense.Api.DTOs;
 public class DashboardDto
 {
     public int UsuariosAtivos { get; set; }
-    public int LicencasDisponiveis { get; set; }
     public List<LicencaContagemPorNomeDto> LicencasEmUsoPorNome { get; set; } = [];
     public List<LicencaContagemPorNomeDto> LicencasDisponiveisPorNome { get; set; } = [];
     public List<EquipamentoContagemPorTipoDto> EquipamentosEmUsoPorTipo { get; set; } = [];

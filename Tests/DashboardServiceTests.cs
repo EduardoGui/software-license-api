@@ -113,28 +113,6 @@ public class DashboardServiceTests
     }
 
     [Fact]
-    public async Task ObterAsync_DeveCalcularQuantidadesDeLicencasCorretamente()
-    {
-        var (service, context) = CriarService();
-        var licenca = CriarLicenca(context, "Microsoft 365", quantidadeTotal: 20, dataTerminoPrevisto: Hoje.AddYears(1));
-        var usuario = CriarUsuario(context, "Ana", Hoje.AddDays(-10));
-
-        context.UsuarioLicencas.Add(new UsuarioLicenca
-        {
-            UsuarioId = usuario.Id,
-            LicencaId = licenca.Id,
-            DataInicio = Hoje.AddDays(-5),
-            DataCriacao = Agora.UtcDateTime,
-            DataAtualizacao = Agora.UtcDateTime,
-        });
-        await context.SaveChangesAsync();
-
-        var dashboard = await service.ObterAsync();
-
-        Assert.Equal(19, dashboard.LicencasDisponiveis);
-    }
-
-    [Fact]
     public async Task ObterAsync_DeveAgruparLicencasEmUsoPorNome()
     {
         var (service, context) = CriarService();
