@@ -125,6 +125,7 @@ builder.Services.AddScoped<IRelatorioMensalPlanoSaudeService, RelatorioMensalPla
 builder.Services.AddScoped<INotaDebitoPjService, NotaDebitoPjService>();
 builder.Services.AddScoped<IFornecedorService, FornecedorService>();
 builder.Services.AddScoped<IContratoService, ContratoService>();
+builder.Services.AddScoped<IOrdemCompraService, OrdemCompraService>();
 builder.Services.AddScoped<ITarefaRecorrenteService, TarefaRecorrenteService>();
 builder.Services.AddScoped<ITarefaOcorrenciaService, TarefaOcorrenciaService>();
 

@@ -53,6 +53,13 @@ public class FornecedorService : IFornecedorService
         {
             Nome = dto.Nome.Trim(),
             Cnpj = dto.Cnpj.Trim(),
+            Contato = dto.Contato?.Trim(),
+            Telefone = dto.Telefone?.Trim(),
+            Endereco = dto.Endereco?.Trim(),
+            InscricaoEstadual = dto.InscricaoEstadual?.Trim(),
+            InscricaoMunicipal = dto.InscricaoMunicipal?.Trim(),
+            Email = dto.Email?.Trim(),
+            DadosBancarios = dto.DadosBancarios?.Trim(),
             Ativo = dto.Ativo,
             DataCriacao = agora,
             DataAtualizacao = agora,
@@ -75,6 +82,13 @@ public class FornecedorService : IFornecedorService
 
         fornecedor.Nome = dto.Nome.Trim();
         fornecedor.Cnpj = string.IsNullOrWhiteSpace(dto.Cnpj) ? null : dto.Cnpj.Trim();
+        fornecedor.Contato = dto.Contato?.Trim();
+        fornecedor.Telefone = dto.Telefone?.Trim();
+        fornecedor.Endereco = dto.Endereco?.Trim();
+        fornecedor.InscricaoEstadual = dto.InscricaoEstadual?.Trim();
+        fornecedor.InscricaoMunicipal = dto.InscricaoMunicipal?.Trim();
+        fornecedor.Email = dto.Email?.Trim();
+        fornecedor.DadosBancarios = dto.DadosBancarios?.Trim();
         fornecedor.Ativo = dto.Ativo;
         fornecedor.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
 
@@ -128,6 +142,13 @@ public class FornecedorService : IFornecedorService
         Id = f.Id,
         Nome = f.Nome,
         Cnpj = f.Cnpj,
+        Contato = f.Contato,
+        Telefone = f.Telefone,
+        Endereco = f.Endereco,
+        InscricaoEstadual = f.InscricaoEstadual,
+        InscricaoMunicipal = f.InscricaoMunicipal,
+        Email = f.Email,
+        DadosBancarios = f.DadosBancarios,
         Ativo = f.Ativo,
         DataCriacao = f.DataCriacao,
         DataAtualizacao = f.DataAtualizacao,

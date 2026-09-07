@@ -54,6 +54,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<MedicaoBmAnexo> MedicaoBmAnexos => Set<MedicaoBmAnexo>();
     public DbSet<MedicaoBmAcerto> MedicaoBmAcertos => Set<MedicaoBmAcerto>();
     public DbSet<MedicaoBmImposto> MedicaoBmImpostos => Set<MedicaoBmImposto>();
+    public DbSet<OrdemCompra> OrdensCompra => Set<OrdemCompra>();
+    public DbSet<OrdemCompraItem> OrdemCompraItens => Set<OrdemCompraItem>();
+    public DbSet<OrdemCompraAnexo> OrdemCompraAnexos => Set<OrdemCompraAnexo>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -253,6 +256,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         {
             entity.Property(f => f.Nome).IsRequired().HasMaxLength(200);
             entity.Property(f => f.Cnpj).HasMaxLength(20);
+            entity.Property(f => f.Contato).HasMaxLength(150);
+            entity.Property(f => f.Telefone).HasMaxLength(30);
+            entity.Property(f => f.Endereco).HasMaxLength(300);
+            entity.Property(f => f.InscricaoEstadual).HasMaxLength(30);
+            entity.Property(f => f.InscricaoMunicipal).HasMaxLength(30);
+            entity.Property(f => f.Email).HasMaxLength(200);
+            entity.Property(f => f.DadosBancarios).HasMaxLength(500);
             entity.HasIndex(f => f.Nome).IsUnique();
             entity.HasIndex(f => f.Cnpj).IsUnique().HasFilter("\"Cnpj\" IS NOT NULL");
         });
@@ -308,6 +318,40 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
             entity.HasIndex(a => a.ContratoId);
             entity.HasOne(a => a.Contrato).WithMany().HasForeignKey(a => a.ContratoId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<OrdemCompra>(entity =>
+        {
+            entity.Property(o => o.Solicitante).IsRequired().HasMaxLength(150);
+            entity.Property(o => o.CondicaoPagamento).IsRequired().HasMaxLength(200);
+            entity.Property(o => o.TipoFrete).HasMaxLength(100);
+            entity.Property(o => o.ValorFrete).HasPrecision(18, 2);
+            entity.Property(o => o.LocalEntrega).HasMaxLength(300);
+            entity.Property(o => o.PrazoEntrega).HasMaxLength(100);
+            entity.Property(o => o.Status).IsRequired().HasMaxLength(20);
+            entity.HasIndex(o => o.Numero).IsUnique();
+            entity.HasOne(o => o.Fornecedor).WithMany().HasForeignKey(o => o.FornecedorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(o => o.Local).WithMany().HasForeignKey(o => o.LocalId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<OrdemCompraItem>(entity =>
+        {
+            entity.Property(i => i.Codigo).HasMaxLength(50);
+            entity.Property(i => i.Descricao).IsRequired().HasMaxLength(300);
+            entity.Property(i => i.Unidade).IsRequired().HasMaxLength(20);
+            entity.Property(i => i.MarcaReferencia).HasMaxLength(100);
+            entity.Property(i => i.Quantidade).HasPrecision(18, 6);
+            entity.Property(i => i.ValorUnitario).HasPrecision(18, 2);
+            entity.HasIndex(i => i.OrdemCompraId);
+            entity.HasOne(i => i.OrdemCompra).WithMany(o => o.Itens).HasForeignKey(i => i.OrdemCompraId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<OrdemCompraAnexo>(entity =>
+        {
+            entity.Property(a => a.NomeArquivo).IsRequired().HasMaxLength(255);
+            entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
+            entity.HasIndex(a => a.OrdemCompraId);
+            entity.HasOne(a => a.OrdemCompra).WithMany().HasForeignKey(a => a.OrdemCompraId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Aditivo>(entity =>
