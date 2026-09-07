@@ -57,6 +57,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<OrdemCompra> OrdensCompra => Set<OrdemCompra>();
     public DbSet<OrdemCompraItem> OrdemCompraItens => Set<OrdemCompraItem>();
     public DbSet<OrdemCompraAnexo> OrdemCompraAnexos => Set<OrdemCompraAnexo>();
+    public DbSet<DespesaAvulsa> DespesasAvulsas => Set<DespesaAvulsa>();
+    public DbSet<DespesaAvulsaAnexo> DespesaAvulsaAnexos => Set<DespesaAvulsaAnexo>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -352,6 +354,24 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
             entity.HasIndex(a => a.OrdemCompraId);
             entity.HasOne(a => a.OrdemCompra).WithMany().HasForeignKey(a => a.OrdemCompraId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<DespesaAvulsa>(entity =>
+        {
+            entity.Property(d => d.Categoria).IsRequired().HasMaxLength(30);
+            entity.Property(d => d.Descricao).IsRequired().HasMaxLength(300);
+            entity.Property(d => d.NumeroNf).HasMaxLength(50);
+            entity.Property(d => d.Valor).HasPrecision(18, 2);
+            entity.HasIndex(d => d.FornecedorId);
+            entity.HasOne(d => d.Fornecedor).WithMany().HasForeignKey(d => d.FornecedorId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<DespesaAvulsaAnexo>(entity =>
+        {
+            entity.Property(a => a.NomeArquivo).IsRequired().HasMaxLength(255);
+            entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
+            entity.HasIndex(a => a.DespesaAvulsaId);
+            entity.HasOne(a => a.DespesaAvulsa).WithMany().HasForeignKey(a => a.DespesaAvulsaId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Aditivo>(entity =>
