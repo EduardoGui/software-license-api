@@ -112,6 +112,18 @@ public class OrdemCompraService : IOrdemCompraService
         _context.OrdensCompra.Add(ordemCompra);
         await _context.SaveChangesAsync();
 
+        _context.Obrigacoes.Add(new Obrigacao
+        {
+            TipoMovimento = ObrigacaoTipoMovimento.OrdemCompra,
+            OrdemCompraId = ordemCompra.Id,
+            FornecedorId = ordemCompra.FornecedorId,
+            Competencia = new DateOnly(ordemCompra.Data.Year, ordemCompra.Data.Month, 1),
+            ValorPrevisto = ordemCompra.Itens.Sum(i => i.Quantidade * i.ValorUnitario),
+            DataCriacao = agora,
+            DataAtualizacao = agora,
+        });
+        await _context.SaveChangesAsync();
+
         _logger.LogInformation("Ordem de Compra {OrdemCompraId} (nº {Numero}) criada", ordemCompra.Id, ordemCompra.Numero);
 
         ordemCompra.Fornecedor = fornecedor;
@@ -166,6 +178,15 @@ public class OrdemCompraService : IOrdemCompraService
             DataCriacao = agora,
             DataAtualizacao = agora,
         }).ToList();
+
+        var obrigacao = await _context.Obrigacoes.FirstOrDefaultAsync(o => o.OrdemCompraId == id);
+        if (obrigacao is not null)
+        {
+            obrigacao.FornecedorId = ordemCompra.FornecedorId;
+            obrigacao.Competencia = new DateOnly(ordemCompra.Data.Year, ordemCompra.Data.Month, 1);
+            obrigacao.ValorPrevisto = ordemCompra.Itens.Sum(i => i.Quantidade * i.ValorUnitario);
+            obrigacao.DataAtualizacao = agora;
+        }
 
         await _context.SaveChangesAsync();
 
@@ -223,6 +244,14 @@ public class OrdemCompraService : IOrdemCompraService
 
         ordemCompra.Status = OrdemCompraStatus.Cancelada;
         ordemCompra.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        var obrigacao = await _context.Obrigacoes.FirstOrDefaultAsync(o => o.OrdemCompraId == id);
+        if (obrigacao is not null)
+        {
+            obrigacao.Cancelada = true;
+            obrigacao.DataAtualizacao = ordemCompra.DataAtualizacao;
+        }
+
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Ordem de Compra {OrdemCompraId} cancelada", ordemCompra.Id);

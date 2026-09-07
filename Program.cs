@@ -127,6 +127,7 @@ builder.Services.AddScoped<IFornecedorService, FornecedorService>();
 builder.Services.AddScoped<IContratoService, ContratoService>();
 builder.Services.AddScoped<IOrdemCompraService, OrdemCompraService>();
 builder.Services.AddScoped<IDespesaAvulsaService, DespesaAvulsaService>();
+builder.Services.AddScoped<IObrigacaoService, ObrigacaoService>();
 builder.Services.AddScoped<ITarefaRecorrenteService, TarefaRecorrenteService>();
 builder.Services.AddScoped<ITarefaOcorrenciaService, TarefaOcorrenciaService>();
 

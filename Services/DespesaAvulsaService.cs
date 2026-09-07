@@ -91,6 +91,23 @@ public class DespesaAvulsaService : IDespesaAvulsaService
         _context.DespesasAvulsas.Add(despesa);
         await _context.SaveChangesAsync();
 
+        var competenciaBase = despesa.DataEmissao ?? DateOnly.FromDateTime(agora);
+        _context.Obrigacoes.Add(new Obrigacao
+        {
+            TipoMovimento = ObrigacaoTipoMovimento.DespesaAvulsa,
+            DespesaAvulsaId = despesa.Id,
+            FornecedorId = despesa.FornecedorId,
+            Competencia = new DateOnly(competenciaBase.Year, competenciaBase.Month, 1),
+            ValorPrevisto = despesa.Valor,
+            DataNf = despesa.DataEmissao,
+            NumeroNf = despesa.NumeroNf,
+            ValorNota = despesa.Valor,
+            Vencimento = despesa.Vencimento,
+            DataCriacao = agora,
+            DataAtualizacao = agora,
+        });
+        await _context.SaveChangesAsync();
+
         _logger.LogInformation("Despesa avulsa {DespesaAvulsaId} criada", despesa.Id);
 
         despesa.Fornecedor = fornecedor;
@@ -116,6 +133,20 @@ public class DespesaAvulsaService : IDespesaAvulsaService
         despesa.Recorrente = dto.Recorrente;
         despesa.Observacoes = dto.Observacoes?.Trim();
         despesa.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        var obrigacao = await _context.Obrigacoes.FirstOrDefaultAsync(o => o.DespesaAvulsaId == id);
+        if (obrigacao is not null)
+        {
+            var competenciaBase = despesa.DataEmissao ?? DateOnly.FromDateTime(despesa.DataAtualizacao);
+            obrigacao.FornecedorId = despesa.FornecedorId;
+            obrigacao.Competencia = new DateOnly(competenciaBase.Year, competenciaBase.Month, 1);
+            obrigacao.ValorPrevisto = despesa.Valor;
+            obrigacao.DataNf = despesa.DataEmissao;
+            obrigacao.NumeroNf = despesa.NumeroNf;
+            obrigacao.ValorNota = despesa.Valor;
+            obrigacao.Vencimento = despesa.Vencimento;
+            obrigacao.DataAtualizacao = despesa.DataAtualizacao;
+        }
 
         await _context.SaveChangesAsync();
 

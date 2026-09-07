@@ -59,6 +59,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<OrdemCompraAnexo> OrdemCompraAnexos => Set<OrdemCompraAnexo>();
     public DbSet<DespesaAvulsa> DespesasAvulsas => Set<DespesaAvulsa>();
     public DbSet<DespesaAvulsaAnexo> DespesaAvulsaAnexos => Set<DespesaAvulsaAnexo>();
+    public DbSet<Obrigacao> Obrigacoes => Set<Obrigacao>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -372,6 +373,22 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
             entity.HasIndex(a => a.DespesaAvulsaId);
             entity.HasOne(a => a.DespesaAvulsa).WithMany().HasForeignKey(a => a.DespesaAvulsaId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Obrigacao>(entity =>
+        {
+            entity.Property(o => o.TipoMovimento).IsRequired().HasMaxLength(20);
+            entity.Property(o => o.ValorPrevisto).HasPrecision(18, 2);
+            entity.Property(o => o.NumeroNf).HasMaxLength(50);
+            entity.Property(o => o.ValorNota).HasPrecision(18, 2);
+            entity.HasIndex(o => o.MedicaoBmId).IsUnique().HasFilter("\"MedicaoBmId\" IS NOT NULL");
+            entity.HasIndex(o => o.OrdemCompraId).IsUnique().HasFilter("\"OrdemCompraId\" IS NOT NULL");
+            entity.HasIndex(o => o.DespesaAvulsaId).IsUnique().HasFilter("\"DespesaAvulsaId\" IS NOT NULL");
+            entity.HasIndex(o => o.Competencia);
+            entity.HasOne(o => o.MedicaoBm).WithMany().HasForeignKey(o => o.MedicaoBmId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(o => o.OrdemCompra).WithMany().HasForeignKey(o => o.OrdemCompraId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(o => o.DespesaAvulsa).WithMany().HasForeignKey(o => o.DespesaAvulsaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(o => o.Fornecedor).WithMany().HasForeignKey(o => o.FornecedorId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Aditivo>(entity =>

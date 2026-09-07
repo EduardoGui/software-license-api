@@ -570,6 +570,18 @@ public class ContratoService : IContratoService
         _context.MedicaoBms.Add(medicao);
         await _context.SaveChangesAsync();
 
+        _context.Obrigacoes.Add(new Obrigacao
+        {
+            TipoMovimento = ObrigacaoTipoMovimento.Medicao,
+            MedicaoBmId = medicao.Id,
+            FornecedorId = contrato.FornecedorId,
+            Competencia = new DateOnly(medicao.PeriodoInicio.Year, medicao.PeriodoInicio.Month, 1),
+            ValorPrevisto = 0,
+            DataCriacao = agora,
+            DataAtualizacao = agora,
+        });
+        await _context.SaveChangesAsync();
+
         _logger.LogInformation("BM {MedicaoId} (nº {Numero}) criado para o contrato {ContratoId}", medicao.Id, medicao.Numero, contratoId);
 
         return ParaMedicaoBmDto(medicao);
@@ -633,6 +645,13 @@ public class ContratoService : IContratoService
         medicao.ValorTotalMedido = medicao.Itens.Sum(i => i.ValorTotalItem);
         medicao.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
 
+        var obrigacao = await _context.Obrigacoes.FirstOrDefaultAsync(o => o.MedicaoBmId == medicaoId);
+        if (obrigacao is not null)
+        {
+            obrigacao.ValorPrevisto = medicao.ValorTotalMedido + medicao.Acertos.Sum(a => a.PrecoTotal) - medicao.Impostos.Sum(i => i.ValorTotal);
+            obrigacao.DataAtualizacao = medicao.DataAtualizacao;
+        }
+
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("BM {MedicaoId} do contrato {ContratoId} atualizado", medicaoId, contratoId);
@@ -651,6 +670,12 @@ public class ContratoService : IContratoService
 
         var anexos = await _context.MedicaoBmAnexos.Where(a => a.MedicaoBmId == medicaoId).ToListAsync();
         _context.MedicaoBmAnexos.RemoveRange(anexos);
+        var obrigacao = await _context.Obrigacoes.FirstOrDefaultAsync(o => o.MedicaoBmId == medicaoId);
+        if (obrigacao is not null)
+        {
+            _context.Obrigacoes.Remove(obrigacao);
+        }
+
         _context.MedicaoBmImpostos.RemoveRange(medicao.Impostos);
         _context.MedicaoBmAcertos.RemoveRange(medicao.Acertos);
         _context.MedicaoBmItens.RemoveRange(medicao.Itens);
@@ -782,6 +807,13 @@ public class ContratoService : IContratoService
         medicao.ObservacaoAprovador = dto.ObservacaoAprovador?.Trim();
         medicao.DataDecisao = agora;
         medicao.DataAtualizacao = agora;
+
+        var obrigacao = await _context.Obrigacoes.FirstOrDefaultAsync(o => o.MedicaoBmId == medicaoId);
+        if (obrigacao is not null)
+        {
+            obrigacao.Cancelada = true;
+            obrigacao.DataAtualizacao = agora;
+        }
 
         await _context.SaveChangesAsync();
 
