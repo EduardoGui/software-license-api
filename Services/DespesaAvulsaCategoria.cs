@@ -7,5 +7,8 @@ public static class DespesaAvulsaCategoria
     public const string Materiais = "Materiais";
     public const string Licencas = "Licenças";
     public const string Seguros = "Seguros";
+    public const string Viagem = "Viagem/Hospedagem";
+    public const string PlanoSaude = "Plano de Saúde";
+    public const string Estacionamento = "Estacionamento";
     public const string Outros = "Outros";
 }

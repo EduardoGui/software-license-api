@@ -11,7 +11,8 @@ public class DespesaAvulsaService : IDespesaAvulsaService
     private static readonly HashSet<string> CategoriasValidas =
     [
         DespesaAvulsaCategoria.Servicos, DespesaAvulsaCategoria.Equipamentos, DespesaAvulsaCategoria.Materiais,
-        DespesaAvulsaCategoria.Licencas, DespesaAvulsaCategoria.Seguros, DespesaAvulsaCategoria.Outros,
+        DespesaAvulsaCategoria.Licencas, DespesaAvulsaCategoria.Seguros, DespesaAvulsaCategoria.Viagem,
+        DespesaAvulsaCategoria.PlanoSaude, DespesaAvulsaCategoria.Estacionamento, DespesaAvulsaCategoria.Outros,
     ];
 
     private readonly AppDbContext _context;
