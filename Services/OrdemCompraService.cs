@@ -565,17 +565,25 @@ public class OrdemCompraService : IOrdemCompraService
         gfx.DrawString("OBSERVAÇÕES E COMENTÁRIOS - FORNECEDOR", fontRotuloCampo, new XSolidBrush(corRotulo), new XPoint(margem + 4, y + alturaBlocoObs + 10));
         DesenharTextoMultilinha(gfx, o.ObservacoesFornecedor ?? "", fontDeclaracao, new XSolidBrush(XColors.Black), margem + 4, y + alturaBlocoObs + 14, larguraEsquerda - 8, alturaLinha: 9);
 
+        // 4 assinaturas em grade 2x2, igual ao modelo antigo: fornecedor e solicitante aprovam o
+        // pedido (linha de cima), e mais duas aprovações internas da empresa (linha de baixo).
         var xDireita = margem + larguraEsquerda;
+        var larguraColunaAssinatura = larguraDireita / 2;
         gfx.DrawRectangle(new XPen(corBorda, 0.75), xDireita, y, larguraDireita, alturaBlocoObs * 2);
-        var ySignFornecedor = y + alturaBlocoObs * 0.75;
-        gfx.DrawLine(new XPen(XColors.Black), xDireita + 16, ySignFornecedor, margem + largura - 16, ySignFornecedor);
-        gfx.DrawString("FORNECEDOR", fontRotuloCampo, new XSolidBrush(corRotulo), new XRect(xDireita, ySignFornecedor + 3, larguraDireita, 12), XStringFormats.TopCenter);
+        gfx.DrawLine(new XPen(corBorda, 0.75), xDireita + larguraColunaAssinatura, y, xDireita + larguraColunaAssinatura, y + alturaBlocoObs * 2);
+        gfx.DrawLine(new XPen(corBorda, 0.75), xDireita, y + alturaBlocoObs, xDireita + larguraDireita, y + alturaBlocoObs);
 
-        var ySignSolicitante = y + alturaBlocoObs * 1.75;
-        gfx.DrawLine(new XPen(XColors.Black), xDireita + 16, ySignSolicitante, margem + largura - 16, ySignSolicitante);
-        gfx.DrawString(
-            $"SOLICITANTE — {empresaNome}", fontRotuloCampo, new XSolidBrush(corRotulo),
-            new XRect(xDireita, ySignSolicitante + 3, larguraDireita, 12), XStringFormats.TopCenter);
+        void DesenharAssinatura(double x, double yBase, string rotulo)
+        {
+            var yLinha = yBase + alturaBlocoObs * 0.65;
+            gfx.DrawLine(new XPen(XColors.Black), x + 10, yLinha, x + larguraColunaAssinatura - 10, yLinha);
+            gfx.DrawString(rotulo, fontRotuloCampo, new XSolidBrush(corRotulo), new XRect(x, yLinha + 3, larguraColunaAssinatura, 12), XStringFormats.TopCenter);
+        }
+
+        DesenharAssinatura(xDireita, y, "FORNECEDOR");
+        DesenharAssinatura(xDireita + larguraColunaAssinatura, y, $"SOLICITANTE — {empresaNome}");
+        DesenharAssinatura(xDireita, y + alturaBlocoObs, empresaNome);
+        DesenharAssinatura(xDireita + larguraColunaAssinatura, y + alturaBlocoObs, empresaNome);
 
         using var stream = new MemoryStream();
         document.Save(stream, false);
