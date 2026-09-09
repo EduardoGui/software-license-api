@@ -32,6 +32,13 @@ public class CreateContratoDto
 
     public string? Observacoes { get; set; }
 
+    [MaxLength(150)]
+    public string? ContatoAprovacaoNome { get; set; }
+
+    [EmailAddress(ErrorMessage = "E-mail do contato de aprovação inválido.")]
+    [MaxLength(200)]
+    public string? ContatoAprovacaoEmail { get; set; }
+
     [Required(ErrorMessage = "Ao menos um item é obrigatório.")]
     [MinLength(1, ErrorMessage = "Ao menos um item é obrigatório.")]
     public List<CreateContratoItemDto> Itens { get; set; } = [];

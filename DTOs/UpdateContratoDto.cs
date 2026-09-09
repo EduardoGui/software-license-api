@@ -15,4 +15,11 @@ public class UpdateContratoDto
     public string Status { get; set; } = string.Empty;
 
     public string? Observacoes { get; set; }
+
+    [MaxLength(150)]
+    public string? ContatoAprovacaoNome { get; set; }
+
+    [EmailAddress(ErrorMessage = "E-mail do contato de aprovação inválido.")]
+    [MaxLength(200)]
+    public string? ContatoAprovacaoEmail { get; set; }
 }

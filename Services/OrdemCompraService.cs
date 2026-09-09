@@ -93,6 +93,8 @@ public class OrdemCompraService : IOrdemCompraService
             PrazoEntrega = dto.PrazoEntrega?.Trim(),
             ObservacoesSolicitante = dto.ObservacoesSolicitante?.Trim(),
             ObservacoesFornecedor = dto.ObservacoesFornecedor?.Trim(),
+            ContatoAprovacaoNome = dto.ContatoAprovacaoNome?.Trim(),
+            ContatoAprovacaoEmail = dto.ContatoAprovacaoEmail?.Trim(),
             Status = OrdemCompraStatus.Rascunho,
             DataCriacao = agora,
             DataAtualizacao = agora,
@@ -164,6 +166,8 @@ public class OrdemCompraService : IOrdemCompraService
         ordemCompra.PrazoEntrega = dto.PrazoEntrega?.Trim();
         ordemCompra.ObservacoesSolicitante = dto.ObservacoesSolicitante?.Trim();
         ordemCompra.ObservacoesFornecedor = dto.ObservacoesFornecedor?.Trim();
+        ordemCompra.ContatoAprovacaoNome = dto.ContatoAprovacaoNome?.Trim();
+        ordemCompra.ContatoAprovacaoEmail = dto.ContatoAprovacaoEmail?.Trim();
         ordemCompra.DataAtualizacao = agora;
 
         _context.OrdemCompraItens.RemoveRange(ordemCompra.Itens);
@@ -401,6 +405,8 @@ public class OrdemCompraService : IOrdemCompraService
         PrazoEntrega = o.PrazoEntrega,
         ObservacoesSolicitante = o.ObservacoesSolicitante,
         ObservacoesFornecedor = o.ObservacoesFornecedor,
+        ContatoAprovacaoNome = o.ContatoAprovacaoNome,
+        ContatoAprovacaoEmail = o.ContatoAprovacaoEmail,
         Status = o.Status,
         ValorTotal = o.Itens.Sum(i => i.Quantidade * i.ValorUnitario),
         DataCriacao = o.DataCriacao,
@@ -493,6 +499,12 @@ public class OrdemCompraService : IOrdemCompraService
             (0.55, "E-mail", o.Fornecedor.Email ?? "-"), (0.45, "Inscrição Municipal", o.Fornecedor.InscricaoMunicipal ?? "-"));
         y = LinhaGrade(gfx, margem, y, largura, alturaCampo, fontRotuloCampo, fontValorCampo, corBorda,
             (0.55, "Dados Bancários", o.Fornecedor.DadosBancarios ?? "-"), (0.45, "Condição de Pagto", o.CondicaoPagamento));
+
+        if (!string.IsNullOrWhiteSpace(o.ContatoAprovacaoNome) || !string.IsNullOrWhiteSpace(o.ContatoAprovacaoEmail))
+        {
+            y = LinhaGrade(gfx, margem, y, largura, alturaCampo, fontRotuloCampo, fontValorCampo, corBorda,
+                (0.55, "Contato de Aprovação", o.ContatoAprovacaoNome ?? "-"), (0.45, "E-mail de Aprovação", o.ContatoAprovacaoEmail ?? "-"));
+        }
 
         y = DesenharSecao(gfx, "DADOS DO COMPRADOR", margem, y, largura, corPrimaria, fontSecao);
         y = LinhaGrade(gfx, margem, y, largura, alturaCampo, fontRotuloCampo, fontValorCampo, corBorda,

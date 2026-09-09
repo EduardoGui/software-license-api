@@ -14,6 +14,8 @@ public class Contrato
     public decimal ValorOriginal { get; set; }
     public string Status { get; set; } = string.Empty;
     public string? Observacoes { get; set; }
+    public string? ContatoAprovacaoNome { get; set; }
+    public string? ContatoAprovacaoEmail { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
 

@@ -138,6 +138,8 @@ public class ContratoService : IContratoService
             ValorOriginal = dto.ValorOriginal,
             Status = ContratoStatus.Ativo,
             Observacoes = dto.Observacoes,
+            ContatoAprovacaoNome = dto.ContatoAprovacaoNome?.Trim(),
+            ContatoAprovacaoEmail = dto.ContatoAprovacaoEmail?.Trim(),
             DataCriacao = agora,
             DataAtualizacao = agora,
             Itens = dto.Itens.Select(i => new ContratoItem
@@ -200,6 +202,8 @@ public class ContratoService : IContratoService
         contrato.Natureza = dto.Natureza?.Trim();
         contrato.Status = dto.Status;
         contrato.Observacoes = dto.Observacoes;
+        contrato.ContatoAprovacaoNome = dto.ContatoAprovacaoNome?.Trim();
+        contrato.ContatoAprovacaoEmail = dto.ContatoAprovacaoEmail?.Trim();
         contrato.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
 
         await _context.SaveChangesAsync();
@@ -1102,6 +1106,8 @@ public class ContratoService : IContratoService
         ValorAtual = CalcularValorAtual(c, aditivosFormalizados),
         Status = c.Status,
         Observacoes = c.Observacoes,
+        ContatoAprovacaoNome = c.ContatoAprovacaoNome,
+        ContatoAprovacaoEmail = c.ContatoAprovacaoEmail,
         QuantidadeItens = c.Itens.Count,
         DataCriacao = c.DataCriacao,
         DataAtualizacao = c.DataAtualizacao,

@@ -17,6 +17,8 @@ public class OrdemCompra
     public string? PrazoEntrega { get; set; }
     public string? ObservacoesSolicitante { get; set; }
     public string? ObservacoesFornecedor { get; set; }
+    public string? ContatoAprovacaoNome { get; set; }
+    public string? ContatoAprovacaoEmail { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }

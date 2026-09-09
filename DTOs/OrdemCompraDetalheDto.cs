@@ -17,6 +17,8 @@ public class OrdemCompraDetalheDto
     public string? PrazoEntrega { get; set; }
     public string? ObservacoesSolicitante { get; set; }
     public string? ObservacoesFornecedor { get; set; }
+    public string? ContatoAprovacaoNome { get; set; }
+    public string? ContatoAprovacaoEmail { get; set; }
     public string Status { get; set; } = string.Empty;
     public decimal ValorTotal { get; set; }
     public DateTime DataCriacao { get; set; }

@@ -286,6 +286,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(c => c.ValorOriginal).HasPrecision(18, 2);
             entity.Property(c => c.Status).IsRequired().HasMaxLength(20);
             entity.Property(c => c.Observacoes).HasMaxLength(2000);
+            entity.Property(c => c.ContatoAprovacaoNome).HasMaxLength(150);
+            entity.Property(c => c.ContatoAprovacaoEmail).HasMaxLength(200);
             entity.HasIndex(c => c.Numero).IsUnique();
             entity.HasOne(c => c.Fornecedor).WithMany().HasForeignKey(c => c.FornecedorId).OnDelete(DeleteBehavior.Restrict);
         });
@@ -331,6 +333,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(o => o.ValorFrete).HasPrecision(18, 2);
             entity.Property(o => o.LocalEntrega).HasMaxLength(300);
             entity.Property(o => o.PrazoEntrega).HasMaxLength(100);
+            entity.Property(o => o.ContatoAprovacaoNome).HasMaxLength(150);
+            entity.Property(o => o.ContatoAprovacaoEmail).HasMaxLength(200);
             entity.Property(o => o.Status).IsRequired().HasMaxLength(20);
             entity.HasIndex(o => o.Numero).IsUnique();
             entity.HasOne(o => o.Fornecedor).WithMany().HasForeignKey(o => o.FornecedorId).OnDelete(DeleteBehavior.Restrict);
