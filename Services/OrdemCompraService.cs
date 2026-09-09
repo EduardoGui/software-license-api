@@ -580,10 +580,12 @@ public class OrdemCompraService : IOrdemCompraService
             gfx.DrawString(rotulo, fontRotuloCampo, new XSolidBrush(corRotulo), new XRect(x, yLinha + 3, larguraColunaAssinatura, 12), XStringFormats.TopCenter);
         }
 
+        // Nome curto ("Hope") em vez da razão social completa nas assinaturas — o espaço da
+        // caixa é apertado, principalmente ao lado do rótulo "SOLICITANTE —".
         DesenharAssinatura(xDireita, y, "FORNECEDOR");
-        DesenharAssinatura(xDireita + larguraColunaAssinatura, y, $"SOLICITANTE — {empresaNome}");
-        DesenharAssinatura(xDireita, y + alturaBlocoObs, empresaNome);
-        DesenharAssinatura(xDireita + larguraColunaAssinatura, y + alturaBlocoObs, empresaNome);
+        DesenharAssinatura(xDireita + larguraColunaAssinatura, y, "SOLICITANTE — Hope");
+        DesenharAssinatura(xDireita, y + alturaBlocoObs, "Hope");
+        DesenharAssinatura(xDireita + larguraColunaAssinatura, y + alturaBlocoObs, "Hope");
 
         using var stream = new MemoryStream();
         document.Save(stream, false);
