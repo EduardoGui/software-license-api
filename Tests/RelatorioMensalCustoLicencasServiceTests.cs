@@ -89,28 +89,33 @@ public class RelatorioMensalCustoLicencasServiceTests
     public async Task GerarAsync_DeveCobrarValorIntegralQuandoAtivoOMesInteiro()
     {
         var (service, context) = CriarService();
+        // quantidadeTotal default = 10: o valor cadastrado (300) e por vaga, entao o subtotal
+        // contratado no mes e 300 * 10 = 3000 (a empresa paga por todas as vagas, usadas ou nao).
         var licenca = CriarLicenca(context, new DateOnly(2026, 1, 1), new DateOnly(2027, 1, 1));
         CriarValor(context, licenca.Id, 300m, LicencaPeriodicidade.Mensal, new DateOnly(2026, 1, 1));
 
         var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
 
-        var grupo = Assert.Single(relatorio.Grupos);
+        var grupo = Assert.Single(relatorio.GruposMensal);
+        Assert.Empty(relatorio.GruposAnual);
         Assert.Equal("Sem tipo definido", grupo.Tipo);
         var item = Assert.Single(grupo.Licencas);
         Assert.Equal(31, item.DiasNoMes);
-        Assert.Equal(300m, item.Subtotal);
-        Assert.Equal(300m, relatorio.ValorTotal);
+        Assert.Equal(3000m, item.Subtotal);
+        Assert.Equal(3000m, relatorio.SubtotalMensal);
+        Assert.Equal(0m, relatorio.SubtotalAnual);
+        Assert.Equal(3000m, relatorio.ValorTotal);
 
-        // Sem alocação nenhuma: mostra "(sem usuário alocado)" com o valor cheio.
+        // Sem alocação nenhuma: mostra "(sem usuário alocado)" com o valor cheio contratado.
         var usuario = Assert.Single(item.Usuarios);
         Assert.Null(usuario.UsuarioId);
         Assert.Equal("(sem usuário alocado)", usuario.UsuarioNome);
         Assert.Equal(31, usuario.DiasAtivos);
-        Assert.Equal(300m, usuario.ValorProporcional);
+        Assert.Equal(3000m, usuario.ValorProporcional);
     }
 
     [Fact]
-    public async Task GerarAsync_DeveDividirValorAnualPorDoze()
+    public async Task GerarAsync_DeveDividirValorAnualPorDozeEClassificarComoAnual()
     {
         var (service, context) = CriarService();
         var licenca = CriarLicenca(context, new DateOnly(2026, 1, 1), new DateOnly(2027, 1, 1));
@@ -118,8 +123,13 @@ public class RelatorioMensalCustoLicencasServiceTests
 
         var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
 
-        var item = Assert.Single(Assert.Single(relatorio.Grupos).Licencas);
-        Assert.Equal(100m, item.Subtotal);
+        Assert.Empty(relatorio.GruposMensal);
+        var item = Assert.Single(Assert.Single(relatorio.GruposAnual).Licencas);
+        // 1200/12 = 100 por vaga/mes * 10 vagas = 1000.
+        Assert.Equal(1000m, item.Subtotal);
+        Assert.Equal(1000m, relatorio.SubtotalAnual);
+        Assert.Equal(0m, relatorio.SubtotalMensal);
+        Assert.Equal(1000m, relatorio.ValorTotal);
     }
 
     [Fact]
@@ -132,8 +142,9 @@ public class RelatorioMensalCustoLicencasServiceTests
 
         var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
 
-        var item = Assert.Single(Assert.Single(relatorio.Grupos).Licencas);
-        Assert.Equal(100m, item.Subtotal);
+        var item = Assert.Single(Assert.Single(relatorio.GruposMensal).Licencas);
+        // valor por vaga no mes = 310*10/31 = 100; subtotal = 100 * 10 vagas = 1000.
+        Assert.Equal(1000m, item.Subtotal);
         var usuario = Assert.Single(item.Usuarios);
         Assert.Equal(10, usuario.DiasAtivos);
     }
@@ -148,8 +159,8 @@ public class RelatorioMensalCustoLicencasServiceTests
 
         var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
 
-        var item = Assert.Single(Assert.Single(relatorio.Grupos).Licencas);
-        Assert.Equal(100m, item.Subtotal);
+        var item = Assert.Single(Assert.Single(relatorio.GruposMensal).Licencas);
+        Assert.Equal(1000m, item.Subtotal);
     }
 
     [Fact]
@@ -163,9 +174,9 @@ public class RelatorioMensalCustoLicencasServiceTests
 
         var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
 
-        var item = Assert.Single(Assert.Single(relatorio.Grupos).Licencas);
-        var esperado = Math.Round(300m * 10 / 31, 2, MidpointRounding.AwayFromZero) + Math.Round(620m * 21 / 31, 2, MidpointRounding.AwayFromZero);
-        Assert.Equal(esperado, item.Subtotal);
+        var item = Assert.Single(Assert.Single(relatorio.GruposMensal).Licencas);
+        var valorPorVaga = Math.Round(300m * 10 / 31, 2, MidpointRounding.AwayFromZero) + Math.Round(620m * 21 / 31, 2, MidpointRounding.AwayFromZero);
+        Assert.Equal(Math.Round(valorPorVaga * licenca.QuantidadeTotal, 2, MidpointRounding.AwayFromZero), item.Subtotal);
     }
 
     [Fact]
@@ -177,7 +188,8 @@ public class RelatorioMensalCustoLicencasServiceTests
 
         var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
 
-        Assert.Empty(relatorio.Grupos);
+        Assert.Empty(relatorio.GruposMensal);
+        Assert.Empty(relatorio.GruposAnual);
         Assert.Equal(0m, relatorio.ValorTotal);
     }
 
@@ -190,7 +202,8 @@ public class RelatorioMensalCustoLicencasServiceTests
 
         var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
 
-        Assert.Empty(relatorio.Grupos);
+        Assert.Empty(relatorio.GruposMensal);
+        Assert.Empty(relatorio.GruposAnual);
     }
 
     [Fact]
@@ -204,8 +217,8 @@ public class RelatorioMensalCustoLicencasServiceTests
 
         var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
 
-        var item = Assert.Single(Assert.Single(relatorio.Grupos).Licencas);
-        Assert.Equal(300m, item.Subtotal);
+        var item = Assert.Single(Assert.Single(relatorio.GruposMensal).Licencas);
+        Assert.Equal(3000m, item.Subtotal);
     }
 
     [Fact]
@@ -216,7 +229,7 @@ public class RelatorioMensalCustoLicencasServiceTests
 
         var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
 
-        var item = Assert.Single(Assert.Single(relatorio.Grupos).Licencas);
+        var item = Assert.Single(Assert.Single(relatorio.GruposMensal).Licencas);
         Assert.Equal(0m, item.Subtotal);
     }
 
@@ -231,13 +244,13 @@ public class RelatorioMensalCustoLicencasServiceTests
 
         var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
 
-        var grupo = Assert.Single(relatorio.Grupos);
+        var grupo = Assert.Single(relatorio.GruposMensal);
         Assert.Equal(2, grupo.Licencas.Count);
-        Assert.Equal(500m, relatorio.ValorTotal);
+        Assert.Equal(5000m, relatorio.ValorTotal);
     }
 
     [Fact]
-    public async Task GerarAsync_DeveRatearValorEntreUsuariosPorVagaEDias()
+    public async Task GerarAsync_DeveCobrarValorCheioPorVagaSemDividirPelaQuantidade()
     {
         var (service, context) = CriarService();
         var licenca = CriarLicenca(context, new DateOnly(2026, 1, 1), new DateOnly(2027, 1, 1), quantidadeTotal: 2);
@@ -249,18 +262,20 @@ public class RelatorioMensalCustoLicencasServiceTests
 
         var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
 
-        var item = Assert.Single(Assert.Single(relatorio.Grupos).Licencas);
-        Assert.Equal(200m, item.Subtotal);
+        var item = Assert.Single(Assert.Single(relatorio.GruposMensal).Licencas);
+        // 200/mes por vaga * 2 vagas contratadas = 400 (custo total do mes, independente de uso).
+        Assert.Equal(400m, item.Subtotal);
         Assert.Equal(2, item.Usuarios.Count);
 
-        // valor por vaga = 200 / 2 = 100/mês.
+        // Cada usuário paga o valor CHEIO da vaga (200/mês) proporcional aos dias que ficou
+        // alocado - nunca dividido pelo número de vagas (bug corrigido).
         var doAna = item.Usuarios.Single(u => u.UsuarioId == ana.Id);
         Assert.Equal(31, doAna.DiasAtivos);
-        Assert.Equal(100m, doAna.ValorProporcional);
+        Assert.Equal(200m, doAna.ValorProporcional);
 
         var doBruno = item.Usuarios.Single(u => u.UsuarioId == bruno.Id);
         Assert.Equal(15, doBruno.DiasAtivos);
-        Assert.Equal(Math.Round(100m * 15 / 31, 2, MidpointRounding.AwayFromZero), doBruno.ValorProporcional);
+        Assert.Equal(Math.Round(200m * 15 / 31, 2, MidpointRounding.AwayFromZero), doBruno.ValorProporcional);
     }
 
     [Fact]
@@ -274,7 +289,7 @@ public class RelatorioMensalCustoLicencasServiceTests
 
         var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
 
-        var item = Assert.Single(Assert.Single(relatorio.Grupos).Licencas);
+        var item = Assert.Single(Assert.Single(relatorio.GruposMensal).Licencas);
         var usuario = Assert.Single(item.Usuarios);
         Assert.Equal("(sem usuário alocado)", usuario.UsuarioNome);
     }
@@ -292,16 +307,40 @@ public class RelatorioMensalCustoLicencasServiceTests
 
         var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
 
-        Assert.Equal(3, relatorio.Grupos.Count);
-        Assert.Equal(180m, relatorio.ValorTotal);
+        Assert.Equal(3, relatorio.GruposMensal.Count);
+        Assert.Equal(1800m, relatorio.ValorTotal);
 
         // "Sem tipo definido" sempre por último, os demais em ordem alfabética.
-        Assert.Equal("Microsoft 365", relatorio.Grupos[0].Tipo);
-        Assert.Equal(100m, relatorio.Grupos[0].Subtotal);
-        Assert.Equal("Microsoft Project", relatorio.Grupos[1].Tipo);
-        Assert.Equal(50m, relatorio.Grupos[1].Subtotal);
-        Assert.Equal("Sem tipo definido", relatorio.Grupos[2].Tipo);
-        Assert.Equal(30m, relatorio.Grupos[2].Subtotal);
+        Assert.Equal("Microsoft 365", relatorio.GruposMensal[0].Tipo);
+        Assert.Equal(1000m, relatorio.GruposMensal[0].Subtotal);
+        Assert.Equal("Microsoft Project", relatorio.GruposMensal[1].Tipo);
+        Assert.Equal(500m, relatorio.GruposMensal[1].Subtotal);
+        Assert.Equal("Sem tipo definido", relatorio.GruposMensal[2].Tipo);
+        Assert.Equal(300m, relatorio.GruposMensal[2].Subtotal);
+    }
+
+    [Fact]
+    public async Task GerarAsync_DeveSepararLicencasMensaisDasAnuaisEmSecoesComSubtotalProprio()
+    {
+        var (service, context) = CriarService();
+        var licencaMensal = CriarLicenca(context, new DateOnly(2026, 1, 1), new DateOnly(2027, 1, 1), "Mensal Co", quantidadeTotal: 1);
+        CriarValor(context, licencaMensal.Id, 300m, LicencaPeriodicidade.Mensal, new DateOnly(2026, 1, 1));
+        var licencaAnual = CriarLicenca(context, new DateOnly(2026, 1, 1), new DateOnly(2027, 1, 1), "Anual Co", quantidadeTotal: 1);
+        CriarValor(context, licencaAnual.Id, 1200m, LicencaPeriodicidade.Anual, new DateOnly(2026, 1, 1));
+
+        var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
+
+        var itemMensal = Assert.Single(Assert.Single(relatorio.GruposMensal).Licencas);
+        Assert.Equal("Mensal Co", itemMensal.Nome);
+        Assert.Equal(300m, itemMensal.Subtotal);
+        Assert.Equal(300m, relatorio.SubtotalMensal);
+
+        var itemAnual = Assert.Single(Assert.Single(relatorio.GruposAnual).Licencas);
+        Assert.Equal("Anual Co", itemAnual.Nome);
+        Assert.Equal(100m, itemAnual.Subtotal);
+        Assert.Equal(100m, relatorio.SubtotalAnual);
+
+        Assert.Equal(400m, relatorio.ValorTotal);
     }
 
     // Filtro por Nome usa EF.Functions.ILike, que não é suportado pelo provider InMemory dos testes

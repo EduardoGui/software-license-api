@@ -71,7 +71,26 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
                 l, valoresPorLicenca.GetValueOrDefault(l.Id, []), alocacoesPorLicenca.GetValueOrDefault(l.Id, []), inicioMes, fimMes, diasNoMes))
             .ToList();
 
-        var grupos = itensLicenca
+        var gruposMensal = MontarGrupos(itensLicenca.Where(i => i.Periodicidade != LicencaPeriodicidade.Anual));
+        var gruposAnual = MontarGrupos(itensLicenca.Where(i => i.Periodicidade == LicencaPeriodicidade.Anual));
+        var subtotalMensal = gruposMensal.Sum(g => g.Subtotal);
+        var subtotalAnual = gruposAnual.Sum(g => g.Subtotal);
+
+        return new RelatorioMensalCustoLicencasDto
+        {
+            Ano = filtro.Ano,
+            Mes = filtro.Mes,
+            GruposMensal = gruposMensal,
+            SubtotalMensal = subtotalMensal,
+            GruposAnual = gruposAnual,
+            SubtotalAnual = subtotalAnual,
+            ValorTotal = subtotalMensal + subtotalAnual,
+        };
+    }
+
+    private static List<RelatorioMensalCustoLicencasGrupoDto> MontarGrupos(
+        IEnumerable<(string? Tipo, string Periodicidade, RelatorioMensalCustoLicencasItemDto Item)> itens) =>
+        itens
             .GroupBy(i => string.IsNullOrWhiteSpace(i.Tipo) ? SemTipoDefinido : i.Tipo)
             .OrderBy(g => g.Key == SemTipoDefinido ? 1 : 0)
             .ThenBy(g => g.Key)
@@ -82,15 +101,6 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
                 Subtotal = g.Sum(i => i.Item.Subtotal),
             })
             .ToList();
-
-        return new RelatorioMensalCustoLicencasDto
-        {
-            Ano = filtro.Ano,
-            Mes = filtro.Mes,
-            Grupos = grupos,
-            ValorTotal = grupos.Sum(g => g.Subtotal),
-        };
-    }
 
     public byte[] GerarExcel(RelatorioMensalCustoLicencasDto relatorio)
     {
@@ -105,7 +115,34 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
         planilha.Row(1).Style.Font.Bold = true;
 
         var linha = 2;
-        foreach (var grupo in relatorio.Grupos)
+        linha = EscreverSecao(planilha, "CUSTO MENSAL", relatorio.GruposMensal, relatorio.SubtotalMensal, linha);
+        linha = EscreverSecao(planilha, "CUSTO ANUAL (equivalente mensal)", relatorio.GruposAnual, relatorio.SubtotalAnual, linha);
+
+        planilha.Cell(linha, 2).Value = "Medição da Empresa (Total)";
+        planilha.Cell(linha, 2).Style.Font.Bold = true;
+        planilha.Cell(linha, 5).Value = relatorio.ValorTotal;
+        planilha.Cell(linha, 5).Style.Font.Bold = true;
+
+        planilha.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    private static int EscreverSecao(
+        IXLWorksheet planilha, string titulo, List<RelatorioMensalCustoLicencasGrupoDto> grupos, decimal subtotalSecao, int linha)
+    {
+        if (grupos.Count == 0)
+        {
+            return linha;
+        }
+
+        planilha.Cell(linha, 1).Value = titulo;
+        planilha.Cell(linha, 1).Style.Font.Bold = true;
+        linha++;
+
+        foreach (var grupo in grupos)
         {
             foreach (var licenca in grupo.Licencas)
             {
@@ -134,26 +171,27 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
             linha++;
         }
 
-        planilha.Cell(linha, 2).Value = "Medição da Empresa (Total)";
+        planilha.Cell(linha, 2).Value = $"Subtotal — {titulo}";
         planilha.Cell(linha, 2).Style.Font.Bold = true;
-        planilha.Cell(linha, 5).Value = relatorio.ValorTotal;
+        planilha.Cell(linha, 5).Value = subtotalSecao;
         planilha.Cell(linha, 5).Style.Font.Bold = true;
+        linha += 2;
 
-        planilha.Columns().AdjustToContents();
-
-        using var stream = new MemoryStream();
-        workbook.SaveAs(stream);
-        return stream.ToArray();
+        return linha;
     }
 
-    private static (string? Tipo, RelatorioMensalCustoLicencasItemDto Item) CalcularLicenca(
+    private static (string? Tipo, string Periodicidade, RelatorioMensalCustoLicencasItemDto Item) CalcularLicenca(
         Licenca licenca, List<LicencaValor> valores, List<UsuarioLicenca> alocacoes, DateOnly inicioMes, DateOnly fimMes, int diasNoMes)
     {
         var inicioAtivo = licenca.DataInicio > inicioMes ? licenca.DataInicio : inicioMes;
         var fimAtivo = licenca.DataTerminoPrevisto < fimMes ? licenca.DataTerminoPrevisto : fimMes;
         var diasAtivosLicenca = Math.Clamp(fimAtivo.DayNumber - inicioAtivo.DayNumber + 1, 0, diasNoMes);
 
-        var subtotalLicenca = 0m;
+        // Valor por unidade/licença (equivalente mensal, já convertendo Anual -> Valor/12), prorateado
+        // pelos dias em que a licença ficou ativa no mês. NÃO divide pela QuantidadeTotal - o valor
+        // cadastrado já é o preço de uma única licença/vaga.
+        var valorUnitarioMensal = 0m;
+        var periodicidadeAtual = LicencaPeriodicidade.Mensal;
         for (var i = 0; i < valores.Count; i++)
         {
             var vigencia = valores[i];
@@ -173,10 +211,13 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
                 ? valorMensalEquivalente
                 : Math.Round(valorMensalEquivalente * diasSegmento / diasNoMes, 2, MidpointRounding.AwayFromZero);
 
-            subtotalLicenca += valorSegmento;
+            valorUnitarioMensal += valorSegmento;
+            periodicidadeAtual = vigencia.Periodicidade;
         }
 
-        var valorPorVagaMes = licenca.QuantidadeTotal > 0 ? subtotalLicenca / licenca.QuantidadeTotal : 0m;
+        // Custo total contratado no mês: a empresa paga por todas as vagas (QuantidadeTotal),
+        // estejam alocadas a um usuário ou não.
+        var subtotalLicenca = Math.Round(valorUnitarioMensal * licenca.QuantidadeTotal, 2, MidpointRounding.AwayFromZero);
 
         var usuarios = new List<RelatorioMensalCustoLicencasUsuarioDto>();
         foreach (var alocacao in alocacoes)
@@ -196,7 +237,7 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
                 UsuarioId = alocacao.UsuarioId,
                 UsuarioNome = alocacao.Usuario.Nome,
                 DiasAtivos = diasAtivosUsuario,
-                ValorProporcional = Math.Round(valorPorVagaMes * diasAtivosUsuario / diasNoMes, 2, MidpointRounding.AwayFromZero),
+                ValorProporcional = Math.Round(valorUnitarioMensal * diasAtivosUsuario / diasNoMes, 2, MidpointRounding.AwayFromZero),
             });
         }
 
@@ -220,6 +261,6 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
             Subtotal = subtotalLicenca,
         };
 
-        return (licenca.Tipo, item);
+        return (licenca.Tipo, periodicidadeAtual, item);
     }
 }
