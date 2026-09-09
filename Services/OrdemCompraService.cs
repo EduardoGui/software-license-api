@@ -430,13 +430,15 @@ public class OrdemCompraService : IOrdemCompraService
         var corPrimaria = XColor.FromArgb(0x27, 0x39, 0x4F);
         var corRotulo = XColor.FromArgb(0x59, 0x66, 0x76);
         var corFundoClaro = XColor.FromArgb(0xF8, 0xF9, 0xF9);
+        var corBorda = XColor.FromArgb(0xB7, 0xB7, 0xB9);
 
         var fontTitulo = new XFont("DejaVuSans", 13, XFontStyleEx.Bold);
-        var fontSubtitulo = new XFont("DejaVuSans", 8);
         var fontSecao = new XFont("DejaVuSans", 9, XFontStyleEx.Bold);
-        var fontRotulo = new XFont("DejaVuSans", 7);
-        var fontValor = new XFont("DejaVuSans", 9);
-        var fontValorBold = new XFont("DejaVuSans", 10, XFontStyleEx.Bold);
+        var fontRotuloCampo = new XFont("DejaVuSans", 7.5, XFontStyleEx.Bold);
+        var fontValorCampo = new XFont("DejaVuSans", 8);
+        var fontTabela = new XFont("DejaVuSans", 7.5);
+        var fontTabelaCabecalho = new XFont("DejaVuSans", 7.5, XFontStyleEx.Bold);
+        var fontValorBold = new XFont("DejaVuSans", 9, XFontStyleEx.Bold);
         var fontDeclaracao = new XFont("DejaVuSans", 7);
 
         var document = new PdfDocument();
@@ -448,105 +450,283 @@ public class OrdemCompraService : IOrdemCompraService
         var largura = page.Width.Point - margem * 2;
         var y = margem;
 
-        var xFaixa = margem + 90;
-        gfx.DrawString("hope", new XFont("DejaVuSans", 20, XFontStyleEx.BoldItalic), new XSolidBrush(corPrimaria), new XPoint(margem, y + 24));
-        gfx.DrawRectangle(new XSolidBrush(corPrimaria), xFaixa, y, largura - 90, 32);
-        gfx.DrawString(
-            $"ORDEM DE COMPRA Nº {o.Numero:D3}", fontTitulo, XBrushes.White,
-            new XRect(xFaixa, y + 3, largura - 90, 16), XStringFormats.TopCenter);
-        gfx.DrawString(
-            "Documento para aprovação e assinatura do fornecedor", fontSubtitulo, XBrushes.White,
-            new XRect(xFaixa, y + 20, largura - 90, 12), XStringFormats.TopCenter);
-        y += 46;
+        // Cabeçalho: logo + título ocupam a coluna esquerda (mescladas nas 2 linhas),
+        // Nº OC/Data na linha de cima à direita, Solicitante/Obra na linha de baixo.
+        const double alturaLinhaCabecalho = 20.0;
+        var larguraCol1 = largura * 0.46;
+        var larguraCol2 = largura * 0.30;
+        var larguraCol3 = largura - larguraCol1 - larguraCol2;
 
-        y = DesenharLinha(
-            gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
-            ("Data", o.Data.ToString("dd/MM/yyyy")), ("Solicitante", o.Solicitante), ("Obra", o.Local.Nome));
+        gfx.DrawRectangle(new XPen(corBorda, 0.75), margem, y, largura, alturaLinhaCabecalho * 2);
+        gfx.DrawLine(new XPen(corBorda, 0.75), margem + larguraCol1, y, margem + larguraCol1, y + alturaLinhaCabecalho * 2);
+        gfx.DrawLine(
+            new XPen(corBorda, 0.75), margem + larguraCol1 + larguraCol2, y,
+            margem + larguraCol1 + larguraCol2, y + alturaLinhaCabecalho * 2);
+        gfx.DrawLine(
+            new XPen(corBorda, 0.75), margem + larguraCol1, y + alturaLinhaCabecalho,
+            margem + largura, y + alturaLinhaCabecalho);
+
+        var fontLogo = new XFont("DejaVuSans", 15, XFontStyleEx.BoldItalic);
+        var larguraLogo = gfx.MeasureString("hope", fontLogo).Width;
+        gfx.DrawString("hope", fontLogo, new XSolidBrush(corPrimaria), new XPoint(margem + 6, y + alturaLinhaCabecalho + 4));
+        gfx.DrawString(
+            $"ORDEM DE COMPRA Nº {o.Numero:D3}", fontTitulo, new XSolidBrush(corPrimaria),
+            new XRect(margem + larguraLogo + 16, y, larguraCol1 - larguraLogo - 22, alturaLinhaCabecalho * 2), XStringFormats.CenterLeft);
+
+        CelulaCabecalho(gfx, margem + larguraCol1, y, larguraCol2, alturaLinhaCabecalho, fontRotuloCampo, fontValorCampo, "Nº OC", o.Numero.ToString("D3"));
+        CelulaCabecalho(gfx, margem + larguraCol1 + larguraCol2, y, larguraCol3, alturaLinhaCabecalho, fontRotuloCampo, fontValorCampo, "Data", o.Data.ToString("dd/MM/yyyy"));
+        CelulaCabecalho(gfx, margem + larguraCol1, y + alturaLinhaCabecalho, larguraCol2, alturaLinhaCabecalho, fontRotuloCampo, fontValorCampo, "Solicitante", o.Solicitante);
+        CelulaCabecalho(gfx, margem + larguraCol1 + larguraCol2, y + alturaLinhaCabecalho, larguraCol3, alturaLinhaCabecalho, fontRotuloCampo, fontValorCampo, "Obra", o.Local.Nome);
+        y += alturaLinhaCabecalho * 2;
+
+        const double alturaCampo = 18.0;
 
         y = DesenharSecao(gfx, "DADOS DO FORNECEDOR", margem, y, largura, corPrimaria, fontSecao);
-        y = DesenharLinha(
-            gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
-            ("Razão Social", o.Fornecedor.Nome), ("CNPJ", o.Fornecedor.Cnpj ?? "-"));
-        y = DesenharLinha(
-            gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
-            ("Contato", o.Fornecedor.Contato ?? "-"), ("Telefone", o.Fornecedor.Telefone ?? "-"), ("E-mail", o.Fornecedor.Email ?? "-"));
-        y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Endereço", o.Fornecedor.Endereco ?? "-"));
-        y = DesenharLinha(
-            gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
-            ("Inscrição Estadual", o.Fornecedor.InscricaoEstadual ?? "-"), ("Inscrição Municipal", o.Fornecedor.InscricaoMunicipal ?? "-"));
-        y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Dados Bancários", o.Fornecedor.DadosBancarios ?? "-"));
-        y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Condição de Pagamento", o.CondicaoPagamento));
+        y = LinhaGrade(gfx, margem, y, largura, alturaCampo, fontRotuloCampo, fontValorCampo, corBorda,
+            (0.55, "Razão Social", o.Fornecedor.Nome), (0.45, "Contato", o.Fornecedor.Contato ?? "-"));
+        y = LinhaGrade(gfx, margem, y, largura, alturaCampo, fontRotuloCampo, fontValorCampo, corBorda,
+            (0.55, "CNPJ", o.Fornecedor.Cnpj ?? "-"), (0.45, "Telefone", o.Fornecedor.Telefone ?? "-"));
+        y = LinhaGrade(gfx, margem, y, largura, alturaCampo, fontRotuloCampo, fontValorCampo, corBorda,
+            (0.55, "Endereço", o.Fornecedor.Endereco ?? "-"), (0.45, "Inscrição Estadual", o.Fornecedor.InscricaoEstadual ?? "-"));
+        y = LinhaGrade(gfx, margem, y, largura, alturaCampo, fontRotuloCampo, fontValorCampo, corBorda,
+            (0.55, "E-mail", o.Fornecedor.Email ?? "-"), (0.45, "Inscrição Municipal", o.Fornecedor.InscricaoMunicipal ?? "-"));
+        y = LinhaGrade(gfx, margem, y, largura, alturaCampo, fontRotuloCampo, fontValorCampo, corBorda,
+            (0.55, "Dados Bancários", o.Fornecedor.DadosBancarios ?? "-"), (0.45, "Condição de Pagto", o.CondicaoPagamento));
 
         y = DesenharSecao(gfx, "DADOS DO COMPRADOR", margem, y, largura, corPrimaria, fontSecao);
-        y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Empresa", empresaNome), ("CNPJ", empresaCnpj));
-        y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Endereço", empresaEndereco));
+        y = LinhaGrade(gfx, margem, y, largura, alturaCampo, fontRotuloCampo, fontValorCampo, corBorda,
+            (0.55, "Razão Social", empresaNome), (0.45, "CNPJ", empresaCnpj));
+        y = LinhaGrade(gfx, margem, y, largura, alturaCampo, fontRotuloCampo, fontValorCampo, corBorda,
+            (1.0, "Endereço", empresaEndereco));
 
         y = DesenharSecao(gfx, "DADOS DA COMPRA", margem, y, largura, corPrimaria, fontSecao);
-        double[] proporcoes = [0.10, 0.34, 0.10, 0.18, 0.14, 0.14];
-        string[] cabecalhos = ["Código", "Descrição", "Unid.", "Marca/Referência", "Quant.", "Valor Total (R$)"];
-        var alturaLinha = 16.0;
+        double[] proporcoesItens = [0.07, 0.08, 0.30, 0.06, 0.14, 0.08, 0.10, 0.10, 0.07];
+        string[] cabecalhosItens = ["Item", "Código", "Descrição", "Un.", "Marca/Ref.", "Quant.", "PU (R$)", "Total (R$)", "UA"];
 
-        DesenharLinhaTabela(gfx, margem, y, largura, proporcoes, cabecalhos, fontRotulo, corRotulo, corFundoClaro, alturaLinha, cabecalho: true);
-        y += alturaLinha;
+        y = DesenharLinhaTabelaComQuebra(gfx, margem, y, largura, proporcoesItens, cabecalhosItens, fontTabelaCabecalho, corRotulo, corBorda, corFundoClaro);
 
+        var indice = 1;
         foreach (var item in o.Itens)
         {
             string[] valores =
             [
+                indice.ToString("D2"),
                 item.Codigo ?? "-",
                 item.Descricao,
                 item.Unidade,
                 item.MarcaReferencia ?? "-",
                 item.Quantidade.ToString("N2"),
+                item.ValorUnitario.ToString("N2"),
                 (item.Quantidade * item.ValorUnitario).ToString("N2"),
+                "-",
             ];
-            DesenharLinhaTabela(gfx, margem, y, largura, proporcoes, valores, fontValor, XColors.Black, corFundoClaro, alturaLinha, cabecalho: false);
-            y += alturaLinha;
+            y = DesenharLinhaTabelaComQuebra(gfx, margem, y, largura, proporcoesItens, valores, fontTabela, XColors.Black, corBorda, corFundo: null);
+            indice++;
         }
 
-        gfx.DrawRectangle(new XSolidBrush(corFundoClaro), margem, y, largura, alturaLinha);
+        var larguraRotuloTotal = largura * (proporcoesItens[0] + proporcoesItens[1] + proporcoesItens[2] + proporcoesItens[3] + proporcoesItens[4] + proporcoesItens[5]);
+        var larguraPuTotal = largura * proporcoesItens[6];
+        var larguraTotalCel = largura * proporcoesItens[7];
+        var larguraUaTotal = largura * proporcoesItens[8];
+        const double alturaTotalLinha = 18.0;
+
+        gfx.DrawRectangle(new XPen(corBorda, 0.75), new XSolidBrush(corFundoClaro), margem, y, larguraRotuloTotal, alturaTotalLinha);
         gfx.DrawString(
             "TOTAL ITENS", fontValorBold, new XSolidBrush(corPrimaria),
-            new XRect(margem + 4, y, largura * 0.7, alturaLinha), XStringFormats.CenterLeft);
+            new XRect(margem, y, larguraRotuloTotal - 6, alturaTotalLinha), XStringFormats.CenterRight);
+        gfx.DrawRectangle(new XPen(corBorda, 0.75), new XSolidBrush(corFundoClaro), margem + larguraRotuloTotal, y, larguraPuTotal, alturaTotalLinha);
+        var xTotalCel = margem + larguraRotuloTotal + larguraPuTotal;
+        gfx.DrawRectangle(new XPen(corBorda, 0.75), new XSolidBrush(corFundoClaro), xTotalCel, y, larguraTotalCel, alturaTotalLinha);
         gfx.DrawString(
             o.Itens.Sum(i => i.Quantidade * i.ValorUnitario).ToString("N2"), fontValorBold, new XSolidBrush(corPrimaria),
-            new XRect(margem, y, largura - 6, alturaLinha), XStringFormats.CenterRight);
-        y += alturaLinha + 12;
+            new XRect(xTotalCel, y, larguraTotalCel - 6, alturaTotalLinha), XStringFormats.CenterRight);
+        gfx.DrawRectangle(new XPen(corBorda, 0.75), new XSolidBrush(corFundoClaro), xTotalCel + larguraTotalCel, y, larguraUaTotal, alturaTotalLinha);
+        y += alturaTotalLinha + 10;
 
         y = DesenharSecao(gfx, "CONDIÇÕES DE ENTREGA", margem, y, largura, corPrimaria, fontSecao);
-        y = DesenharLinha(
-            gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
-            ("Tipo de Frete", o.TipoFrete ?? "-"), ("Valor Frete (R$)", o.ValorFrete.ToString("N2")));
-        y = DesenharLinha(
-            gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
-            ("Local de Entrega", o.LocalEntrega ?? "-"), ("Prazo de Entrega", o.PrazoEntrega ?? "-"));
-
-        y = DesenharSecao(gfx, "OBSERVAÇÕES", margem, y, largura, corPrimaria, fontSecao);
-        y = DesenharTextoMultilinha(
-            gfx, $"Solicitante: {o.ObservacoesSolicitante ?? "-"}", fontDeclaracao, new XSolidBrush(corRotulo), margem, y, largura, alturaLinha: 10);
-        y = DesenharTextoMultilinha(
-            gfx, $"Fornecedor: {o.ObservacoesFornecedor ?? "-"}", fontDeclaracao, new XSolidBrush(corRotulo), margem, y, largura, alturaLinha: 10);
-        y += 8;
+        y = LinhaGrade(gfx, margem, y, largura, alturaCampo, fontRotuloCampo, fontValorCampo, corBorda,
+            (0.55, "Tipo de Frete", o.TipoFrete ?? "-"), (0.45, "Valor Frete (R$)", o.ValorFrete.ToString("N2")));
+        y = LinhaGrade(gfx, margem, y, largura, alturaCampo, fontRotuloCampo, fontValorCampo, corBorda,
+            (1.0, "Local de Entrega", o.LocalEntrega ?? "-"));
+        y = LinhaGrade(gfx, margem, y, largura, alturaCampo, fontRotuloCampo, fontValorCampo, corBorda,
+            (1.0, "Prazo de Entrega", o.PrazoEntrega ?? "-"));
 
         y = DesenharSecao(gfx, "CONCLUSÃO E ASSINATURAS", margem, y, largura, corPrimaria, fontSecao);
-        y += 30;
-        gfx.DrawLine(new XPen(XColors.Black), margem, y, margem + largura * 0.45, y);
-        gfx.DrawLine(new XPen(XColors.Black), margem + largura * 0.55, y, margem + largura, y);
-        gfx.DrawString("FORNECEDOR", fontRotulo, new XSolidBrush(corRotulo), new XRect(margem, y + 4, largura * 0.45, 12), XStringFormats.TopCenter);
+        const double alturaBlocoObs = 46.0;
+        var larguraEsquerda = largura * 0.55;
+        var larguraDireita = largura - larguraEsquerda;
+
+        gfx.DrawRectangle(new XPen(corBorda, 0.75), margem, y, larguraEsquerda, alturaBlocoObs);
+        gfx.DrawString("OBSERVAÇÕES E COMENTÁRIOS - SOLICITANTE", fontRotuloCampo, new XSolidBrush(corRotulo), new XPoint(margem + 4, y + 10));
+        DesenharTextoMultilinha(gfx, o.ObservacoesSolicitante ?? "", fontDeclaracao, new XSolidBrush(XColors.Black), margem + 4, y + 14, larguraEsquerda - 8, alturaLinha: 9);
+
+        gfx.DrawRectangle(new XPen(corBorda, 0.75), margem, y + alturaBlocoObs, larguraEsquerda, alturaBlocoObs);
+        gfx.DrawString("OBSERVAÇÕES E COMENTÁRIOS - FORNECEDOR", fontRotuloCampo, new XSolidBrush(corRotulo), new XPoint(margem + 4, y + alturaBlocoObs + 10));
+        DesenharTextoMultilinha(gfx, o.ObservacoesFornecedor ?? "", fontDeclaracao, new XSolidBrush(XColors.Black), margem + 4, y + alturaBlocoObs + 14, larguraEsquerda - 8, alturaLinha: 9);
+
+        var xDireita = margem + larguraEsquerda;
+        gfx.DrawRectangle(new XPen(corBorda, 0.75), xDireita, y, larguraDireita, alturaBlocoObs * 2);
+        var ySignFornecedor = y + alturaBlocoObs * 0.75;
+        gfx.DrawLine(new XPen(XColors.Black), xDireita + 16, ySignFornecedor, margem + largura - 16, ySignFornecedor);
+        gfx.DrawString("FORNECEDOR", fontRotuloCampo, new XSolidBrush(corRotulo), new XRect(xDireita, ySignFornecedor + 3, larguraDireita, 12), XStringFormats.TopCenter);
+
+        var ySignSolicitante = y + alturaBlocoObs * 1.75;
+        gfx.DrawLine(new XPen(XColors.Black), xDireita + 16, ySignSolicitante, margem + largura - 16, ySignSolicitante);
         gfx.DrawString(
-            $"SOLICITANTE — {empresaNome}", fontRotulo, new XSolidBrush(corRotulo),
-            new XRect(margem + largura * 0.55, y + 4, largura * 0.45, 12), XStringFormats.TopCenter);
+            $"SOLICITANTE — {empresaNome}", fontRotuloCampo, new XSolidBrush(corRotulo),
+            new XRect(xDireita, ySignSolicitante + 3, larguraDireita, 12), XStringFormats.TopCenter);
 
         using var stream = new MemoryStream();
         document.Save(stream, false);
         return stream.ToArray();
     }
 
+    private static void CelulaCabecalho(
+        XGraphics gfx, double x, double y, double largura, double altura, XFont fonteRotulo, XFont fonteValor, string rotulo, string valor)
+    {
+        var textoRotulo = $"{rotulo}: ";
+        gfx.DrawString(textoRotulo, fonteRotulo, XBrushes.Black, new XPoint(x + 4, y + altura / 2 + 3));
+        var larguraRotulo = gfx.MeasureString(textoRotulo, fonteRotulo).Width;
+        gfx.DrawString(valor, fonteValor, XBrushes.Black, new XRect(x + 4 + larguraRotulo, y, largura - larguraRotulo - 8, altura), XStringFormats.CenterLeft);
+    }
+
+    private static double LinhaGrade(
+        XGraphics gfx, double margem, double y, double largura, double alturaMinima, XFont fonteRotulo, XFont fonteValor, XColor corBorda,
+        params (double Proporcao, string Rotulo, string Valor)[] campos)
+    {
+        const double alturaTextoLinha = 9.5;
+        var larguras = campos.Select(c => largura * c.Proporcao).ToArray();
+        var larguraRotulos = new double[campos.Length];
+        var linhasPorCampo = new List<string>[campos.Length];
+
+        for (var i = 0; i < campos.Length; i++)
+        {
+            var textoRotulo = $"{campos[i].Rotulo}: ";
+            larguraRotulos[i] = gfx.MeasureString(textoRotulo, fonteRotulo).Width;
+            var larguraValorDisponivel = larguras[i] - larguraRotulos[i] - 8;
+            linhasPorCampo[i] = QuebrarLinhas(gfx, campos[i].Valor, fonteValor, larguraValorDisponivel);
+        }
+
+        var maxLinhas = linhasPorCampo.Max(l => l.Count);
+        var altura = Math.Max(alturaMinima, maxLinhas * alturaTextoLinha + 8);
+
+        var x = margem;
+        for (var i = 0; i < campos.Length; i++)
+        {
+            gfx.DrawRectangle(new XPen(corBorda, 0.75), x, y, larguras[i], altura);
+
+            gfx.DrawString($"{campos[i].Rotulo}: ", fonteRotulo, XBrushes.Black, new XPoint(x + 4, y + alturaTextoLinha + 2));
+
+            for (var linha = 0; linha < linhasPorCampo[i].Count; linha++)
+            {
+                gfx.DrawString(
+                    linhasPorCampo[i][linha], fonteValor, XBrushes.Black,
+                    new XRect(x + 4 + larguraRotulos[i], y + linha * alturaTextoLinha + 3, larguras[i] - larguraRotulos[i] - 8, alturaTextoLinha),
+                    XStringFormats.TopLeft);
+            }
+
+            x += larguras[i];
+        }
+
+        return y + altura;
+    }
+
+    private static List<string> QuebrarLinhas(XGraphics gfx, string texto, XFont fonte, double larguraDisponivel)
+    {
+        var linhas = new List<string>();
+        var linhaAtual = string.Empty;
+
+        foreach (var palavra in texto.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var palavraRestante = palavra;
+
+            // Palavra sozinha maior que a coluna (ex.: código/sigla sem espaços) — quebra por caractere
+            // em vez de deixar transbordar por cima da coluna vizinha.
+            while (gfx.MeasureString(palavraRestante, fonte).Width > larguraDisponivel && palavraRestante.Length > 1)
+            {
+                var corte = palavraRestante.Length;
+                while (corte > 1 && gfx.MeasureString(palavraRestante[..corte], fonte).Width > larguraDisponivel)
+                {
+                    corte--;
+                }
+
+                if (linhaAtual.Length > 0)
+                {
+                    linhas.Add(linhaAtual);
+                    linhaAtual = string.Empty;
+                }
+
+                linhas.Add(palavraRestante[..corte]);
+                palavraRestante = palavraRestante[corte..];
+            }
+
+            var tentativa = linhaAtual.Length == 0 ? palavraRestante : $"{linhaAtual} {palavraRestante}";
+            if (linhaAtual.Length > 0 && gfx.MeasureString(tentativa, fonte).Width > larguraDisponivel)
+            {
+                linhas.Add(linhaAtual);
+                linhaAtual = palavraRestante;
+            }
+            else
+            {
+                linhaAtual = tentativa;
+            }
+        }
+
+        if (linhaAtual.Length > 0 || linhas.Count == 0)
+        {
+            linhas.Add(linhaAtual);
+        }
+
+        return linhas;
+    }
+
+    private static double DesenharLinhaTabelaComQuebra(
+        XGraphics gfx, double margem, double y, double largura, double[] proporcoes, string[] valores,
+        XFont fonte, XColor corTexto, XColor corBorda, XColor? corFundo)
+    {
+        var larguras = proporcoes.Select(p => largura * p).ToArray();
+        const double alturaTextoLinha = 9.0;
+        const double alturaMinima = 15.0;
+
+        var linhasPorColuna = valores.Select((valor, i) => QuebrarLinhas(gfx, valor, fonte, larguras[i] - 8)).ToArray();
+        var maxLinhas = linhasPorColuna.Max(l => l.Count);
+        var altura = Math.Max(alturaMinima, maxLinhas * alturaTextoLinha + 6);
+
+        var x = margem;
+        for (var i = 0; i < valores.Length; i++)
+        {
+            if (corFundo is not null)
+            {
+                gfx.DrawRectangle(new XPen(corBorda, 0.75), new XSolidBrush(corFundo.Value), x, y, larguras[i], altura);
+            }
+            else
+            {
+                gfx.DrawRectangle(new XPen(corBorda, 0.75), x, y, larguras[i], altura);
+            }
+
+            for (var linha = 0; linha < linhasPorColuna[i].Count; linha++)
+            {
+                gfx.DrawString(
+                    linhasPorColuna[i][linha], fonte, new XSolidBrush(corTexto),
+                    new XRect(x + 4, y + 3 + linha * alturaTextoLinha, larguras[i] - 8, alturaTextoLinha), XStringFormats.TopLeft);
+            }
+
+            x += larguras[i];
+        }
+
+        return y + altura;
+    }
+
     private static double DesenharTextoMultilinha(
         XGraphics gfx, string texto, XFont fonte, XBrush brush, double margem, double y, double largura, double alturaLinha)
     {
+        if (string.IsNullOrWhiteSpace(texto))
+        {
+            return y;
+        }
+
         var linhaAtual = string.Empty;
-        foreach (var palavra in texto.Split(' '))
+        foreach (var palavra in texto.Split(' ', StringSplitOptions.RemoveEmptyEntries))
         {
             var tentativa = linhaAtual.Length == 0 ? palavra : $"{linhaAtual} {palavra}";
             if (linhaAtual.Length > 0 && gfx.MeasureString(tentativa, fonte).Width > largura)
@@ -574,41 +754,6 @@ public class OrdemCompraService : IOrdemCompraService
     {
         gfx.DrawRectangle(new XSolidBrush(cor), margem, y, largura, 16);
         gfx.DrawString(titulo, fonte, XBrushes.White, new XRect(margem + 4, y, largura - 8, 16), XStringFormats.CenterLeft);
-        return y + 20;
-    }
-
-    private static double DesenharLinha(
-        XGraphics gfx, double margem, double y, double largura, XFont fonteRotulo, XFont fonteValor, XColor corRotulo,
-        params (string Rotulo, string Valor)[] campos)
-    {
-        var larguraColuna = largura / campos.Length;
-        for (var i = 0; i < campos.Length; i++)
-        {
-            var x = margem + i * larguraColuna;
-            gfx.DrawString(campos[i].Rotulo.ToUpperInvariant(), fonteRotulo, new XSolidBrush(corRotulo), new XPoint(x, y + 8));
-            gfx.DrawString(campos[i].Valor, fonteValor, XBrushes.Black, new XPoint(x, y + 20));
-        }
-
-        return y + 28;
-    }
-
-    private static void DesenharLinhaTabela(
-        XGraphics gfx, double margem, double y, double largura, double[] proporcoes, string[] valores,
-        XFont fonte, XColor corTexto, XColor corFundoCabecalho, double altura, bool cabecalho)
-    {
-        if (cabecalho)
-        {
-            gfx.DrawRectangle(new XSolidBrush(corFundoCabecalho), margem, y, largura, altura);
-        }
-
-        var x = margem;
-        for (var i = 0; i < valores.Length; i++)
-        {
-            var larguraColuna = largura * proporcoes[i];
-            gfx.DrawString(valores[i], fonte, new XSolidBrush(corTexto), new XRect(x + 4, y, larguraColuna - 8, altura), XStringFormats.CenterLeft);
-            x += larguraColuna;
-        }
-
-        gfx.DrawLine(new XPen(XColor.FromArgb(0xDD, 0xDF, 0xE2)), margem, y + altura, margem + largura, y + altura);
+        return y + 16;
     }
 }
