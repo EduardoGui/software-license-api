@@ -26,6 +26,9 @@
     <EmbeddedResource Include="Fonts\DejaVuSans-BoldItalic.ttf">
       <LogicalName>Fonts.DejaVuSans-BoldItalic.ttf</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="Assets\logo-hope.png">
+      <LogicalName>Assets.logo-hope.png</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>

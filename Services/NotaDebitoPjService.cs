@@ -411,7 +411,9 @@ public class NotaDebitoPjService : INotaDebitoPjService
         var y = margem;
 
         var xFaixa = margem + 90;
-        gfx.DrawString("hope", new XFont("DejaVuSans", 20, XFontStyleEx.BoldItalic), new XSolidBrush(corPrimaria), new XPoint(margem, y + 24));
+        var logo = LogoHope.Obter();
+        var alturaLogo = 24.0;
+        gfx.DrawImage(logo, margem, y + 4, alturaLogo * logo.PixelWidth / logo.PixelHeight, alturaLogo);
         gfx.DrawRectangle(new XSolidBrush(corPrimaria), xFaixa, y, largura - 90, 32);
         gfx.DrawString(
             $"NOTA DE DÉBITO Nº {n.Id:D4}", fontTitulo, XBrushes.White,

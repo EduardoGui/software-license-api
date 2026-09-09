@@ -432,7 +432,6 @@ public class OrdemCompraService : IOrdemCompraService
         var corFundoClaro = XColor.FromArgb(0xF8, 0xF9, 0xF9);
         var corBorda = XColor.FromArgb(0xB7, 0xB7, 0xB9);
 
-        var fontTitulo = new XFont("DejaVuSans", 13, XFontStyleEx.Bold);
         var fontSecao = new XFont("DejaVuSans", 9, XFontStyleEx.Bold);
         var fontRotuloCampo = new XFont("DejaVuSans", 7.5, XFontStyleEx.Bold);
         var fontValorCampo = new XFont("DejaVuSans", 8);
@@ -466,12 +465,14 @@ public class OrdemCompraService : IOrdemCompraService
             new XPen(corBorda, 0.75), margem + larguraCol1, y + alturaLinhaCabecalho,
             margem + largura, y + alturaLinhaCabecalho);
 
-        var fontLogo = new XFont("DejaVuSans", 15, XFontStyleEx.BoldItalic);
-        var larguraLogo = gfx.MeasureString("hope", fontLogo).Width;
-        gfx.DrawString("hope", fontLogo, new XSolidBrush(corPrimaria), new XPoint(margem + 6, y + alturaLinhaCabecalho + 4));
+        var logo = LogoHope.Obter();
+        var alturaLogo = 24.0;
+        var larguraLogo = alturaLogo * logo.PixelWidth / logo.PixelHeight;
+        gfx.DrawImage(logo, margem + 6, y + (alturaLinhaCabecalho * 2 - alturaLogo) / 2, larguraLogo, alturaLogo);
+        var fontTituloMenor = new XFont("DejaVuSans", 10.5, XFontStyleEx.Bold);
         gfx.DrawString(
-            $"ORDEM DE COMPRA Nº {o.Numero:D3}", fontTitulo, new XSolidBrush(corPrimaria),
-            new XRect(margem + larguraLogo + 16, y, larguraCol1 - larguraLogo - 22, alturaLinhaCabecalho * 2), XStringFormats.CenterLeft);
+            "Ordem de Compra", fontTituloMenor, new XSolidBrush(corPrimaria),
+            new XRect(margem + larguraLogo + 16, y, larguraCol1 - larguraLogo - 22, alturaLinhaCabecalho * 2), XStringFormats.Center);
 
         CelulaCabecalho(gfx, margem + larguraCol1, y, larguraCol2, alturaLinhaCabecalho, fontRotuloCampo, fontValorCampo, "Nº OC", o.Numero.ToString("D3"));
         CelulaCabecalho(gfx, margem + larguraCol1 + larguraCol2, y, larguraCol3, alturaLinhaCabecalho, fontRotuloCampo, fontValorCampo, "Data", o.Data.ToString("dd/MM/yyyy"));
