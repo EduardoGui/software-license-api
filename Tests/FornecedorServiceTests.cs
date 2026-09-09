@@ -27,31 +27,50 @@ public class FornecedorServiceTests
     {
         var service = CriarService(out _);
 
-        var fornecedor = await service.CreateAsync(new CreateFornecedorDto { Nome = "Brain", Cnpj = "12.345.678/0001-90" });
+        var fornecedor = await service.CreateAsync(new CreateFornecedorDto { Nome = "Brain", Cnpj = "12.345.678/0001-95" });
 
         Assert.True(fornecedor.Ativo);
         Assert.Equal("Brain", fornecedor.Nome);
-        Assert.Equal("12.345.678/0001-90", fornecedor.Cnpj);
+        Assert.Equal("12.345.678/0001-95", fornecedor.Cnpj);
     }
 
     [Fact]
     public async Task CreateAsync_DeveRejeitarNomeDuplicado()
     {
         var service = CriarService(out _);
-        await service.CreateAsync(new CreateFornecedorDto { Nome = "Brain", Cnpj = "12.345.678/0001-90" });
+        await service.CreateAsync(new CreateFornecedorDto { Nome = "Brain", Cnpj = "12.345.678/0001-95" });
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.CreateAsync(new CreateFornecedorDto { Nome = "Brain", Cnpj = "99.999.999/0001-99" }));
+            service.CreateAsync(new CreateFornecedorDto { Nome = "Brain", Cnpj = "11.222.333/0001-81" }));
     }
 
     [Fact]
     public async Task CreateAsync_DeveRejeitarCnpjDuplicado()
     {
         var service = CriarService(out _);
-        await service.CreateAsync(new CreateFornecedorDto { Nome = "Brain", Cnpj = "12.345.678/0001-90" });
+        await service.CreateAsync(new CreateFornecedorDto { Nome = "Brain", Cnpj = "12.345.678/0001-95" });
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.CreateAsync(new CreateFornecedorDto { Nome = "Outra Empresa", Cnpj = "12.345.678/0001-90" }));
+            service.CreateAsync(new CreateFornecedorDto { Nome = "Outra Empresa", Cnpj = "12.345.678/0001-95" }));
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveRejeitarCnpjComFormatoInvalido()
+    {
+        var service = CriarService(out _);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.CreateAsync(new CreateFornecedorDto { Nome = "Brain", Cnpj = "11.111.111/1111-11" }));
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveRejeitarCnpjDuplicadoComPontuacaoDiferente()
+    {
+        var service = CriarService(out _);
+        await service.CreateAsync(new CreateFornecedorDto { Nome = "Brain", Cnpj = "12.345.678/0001-95" });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.CreateAsync(new CreateFornecedorDto { Nome = "Outra Empresa", Cnpj = "12345678000195" }));
     }
 
     [Fact]
@@ -81,11 +100,11 @@ public class FornecedorServiceTests
     public async Task UpdateAsync_DeveRejeitarCnpjJaUsadoPorOutroFornecedor()
     {
         var service = CriarService(out _);
-        await service.CreateAsync(new CreateFornecedorDto { Nome = "Brain", Cnpj = "12.345.678/0001-90" });
-        var outro = await service.CreateAsync(new CreateFornecedorDto { Nome = "Outra Empresa", Cnpj = "99.999.999/0001-99" });
+        await service.CreateAsync(new CreateFornecedorDto { Nome = "Brain", Cnpj = "12.345.678/0001-95" });
+        var outro = await service.CreateAsync(new CreateFornecedorDto { Nome = "Outra Empresa", Cnpj = "11.222.333/0001-81" });
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.UpdateAsync(outro.Id, new UpdateFornecedorDto { Nome = "Outra Empresa", Cnpj = "12.345.678/0001-90", Ativo = true }));
+            service.UpdateAsync(outro.Id, new UpdateFornecedorDto { Nome = "Outra Empresa", Cnpj = "12.345.678/0001-95", Ativo = true }));
     }
 
     [Fact]
@@ -100,8 +119,8 @@ public class FornecedorServiceTests
     public async Task GetAllAsync_DeveFiltrarPorAtivo()
     {
         var service = CriarService(out _);
-        var ativo = await service.CreateAsync(new CreateFornecedorDto { Nome = "Brain", Cnpj = "12.345.678/0001-90" });
-        var inativo = await service.CreateAsync(new CreateFornecedorDto { Nome = "Descontinuada", Cnpj = "99.999.999/0001-99", Ativo = false });
+        var ativo = await service.CreateAsync(new CreateFornecedorDto { Nome = "Brain", Cnpj = "12.345.678/0001-95" });
+        var inativo = await service.CreateAsync(new CreateFornecedorDto { Nome = "Descontinuada", Cnpj = "11.222.333/0001-81", Ativo = false });
 
         var resultado = await service.GetAllAsync(new FornecedorFiltroDto { Ativo = true });
 

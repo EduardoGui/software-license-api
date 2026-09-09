@@ -46,6 +46,7 @@ public class FornecedorService : IFornecedorService
     public async Task<FornecedorDto> CreateAsync(CreateFornecedorDto dto)
     {
         await ValidarNomeUnico(dto.Nome, idAtual: null);
+        ValidarCnpjFormato(dto.Cnpj);
         await ValidarCnpjUnico(dto.Cnpj, idAtual: null);
 
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
@@ -78,6 +79,7 @@ public class FornecedorService : IFornecedorService
         var fornecedor = await BuscarOuFalhar(id);
 
         await ValidarNomeUnico(dto.Nome, idAtual: id);
+        ValidarCnpjFormato(dto.Cnpj);
         await ValidarCnpjUnico(dto.Cnpj, idAtual: id);
 
         fornecedor.Nome = dto.Nome.Trim();
@@ -121,6 +123,19 @@ public class FornecedorService : IFornecedorService
         }
     }
 
+    private static void ValidarCnpjFormato(string? cnpj)
+    {
+        if (string.IsNullOrWhiteSpace(cnpj))
+        {
+            return;
+        }
+
+        if (!CnpjValidator.EhValido(cnpj))
+        {
+            throw new BusinessRuleException("CNPJ inválido.");
+        }
+    }
+
     private async Task ValidarCnpjUnico(string? cnpj, int? idAtual)
     {
         if (string.IsNullOrWhiteSpace(cnpj))
@@ -128,8 +143,13 @@ public class FornecedorService : IFornecedorService
             return;
         }
 
-        var cnpjNormalizado = cnpj.Trim();
-        var existe = await _context.Fornecedores.AnyAsync(f => f.Cnpj == cnpjNormalizado && f.Id != idAtual);
+        var digitosInformados = CnpjValidator.SomenteDigitos(cnpj);
+        var outrosFornecedores = await _context.Fornecedores
+            .Where(f => f.Cnpj != null && f.Id != idAtual)
+            .Select(f => f.Cnpj!)
+            .ToListAsync();
+
+        var existe = outrosFornecedores.Any(c => CnpjValidator.SomenteDigitos(c) == digitosInformados);
 
         if (existe)
         {
