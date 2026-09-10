@@ -11,6 +11,7 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
 {
     private const string SemTipoDefinido = "Sem tipo definido";
     private const string SemUsuarioAlocado = "(sem usuário alocado)";
+    private const string VagaDisponivelNoPeriodo = "(vaga disponível no período)";
 
     private readonly AppDbContext _context;
     private readonly TimeProvider _timeProvider;
@@ -228,6 +229,11 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
             ? (licenca.QuantidadeTotal > 0 ? valorMensalCadastrado / licenca.QuantidadeTotal : 0m)
             : valorMensalCadastrado;
 
+        // Ocupação dia a dia dentro da janela ativa da licença no mês, pra detectar vagas que
+        // ficaram ociosas entre uma alocação e outra (ex.: usuário saiu, vaga só foi realocada
+        // dias depois) - a empresa continua pagando por essas vagas mesmo assim.
+        var ocupacaoPorDia = diasAtivosLicenca > 0 ? new int[diasAtivosLicenca] : [];
+
         var usuarios = new List<RelatorioMensalCustoLicencasUsuarioDto>();
         foreach (var alocacao in alocacoes)
         {
@@ -241,6 +247,13 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
                 continue;
             }
 
+            var indiceInicio = Math.Max(0, inicioAtivoUsuario.DayNumber - inicioAtivo.DayNumber);
+            var indiceFim = Math.Min(diasAtivosLicenca - 1, fimAtivoUsuario.DayNumber - inicioAtivo.DayNumber);
+            for (var i = indiceInicio; i <= indiceFim; i++)
+            {
+                ocupacaoPorDia[i]++;
+            }
+
             usuarios.Add(new RelatorioMensalCustoLicencasUsuarioDto
             {
                 UsuarioId = alocacao.UsuarioId,
@@ -252,6 +265,7 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
 
         if (usuarios.Count == 0)
         {
+            // Ninguém usou nenhuma vaga da licença no mês inteiro.
             usuarios.Add(new RelatorioMensalCustoLicencasUsuarioDto
             {
                 UsuarioId = null,
@@ -259,6 +273,29 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
                 DiasAtivos = diasAtivosLicenca,
                 ValorProporcional = subtotalLicenca,
             });
+        }
+        else
+        {
+            var diasVagos = 0;
+            for (var i = 0; i < diasAtivosLicenca; i++)
+            {
+                var vagasNoDia = licenca.QuantidadeTotal - ocupacaoPorDia[i];
+                if (vagasNoDia > 0)
+                {
+                    diasVagos += vagasNoDia;
+                }
+            }
+
+            if (diasVagos > 0)
+            {
+                usuarios.Add(new RelatorioMensalCustoLicencasUsuarioDto
+                {
+                    UsuarioId = null,
+                    UsuarioNome = VagaDisponivelNoPeriodo,
+                    DiasAtivos = diasVagos,
+                    ValorProporcional = Math.Round(valorBasePorUsuario * diasVagos / diasNoMes, 2, MidpointRounding.AwayFromZero),
+                });
+            }
         }
 
         var item = new RelatorioMensalCustoLicencasItemDto

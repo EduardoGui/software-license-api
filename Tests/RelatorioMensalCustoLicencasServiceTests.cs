@@ -266,7 +266,8 @@ public class RelatorioMensalCustoLicencasServiceTests
         var item = Assert.Single(Assert.Single(relatorio.GruposMensal).Licencas);
         // 200/mes por vaga * 2 vagas contratadas = 400 (custo total do mes, independente de uso).
         Assert.Equal(400m, item.Subtotal);
-        Assert.Equal(2, item.Usuarios.Count);
+        // Ana + Bruno + a 2ª vaga que ficou ociosa até o Bruno entrar (dias 1 a 16).
+        Assert.Equal(3, item.Usuarios.Count);
 
         // Cada usuário paga o valor CHEIO da vaga (200/mês) proporcional aos dias que ficou
         // alocado - nunca dividido pelo número de vagas (bug corrigido).
@@ -277,6 +278,54 @@ public class RelatorioMensalCustoLicencasServiceTests
         var doBruno = item.Usuarios.Single(u => u.UsuarioId == bruno.Id);
         Assert.Equal(15, doBruno.DiasAtivos);
         Assert.Equal(Math.Round(200m * 15 / 31, 2, MidpointRounding.AwayFromZero), doBruno.ValorProporcional);
+
+        // A 2ª vaga (Ana ocupa só 1 das 2) ficou disponível do dia 1 ao 16 (16 dias) até o Bruno entrar.
+        var vagaDisponivel = item.Usuarios.Single(u => u.UsuarioId == null);
+        Assert.Equal("(vaga disponível no período)", vagaDisponivel.UsuarioNome);
+        Assert.Equal(16, vagaDisponivel.DiasAtivos);
+        Assert.Equal(Math.Round(200m * 16 / 31, 2, MidpointRounding.AwayFromZero), vagaDisponivel.ValorProporcional);
+
+        // As 3 linhas somadas devem fechar exatamente com o subtotal da licença.
+        Assert.Equal(item.Subtotal, item.Usuarios.Sum(u => u.ValorProporcional));
+    }
+
+    [Fact]
+    public async Task GerarAsync_DeveMostrarVagaOciosaNaTrocaDeUsuarioNoMeioDoMes()
+    {
+        // Cenário real: Bruna sai da empresa no início de setembro, a vaga fica um tempo sem
+        // ninguém, e só depois é realocada pra Taíze. A empresa paga a vaga o mês inteiro.
+        var (service, context) = CriarService();
+        var licenca = CriarLicenca(
+            context, new DateOnly(2026, 1, 1), new DateOnly(2027, 1, 1), "Microsoft 365 Business Standard", quantidadeTotal: 3);
+        CriarValor(context, licenca.Id, 87.55m, LicencaPeriodicidade.Mensal, new DateOnly(2026, 1, 1));
+        var paula = CriarUsuario(context, "Paula");
+        var sofia = CriarUsuario(context, "Sofia");
+        var bruna = CriarUsuario(context, "Bruna");
+        var taize = CriarUsuario(context, "Taize");
+        CriarAlocacao(context, paula.Id, licenca.Id, new DateOnly(2026, 1, 1)); // mês inteiro
+        CriarAlocacao(context, sofia.Id, licenca.Id, new DateOnly(2026, 1, 1)); // mês inteiro
+        CriarAlocacao(context, bruna.Id, licenca.Id, new DateOnly(2026, 1, 1), new DateOnly(2026, 9, 1)); // só o dia 1
+        CriarAlocacao(context, taize.Id, licenca.Id, new DateOnly(2026, 9, 8)); // dia 8 ao 30 = 23 dias
+
+        var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 9 });
+
+        var item = Assert.Single(Assert.Single(relatorio.GruposMensal).Licencas);
+        Assert.Equal(30, item.DiasNoMes);
+        // 87.55/mês por vaga * 3 vagas contratadas = 262.65.
+        Assert.Equal(262.65m, item.Subtotal);
+
+        Assert.Equal(87.55m, item.Usuarios.Single(u => u.UsuarioId == paula.Id).ValorProporcional);
+        Assert.Equal(87.55m, item.Usuarios.Single(u => u.UsuarioId == sofia.Id).ValorProporcional);
+        Assert.Equal(Math.Round(87.55m * 1 / 30, 2, MidpointRounding.AwayFromZero), item.Usuarios.Single(u => u.UsuarioId == bruna.Id).ValorProporcional);
+        Assert.Equal(Math.Round(87.55m * 23 / 30, 2, MidpointRounding.AwayFromZero), item.Usuarios.Single(u => u.UsuarioId == taize.Id).ValorProporcional);
+
+        // A vaga da Bruna ficou disponível do dia 2 ao 7 (6 dias) até a Taíze assumir no dia 8.
+        var vagaDisponivel = item.Usuarios.Single(u => u.UsuarioId == null);
+        Assert.Equal(6, vagaDisponivel.DiasAtivos);
+        Assert.Equal(Math.Round(87.55m * 6 / 30, 2, MidpointRounding.AwayFromZero), vagaDisponivel.ValorProporcional);
+
+        // As 5 linhas somadas fecham exatamente com o valor cheio da licença (nada "some").
+        Assert.Equal(item.Subtotal, item.Usuarios.Sum(u => u.ValorProporcional));
     }
 
     [Fact]
