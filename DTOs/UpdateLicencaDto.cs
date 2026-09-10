@@ -18,6 +18,9 @@ public class UpdateLicencaDto
     [Range(1, int.MaxValue, ErrorMessage = "Quantidade total deve ser maior que zero.")]
     public int QuantidadeTotal { get; set; }
 
+    [Required(ErrorMessage = "Forma de cobrança é obrigatória.")]
+    public string FormaCobranca { get; set; } = string.Empty;
+
     [Required(ErrorMessage = "Data de início é obrigatória.")]
     public DateOnly DataInicio { get; set; }
 

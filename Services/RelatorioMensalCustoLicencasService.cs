@@ -187,10 +187,11 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
         var fimAtivo = licenca.DataTerminoPrevisto < fimMes ? licenca.DataTerminoPrevisto : fimMes;
         var diasAtivosLicenca = Math.Clamp(fimAtivo.DayNumber - inicioAtivo.DayNumber + 1, 0, diasNoMes);
 
-        // Valor por unidade/licença (equivalente mensal, já convertendo Anual -> Valor/12), prorateado
-        // pelos dias em que a licença ficou ativa no mês. NÃO divide pela QuantidadeTotal - o valor
-        // cadastrado já é o preço de uma única licença/vaga.
-        var valorUnitarioMensal = 0m;
+        // Valor mensal equivalente cadastrado (já convertendo Anual -> Valor/12), prorateado pelos
+        // dias em que a licença ficou ativa no mês. O SIGNIFICADO desse valor depende da forma de
+        // cobrança (ver abaixo): por vaga (preço de uma unidade) ou pacote (preço fechado do lote
+        // inteiro de QuantidadeTotal vagas).
+        var valorMensalCadastrado = 0m;
         var periodicidadeAtual = LicencaPeriodicidade.Mensal;
         for (var i = 0; i < valores.Count; i++)
         {
@@ -211,13 +212,21 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
                 ? valorMensalEquivalente
                 : Math.Round(valorMensalEquivalente * diasSegmento / diasNoMes, 2, MidpointRounding.AwayFromZero);
 
-            valorUnitarioMensal += valorSegmento;
+            valorMensalCadastrado += valorSegmento;
             periodicidadeAtual = vigencia.Periodicidade;
         }
 
-        // Custo total contratado no mês: a empresa paga por todas as vagas (QuantidadeTotal),
-        // estejam alocadas a um usuário ou não.
-        var subtotalLicenca = Math.Round(valorUnitarioMensal * licenca.QuantidadeTotal, 2, MidpointRounding.AwayFromZero);
+        // PorVaga: o valor cadastrado é por unidade - custo total = valor x QuantidadeTotal (a
+        // empresa paga por todas as vagas, alocadas ou não), e cada usuário aloca o valor cheio.
+        // Pacote: o valor cadastrado já é o preço fechado do lote inteiro - custo total = o
+        // próprio valor (sem multiplicar), e cada usuário aloca uma fração igual dele.
+        var ehPacote = licenca.FormaCobranca == LicencaFormaCobranca.Pacote;
+        var subtotalLicenca = ehPacote
+            ? Math.Round(valorMensalCadastrado, 2, MidpointRounding.AwayFromZero)
+            : Math.Round(valorMensalCadastrado * licenca.QuantidadeTotal, 2, MidpointRounding.AwayFromZero);
+        var valorBasePorUsuario = ehPacote
+            ? (licenca.QuantidadeTotal > 0 ? valorMensalCadastrado / licenca.QuantidadeTotal : 0m)
+            : valorMensalCadastrado;
 
         var usuarios = new List<RelatorioMensalCustoLicencasUsuarioDto>();
         foreach (var alocacao in alocacoes)
@@ -237,7 +246,7 @@ public class RelatorioMensalCustoLicencasService : IRelatorioMensalCustoLicencas
                 UsuarioId = alocacao.UsuarioId,
                 UsuarioNome = alocacao.Usuario.Nome,
                 DiasAtivos = diasAtivosUsuario,
-                ValorProporcional = Math.Round(valorUnitarioMensal * diasAtivosUsuario / diasNoMes, 2, MidpointRounding.AwayFromZero),
+                ValorProporcional = Math.Round(valorBasePorUsuario * diasAtivosUsuario / diasNoMes, 2, MidpointRounding.AwayFromZero),
             });
         }
 

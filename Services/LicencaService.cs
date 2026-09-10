@@ -9,6 +9,7 @@ namespace SoftwareLicense.Api.Services;
 public class LicencaService : ILicencaService
 {
     private static readonly HashSet<string> PeriodicidadesValidas = [LicencaPeriodicidade.Mensal, LicencaPeriodicidade.Anual];
+    private static readonly HashSet<string> FormasCobrancaValidas = [LicencaFormaCobranca.PorVaga, LicencaFormaCobranca.Pacote];
 
     private readonly AppDbContext _context;
     private readonly TimeProvider _timeProvider;
@@ -61,6 +62,7 @@ public class LicencaService : ILicencaService
     {
         ValidarDatas(dto.DataInicio, dto.DataTerminoPrevisto);
         var periodicidade = ValidarPeriodicidade(dto.Periodicidade);
+        var formaCobranca = ValidarFormaCobranca(dto.FormaCobranca);
         var notaFiscal = await ValidarNotaFiscalAsync(dto.NotaFiscalEntradaId);
 
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
@@ -70,6 +72,7 @@ public class LicencaService : ILicencaService
             Tipo = string.IsNullOrWhiteSpace(dto.Tipo) ? null : dto.Tipo.Trim(),
             Descricao = dto.Descricao,
             QuantidadeTotal = dto.QuantidadeTotal,
+            FormaCobranca = formaCobranca,
             DataInicio = dto.DataInicio,
             DataTerminoPrevisto = dto.DataTerminoPrevisto,
             DiasAntecedenciaAviso = dto.DiasAntecedenciaAviso,
@@ -104,12 +107,14 @@ public class LicencaService : ILicencaService
         var licenca = await BuscarOuFalhar(id);
 
         ValidarDatas(dto.DataInicio, dto.DataTerminoPrevisto);
+        var formaCobranca = ValidarFormaCobranca(dto.FormaCobranca);
         var notaFiscal = await ValidarNotaFiscalAsync(dto.NotaFiscalEntradaId);
 
         licenca.Nome = dto.Nome.Trim();
         licenca.Tipo = string.IsNullOrWhiteSpace(dto.Tipo) ? null : dto.Tipo.Trim();
         licenca.Descricao = dto.Descricao;
         licenca.QuantidadeTotal = dto.QuantidadeTotal;
+        licenca.FormaCobranca = formaCobranca;
         licenca.DataInicio = dto.DataInicio;
         licenca.DataTerminoPrevisto = dto.DataTerminoPrevisto;
         licenca.DiasAntecedenciaAviso = dto.DiasAntecedenciaAviso;
@@ -273,6 +278,16 @@ public class LicencaService : ILicencaService
         return periodicidade;
     }
 
+    private static string ValidarFormaCobranca(string formaCobranca)
+    {
+        if (!FormasCobrancaValidas.Contains(formaCobranca))
+        {
+            throw new BusinessRuleException("Forma de cobrança deve ser 'PorVaga' ou 'Pacote'.");
+        }
+
+        return formaCobranca;
+    }
+
     private static LicencaDto ParaDto(Licenca l, int quantidadeEmUso, LicencaValor? valorVigente)
     {
         return new LicencaDto
@@ -282,6 +297,7 @@ public class LicencaService : ILicencaService
             Tipo = l.Tipo,
             Descricao = l.Descricao,
             QuantidadeTotal = l.QuantidadeTotal,
+            FormaCobranca = l.FormaCobranca,
             QuantidadeEmUso = quantidadeEmUso,
             QuantidadeDisponivel = l.QuantidadeTotal - quantidadeEmUso,
             DataInicio = l.DataInicio,

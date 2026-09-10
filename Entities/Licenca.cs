@@ -9,6 +9,8 @@ public class Licenca
     public string? Tipo { get; set; }
     public string? Descricao { get; set; }
     public int QuantidadeTotal { get; set; }
+    // "PorVaga" (padrão) ou "Pacote" - ver SoftwareLicense.Api.Services.LicencaFormaCobranca.
+    public string FormaCobranca { get; set; } = string.Empty;
     public DateOnly DataInicio { get; set; }
     public DateOnly DataTerminoPrevisto { get; set; }
     public int DiasAntecedenciaAviso { get; set; }

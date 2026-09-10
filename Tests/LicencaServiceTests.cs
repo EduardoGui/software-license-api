@@ -32,6 +32,7 @@ public class LicencaServiceTests
         DiasAntecedenciaAviso = 30,
         Valor = 100m,
         Periodicidade = LicencaPeriodicidade.Mensal,
+        FormaCobranca = LicencaFormaCobranca.PorVaga,
     };
 
     [Fact]
@@ -229,6 +230,7 @@ public class LicencaServiceTests
             DiasAntecedenciaAviso = 30,
             Ativa = true,
             NotaFiscalEntradaId = nota.Id,
+            FormaCobranca = LicencaFormaCobranca.PorVaga,
         };
 
         var atualizada = await service.UpdateAsync(criada.Id, dto);

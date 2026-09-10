@@ -24,13 +24,14 @@ public class RelatorioMensalCustoLicencasServiceTests
 
     private static Licenca CriarLicenca(
         AppDbContext context, DateOnly dataInicio, DateOnly dataTerminoPrevisto,
-        string nome = "Microsoft 365", int quantidadeTotal = 10, string? tipo = null)
+        string nome = "Microsoft 365", int quantidadeTotal = 10, string? tipo = null, string formaCobranca = "PorVaga")
     {
         var licenca = new Licenca
         {
             Nome = nome,
             Tipo = tipo,
             QuantidadeTotal = quantidadeTotal,
+            FormaCobranca = formaCobranca,
             DataInicio = dataInicio,
             DataTerminoPrevisto = dataTerminoPrevisto,
             DiasAntecedenciaAviso = 30,
@@ -276,6 +277,34 @@ public class RelatorioMensalCustoLicencasServiceTests
         var doBruno = item.Usuarios.Single(u => u.UsuarioId == bruno.Id);
         Assert.Equal(15, doBruno.DiasAtivos);
         Assert.Equal(Math.Round(200m * 15 / 31, 2, MidpointRounding.AwayFromZero), doBruno.ValorProporcional);
+    }
+
+    [Fact]
+    public async Task GerarAsync_DeveRatearValorDoPacoteEntreUsuariosQuandoFormaCobrancaEhPacote()
+    {
+        var (service, context) = CriarService();
+        // Pacote: o valor cadastrado (1972.29) e o preco fechado do lote inteiro pra ate 5 usuarios -
+        // NAO multiplica pela quantidade, e cada usuario recebe uma fracao igual (1972.29 / 5).
+        var licenca = CriarLicenca(
+            context, new DateOnly(2026, 1, 1), new DateOnly(2027, 1, 1), "Mega (Senior)", quantidadeTotal: 5, formaCobranca: "Pacote");
+        CriarValor(context, licenca.Id, 1972.29m, LicencaPeriodicidade.Mensal, new DateOnly(2026, 1, 1));
+        var ana = CriarUsuario(context, "Ana");
+        var bruno = CriarUsuario(context, "Bruno");
+        CriarAlocacao(context, ana.Id, licenca.Id, new DateOnly(2026, 1, 1)); // mes inteiro (31 dias)
+        CriarAlocacao(context, bruno.Id, licenca.Id, new DateOnly(2026, 8, 17)); // 15 dias (17 a 31)
+
+        var relatorio = await service.GerarAsync(new RelatorioMensalCustoLicencasFiltroDto { Ano = 2026, Mes = 8 });
+
+        var item = Assert.Single(Assert.Single(relatorio.GruposMensal).Licencas);
+        // Custo total do pacote = o valor cadastrado em si, sem multiplicar pela quantidade.
+        Assert.Equal(1972.29m, item.Subtotal);
+
+        var valorPorVaga = Math.Round(1972.29m / 5, 2, MidpointRounding.AwayFromZero);
+        var doAna = item.Usuarios.Single(u => u.UsuarioId == ana.Id);
+        Assert.Equal(valorPorVaga, doAna.ValorProporcional);
+
+        var doBruno = item.Usuarios.Single(u => u.UsuarioId == bruno.Id);
+        Assert.Equal(Math.Round(valorPorVaga * 15 / 31, 2, MidpointRounding.AwayFromZero), doBruno.ValorProporcional);
     }
 
     [Fact]

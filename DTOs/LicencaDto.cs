@@ -7,6 +7,7 @@ public class LicencaDto
     public string? Tipo { get; set; }
     public string? Descricao { get; set; }
     public int QuantidadeTotal { get; set; }
+    public string FormaCobranca { get; set; } = string.Empty;
     public int QuantidadeEmUso { get; set; }
     public int QuantidadeDisponivel { get; set; }
     public DateOnly DataInicio { get; set; }
