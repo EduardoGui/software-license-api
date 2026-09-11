@@ -53,7 +53,10 @@ public class ObrigacaoService : IObrigacaoService
             query = query.Where(o => o.Cancelada == filtro.Cancelada);
         }
 
-        var obrigacoes = await query.OrderByDescending(o => o.Competencia).ThenBy(o => o.FornecedorId).ToListAsync();
+        var obrigacoes = await query
+            .OrderBy(o => o.Vencimento ?? DateOnly.MaxValue)
+            .ThenBy(o => o.FornecedorId)
+            .ToListAsync();
         var dtos = obrigacoes.Select(ParaDto).ToList();
 
         if (!string.IsNullOrWhiteSpace(filtro.Etapa))
@@ -140,6 +143,7 @@ public class ObrigacaoService : IObrigacaoService
         .Include(o => o.Fornecedor)
         .Include(o => o.MedicaoBm!).ThenInclude(m => m.Contrato)
         .Include(o => o.OrdemCompra)
+        .Include(o => o.DespesaAvulsa)
         .AsQueryable();
 
     private async Task<Obrigacao> BuscarOuFalhar(int id)
@@ -173,11 +177,13 @@ public class ObrigacaoService : IObrigacaoService
         Id = o.Id,
         TipoMovimento = o.TipoMovimento,
         MedicaoBmId = o.MedicaoBmId,
+        MedicaoBmNumero = o.MedicaoBm?.Numero,
         ContratoId = o.MedicaoBm?.ContratoId,
         ContratoNumero = o.MedicaoBm?.Contrato?.Numero,
         OrdemCompraId = o.OrdemCompraId,
         OrdemCompraNumero = o.OrdemCompra?.Numero,
         DespesaAvulsaId = o.DespesaAvulsaId,
+        DespesaAvulsaDescricao = o.DespesaAvulsa?.Descricao,
         FornecedorId = o.FornecedorId,
         FornecedorNome = o.Fornecedor.Nome,
         Competencia = o.Competencia,

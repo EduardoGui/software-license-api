@@ -5,11 +5,13 @@ public class ObrigacaoDto
     public int Id { get; set; }
     public string TipoMovimento { get; set; } = string.Empty;
     public int? MedicaoBmId { get; set; }
+    public int? MedicaoBmNumero { get; set; }
     public int? ContratoId { get; set; }
     public string? ContratoNumero { get; set; }
     public int? OrdemCompraId { get; set; }
     public int? OrdemCompraNumero { get; set; }
     public int? DespesaAvulsaId { get; set; }
+    public string? DespesaAvulsaDescricao { get; set; }
     public int FornecedorId { get; set; }
     public string FornecedorNome { get; set; } = string.Empty;
     public DateOnly Competencia { get; set; }
