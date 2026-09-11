@@ -156,6 +156,33 @@ public class DespesaAvulsaService : IDespesaAvulsaService
         return ParaDto(despesa);
     }
 
+    public async Task DeleteAsync(int id)
+    {
+        var despesa = await BuscarOuFalhar(id);
+
+        var temAnexo = await _context.DespesaAvulsaAnexos.AnyAsync(a => a.DespesaAvulsaId == id);
+        if (temAnexo)
+        {
+            throw new BusinessRuleException("Não é possível excluir uma despesa avulsa com anexos. Exclua os anexos primeiro.");
+        }
+
+        var obrigacao = await _context.Obrigacoes.FirstOrDefaultAsync(o => o.DespesaAvulsaId == id);
+        if (obrigacao is not null)
+        {
+            if (obrigacao.Pago)
+            {
+                throw new BusinessRuleException("Não é possível excluir uma despesa avulsa já paga.");
+            }
+
+            _context.Obrigacoes.Remove(obrigacao);
+        }
+
+        _context.DespesasAvulsas.Remove(despesa);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Despesa avulsa {DespesaAvulsaId} excluída", id);
+    }
+
     public async Task<List<AnexoDto>> ListarAnexosAsync(int despesaAvulsaId)
     {
         await BuscarOuFalhar(despesaAvulsaId);

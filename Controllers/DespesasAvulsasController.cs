@@ -45,6 +45,13 @@ public class DespesasAvulsasController : ControllerBase
         return Ok(despesa);
     }
 
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        await _despesaAvulsaService.DeleteAsync(id);
+        return NoContent();
+    }
+
     [HttpGet("{id:int}/anexos")]
     public async Task<ActionResult<List<AnexoDto>>> ListarAnexos(int id)
     {
