@@ -521,11 +521,122 @@ public class CampanhaEntregaService : ICampanhaEntregaService
 
     private static (string TokenBruto, string TokenHash) GerarToken()
     {
-        var bytes = RandomNumberGenerator.GetBytes(32);
-        var tokenBruto = Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(tokenBruto)));
-        return (tokenBruto, hash);
+        var tokenBruto = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        return (tokenBruto, HashToken(tokenBruto));
     }
+
+    private static string HashToken(string tokenBruto) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(tokenBruto)));
+
+    public async Task<RecebimentoDto> ObterPorTokenAsync(string token, string? ip, string? userAgent)
+    {
+        var entrega = await BuscarEntregaPorTokenOuFalhar(token);
+
+        if (entrega.DataAcessoLink is null)
+        {
+            entrega.DataAcessoLink = _timeProvider.GetUtcNow().UtcDateTime;
+            entrega.IpAcessoLink = ip;
+            entrega.UserAgentAcessoLink = userAgent;
+            await _context.SaveChangesAsync();
+
+            await _auditoriaService.RegistrarAsync(null, LogAuditoriaEntidade.Entrega, entrega.Id, LogAuditoriaAcao.AcessoLink, ip);
+        }
+
+        return ParaRecebimentoDto(entrega);
+    }
+
+    public async Task<RecebimentoDto> ConfirmarPorTokenAsync(string token, string? ip, string? userAgent)
+    {
+        var entrega = await BuscarEntregaPorTokenOuFalhar(token);
+        ValidarEntregaAcionavelPorToken(entrega);
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        entrega.Status = EntregaStatus.Confirmado;
+        entrega.DataConfirmacao = agora;
+        entrega.IpConfirmacao = ip;
+        entrega.UserAgentConfirmacao = userAgent;
+        entrega.DataAtualizacao = agora;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Entrega {EntregaId} confirmada pelo colaborador via link público", entrega.Id);
+        await _auditoriaService.RegistrarAsync(null, LogAuditoriaEntidade.Entrega, entrega.Id, LogAuditoriaAcao.Confirmado, ip);
+
+        return ParaRecebimentoDto(entrega);
+    }
+
+    public async Task<RecebimentoDto> RegistrarDivergenciaPorTokenAsync(string token, RegistrarDivergenciaDto dto, string? ip, string? userAgent)
+    {
+        if (!TiposDivergenciaValidos.Contains(dto.TipoDivergencia))
+        {
+            throw new BusinessRuleException("Tipo de divergência inválido.");
+        }
+
+        var entrega = await BuscarEntregaPorTokenOuFalhar(token);
+        ValidarEntregaAcionavelPorToken(entrega);
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        entrega.Status = EntregaStatus.Divergencia;
+        entrega.TipoDivergencia = dto.TipoDivergencia;
+        entrega.ObservacaoDivergencia = dto.Observacao?.Trim();
+        entrega.DataConfirmacao = agora;
+        entrega.IpConfirmacao = ip;
+        entrega.UserAgentConfirmacao = userAgent;
+        entrega.DataAtualizacao = agora;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Divergência registrada na Entrega {EntregaId} pelo colaborador via link público", entrega.Id);
+        await _auditoriaService.RegistrarAsync(null, LogAuditoriaEntidade.Entrega, entrega.Id, LogAuditoriaAcao.DivergenciaRegistrada, dto.TipoDivergencia);
+
+        return ParaRecebimentoDto(entrega);
+    }
+
+    private static readonly HashSet<string> TiposDivergenciaValidos =
+    [
+        TipoDivergenciaEntrega.NaoRecebi, TipoDivergenciaEntrega.QuantidadeIncorreta,
+        TipoDivergenciaEntrega.ItemDiferente, TipoDivergenciaEntrega.ItemDanificado, TipoDivergenciaEntrega.Outro,
+    ];
+
+    private static void ValidarEntregaAcionavelPorToken(Entrega entrega)
+    {
+        if (entrega.Status != EntregaStatus.EmailEnviado)
+        {
+            throw new BusinessRuleException("Este link já foi utilizado ou não é mais válido.");
+        }
+    }
+
+    private async Task<Entrega> BuscarEntregaPorTokenOuFalhar(string token)
+    {
+        var hash = HashToken(token);
+        var entrega = await MontarConsultaEntregas().FirstOrDefaultAsync(e => e.TokenHash == hash);
+
+        if (entrega is null)
+        {
+            throw new NotFoundException("Link inválido ou expirado.");
+        }
+
+        return entrega;
+    }
+
+    private static RecebimentoDto ParaRecebimentoDto(Entrega e) => new()
+    {
+        CampanhaNome = e.CampanhaEntrega.Nome,
+        UsuarioNome = e.Usuario.Nome,
+        DataEntregaFisica = e.DataEntregaFisica,
+        Status = e.Status,
+        Itens = e.Itens.Select(i => new EntregaItemDto
+        {
+            Id = i.Id,
+            Descricao = i.Descricao,
+            Tamanho = i.Tamanho,
+            Quantidade = i.Quantidade,
+            Validade = i.Validade,
+        }).ToList(),
+        DataConfirmacao = e.DataConfirmacao,
+        TipoDivergencia = e.TipoDivergencia,
+        ObservacaoDivergencia = e.ObservacaoDivergencia,
+    };
 
     private static void ValidarCampanhaAberta(CampanhaEntrega campanha)
     {
@@ -548,6 +659,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         .Include(e => e.Usuario).ThenInclude(u => u.Setor)
         .Include(e => e.ResponsavelEntrega)
         .Include(e => e.Itens)
+        .Include(e => e.CampanhaEntrega)
         .AsQueryable();
 
     private async Task<CampanhaEntrega> BuscarCampanhaOuFalhar(int id)

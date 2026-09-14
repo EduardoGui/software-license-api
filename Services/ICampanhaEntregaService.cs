@@ -24,4 +24,8 @@ public interface ICampanhaEntregaService
     Task<EntregaDto> CancelarEntregaAsync(int campanhaId, int entregaId);
     Task<EntregaDto> EnviarEmailAsync(int campanhaId, int entregaId);
     Task<List<EntregaDto>> ReenviarPendentesAsync(int campanhaId);
+
+    Task<RecebimentoDto> ObterPorTokenAsync(string token, string? ip, string? userAgent);
+    Task<RecebimentoDto> ConfirmarPorTokenAsync(string token, string? ip, string? userAgent);
+    Task<RecebimentoDto> RegistrarDivergenciaPorTokenAsync(string token, RegistrarDivergenciaDto dto, string? ip, string? userAgent);
 }

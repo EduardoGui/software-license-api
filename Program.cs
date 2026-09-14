@@ -152,6 +152,16 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
+    // Endpoint público de confirmação de entrega (Controle de Entregas) - limite um pouco mais
+    // folgado que o de login, já que o uso legítimo aqui é "uma pessoa abrindo o próprio link".
+    options.AddPolicy("recebimento", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "desconhecido",
+        factory: _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
 });
 
 var app = builder.Build();

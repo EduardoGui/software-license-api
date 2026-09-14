@@ -12,4 +12,7 @@ public static class LogAuditoriaAcao
     public const string AnexoAdicionado = "AnexoAdicionado";
     public const string AnexoExcluido = "AnexoExcluido";
     public const string EmailNaoEnviado = "EmailNaoEnviado";
+    public const string AcessoLink = "AcessoLink";
+    public const string Confirmado = "Confirmado";
+    public const string DivergenciaRegistrada = "DivergenciaRegistrada";
 }

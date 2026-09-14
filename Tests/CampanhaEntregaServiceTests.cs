@@ -329,4 +329,94 @@ public class CampanhaEntregaServiceTests
         Assert.Equal(EntregaStatus.EmailEnviado, resultados[0].Status);
         Assert.Equal(1, emailSender.ChamadasSimples);
     }
+
+    private async Task<(CampanhaEntregaService Service, AppDbContext Context, string Token)> CriarEntregaComEmailEnviadoAsync()
+    {
+        var service = CriarService(out var context);
+        var campanha = await service.CreateAsync(new CreateCampanhaEntregaDto { Nome = "Uniformes" });
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+        var entrega = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto
+        {
+            UsuarioId = joao.Id,
+            Itens = [new CreateEntregaItemDto { Descricao = "Mochila", Quantidade = 1 }],
+        });
+        await service.EnviarEmailAsync(campanha.Id, entrega.Id);
+
+        // O token cru nunca é persistido - para simular o link, geramos um token de teste e
+        // gravamos apenas o hash dele diretamente na entrega, do mesmo jeito que o serviço faria.
+        const string tokenTeste = "token-de-teste-1234567890";
+        var entregaEntidade = await context.Entregas.FirstAsync(e => e.Id == entrega.Id);
+        entregaEntidade.TokenHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(tokenTeste)));
+        await context.SaveChangesAsync();
+
+        return (service, context, tokenTeste);
+    }
+
+    [Fact]
+    public async Task ObterPorTokenAsync_DeveLancarNotFoundParaTokenInexistente()
+    {
+        var service = CriarService(out _);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => service.ObterPorTokenAsync("token-que-nao-existe", "1.2.3.4", "UA"));
+    }
+
+    [Fact]
+    public async Task ObterPorTokenAsync_DeveGravarAcessoSoNaPrimeiraVez()
+    {
+        var (service, context, token) = await CriarEntregaComEmailEnviadoAsync();
+
+        await service.ObterPorTokenAsync(token, "1.1.1.1", "UA-1");
+        var entregaAposPrimeiro = await context.Entregas.AsNoTracking().FirstAsync();
+        await service.ObterPorTokenAsync(token, "2.2.2.2", "UA-2");
+        var entregaAposSegundo = await context.Entregas.AsNoTracking().FirstAsync();
+
+        Assert.Equal("1.1.1.1", entregaAposPrimeiro.IpAcessoLink);
+        Assert.Equal("1.1.1.1", entregaAposSegundo.IpAcessoLink);
+    }
+
+    [Fact]
+    public async Task ConfirmarPorTokenAsync_DeveConfirmarEGravarIpEUserAgent()
+    {
+        var (service, context, token) = await CriarEntregaComEmailEnviadoAsync();
+
+        var resultado = await service.ConfirmarPorTokenAsync(token, "9.9.9.9", "Mozilla/Teste");
+
+        Assert.Equal(EntregaStatus.Confirmado, resultado.Status);
+        Assert.NotNull(resultado.DataConfirmacao);
+
+        var entregaEntidade = await context.Entregas.FirstAsync();
+        Assert.Equal("9.9.9.9", entregaEntidade.IpConfirmacao);
+        Assert.Equal("Mozilla/Teste", entregaEntidade.UserAgentConfirmacao);
+    }
+
+    [Fact]
+    public async Task ConfirmarPorTokenAsync_DeveRejeitarSegundaConfirmacaoComOMesmoToken()
+    {
+        var (service, _, token) = await CriarEntregaComEmailEnviadoAsync();
+        await service.ConfirmarPorTokenAsync(token, "1.1.1.1", "UA");
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.ConfirmarPorTokenAsync(token, "1.1.1.1", "UA"));
+    }
+
+    [Fact]
+    public async Task RegistrarDivergenciaPorTokenAsync_DeveRegistrarTipoEObservacao()
+    {
+        var (service, context, token) = await CriarEntregaComEmailEnviadoAsync();
+
+        var resultado = await service.RegistrarDivergenciaPorTokenAsync(
+            token, new RegistrarDivergenciaDto { TipoDivergencia = TipoDivergenciaEntrega.ItemDanificado, Observacao = "Veio rasgado" }, "1.1.1.1", "UA");
+
+        Assert.Equal(EntregaStatus.Divergencia, resultado.Status);
+        Assert.Equal(TipoDivergenciaEntrega.ItemDanificado, resultado.TipoDivergencia);
+        Assert.Equal("Veio rasgado", resultado.ObservacaoDivergencia);
+    }
+
+    [Fact]
+    public async Task RegistrarDivergenciaPorTokenAsync_DeveRejeitarTipoInvalido()
+    {
+        var (service, _, token) = await CriarEntregaComEmailEnviadoAsync();
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.RegistrarDivergenciaPorTokenAsync(
+            token, new RegistrarDivergenciaDto { TipoDivergencia = "TipoQualquerInvalido" }, "1.1.1.1", "UA"));
+    }
 }
