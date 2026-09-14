@@ -35,7 +35,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
 
     public async Task<List<CampanhaEntregaDto>> GetAllAsync(CampanhaEntregaFiltroDto filtro)
     {
-        var query = _context.CampanhasEntrega.AsQueryable();
+        var query = _context.CampanhasEntrega.Include(c => c.Itens).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(filtro.Nome))
         {
@@ -259,6 +259,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
     {
         var campanha = await BuscarCampanhaOuFalhar(campanhaId);
         ValidarCampanhaAberta(campanha);
+        ValidarCampanhaTemItens(campanha);
 
         var usuario = await _context.Usuarios.FindAsync(dto.UsuarioId)
             ?? throw new NotFoundException($"Colaborador {dto.UsuarioId} não encontrado.");
@@ -278,7 +279,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
             Status = EntregaStatus.Pendente,
             DataCriacao = agora,
             DataAtualizacao = agora,
-            Itens = dto.Itens.Select(CriarItem).ToList(),
+            Itens = CopiarItensDaCampanha(campanha),
         };
 
         _context.Entregas.Add(entrega);
@@ -294,6 +295,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
     {
         var campanha = await BuscarCampanhaOuFalhar(campanhaId);
         ValidarCampanhaAberta(campanha);
+        ValidarCampanhaTemItens(campanha);
 
         var idsJaNaCampanha = await _context.Entregas
             .Where(e => e.CampanhaEntregaId == campanhaId)
@@ -321,7 +323,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
                 Status = EntregaStatus.Pendente,
                 DataCriacao = agora,
                 DataAtualizacao = agora,
-                Itens = dto.ItensPadrao.Select(CriarItem).ToList(),
+                Itens = CopiarItensDaCampanha(campanha),
             };
             novasEntregas.Add(entrega);
         }
@@ -332,6 +334,43 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         _logger.LogInformation("{Quantidade} entregas adicionadas em lote à campanha {CampanhaId}", novasEntregas.Count, campanhaId);
 
         return novasEntregas.Select(ParaEntregaDto).ToList();
+    }
+
+    public async Task<CampanhaEntregaDto> AtualizarItensCampanhaAsync(int campanhaId, UpdateEntregaItensDto dto)
+    {
+        var campanha = await BuscarCampanhaOuFalhar(campanhaId);
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+
+        _context.CampanhaEntregaItens.RemoveRange(campanha.Itens);
+        campanha.Itens = dto.Itens.Select(i => new CampanhaEntregaItem
+        {
+            Descricao = i.Descricao.Trim(),
+            Tamanho = string.IsNullOrWhiteSpace(i.Tamanho) ? null : i.Tamanho.Trim(),
+            Quantidade = i.Quantidade,
+            Validade = i.Validade,
+            DataCriacao = agora,
+        }).ToList();
+        campanha.DataAtualizacao = agora;
+
+        // Backfill: quem já foi adicionado mas ainda está Pendente e sem itens (ex.: adicionado antes
+        // de a lista da campanha existir) passa a receber a lista atual automaticamente. Quem já tem
+        // itens próprios (inclusive já personalizados) não é mexido.
+        var entregasParaPreencher = await _context.Entregas
+            .Include(e => e.Itens)
+            .Where(e => e.CampanhaEntregaId == campanhaId && e.Status == EntregaStatus.Pendente)
+            .ToListAsync();
+
+        foreach (var entrega in entregasParaPreencher.Where(e => e.Itens.Count == 0))
+        {
+            entrega.Itens = CopiarItensDaCampanha(campanha);
+            entrega.DataAtualizacao = agora;
+        }
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Itens da campanha {CampanhaId} atualizados", campanhaId);
+
+        return ParaDto(campanha);
     }
 
     public async Task<EntregaDto> AtualizarItensEntregaAsync(int campanhaId, int entregaId, UpdateEntregaItensDto dto)
@@ -646,6 +685,23 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         }
     }
 
+    private static void ValidarCampanhaTemItens(CampanhaEntrega campanha)
+    {
+        if (campanha.Itens.Count == 0)
+        {
+            throw new BusinessRuleException("Defina os itens da campanha antes de adicionar colaboradores.");
+        }
+    }
+
+    private static List<EntregaItem> CopiarItensDaCampanha(CampanhaEntrega campanha) => campanha.Itens.Select(i => new EntregaItem
+    {
+        Descricao = i.Descricao,
+        Tamanho = i.Tamanho,
+        Quantidade = i.Quantidade,
+        Validade = i.Validade,
+        DataCriacao = DateTime.UtcNow,
+    }).ToList();
+
     private static EntregaItem CriarItem(CreateEntregaItemDto dto) => new()
     {
         Descricao = dto.Descricao.Trim(),
@@ -666,6 +722,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
     {
         var campanha = await _context.CampanhasEntrega
             .Include(c => c.Entregas)
+            .Include(c => c.Itens)
             .FirstOrDefaultAsync(c => c.Id == id);
 
         if (campanha is null)
@@ -697,6 +754,14 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         Status = c.Status,
         DataCriacao = c.DataCriacao,
         DataAtualizacao = c.DataAtualizacao,
+        Itens = c.Itens.Select(i => new EntregaItemDto
+        {
+            Id = i.Id,
+            Descricao = i.Descricao,
+            Tamanho = i.Tamanho,
+            Quantidade = i.Quantidade,
+            Validade = i.Validade,
+        }).ToList(),
     };
 
     private static EntregaDto ParaEntregaDto(Entrega e) => new()

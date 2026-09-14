@@ -10,4 +10,5 @@ public class CampanhaEntrega
     public DateTime DataAtualizacao { get; set; }
 
     public List<Entrega> Entregas { get; set; } = [];
+    public List<CampanhaEntregaItem> Itens { get; set; } = [];
 }

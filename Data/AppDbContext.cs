@@ -63,6 +63,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<CampanhaEntrega> CampanhasEntrega => Set<CampanhaEntrega>();
     public DbSet<Entrega> Entregas => Set<Entrega>();
     public DbSet<EntregaItem> EntregaItens => Set<EntregaItem>();
+    public DbSet<CampanhaEntregaItem> CampanhaEntregaItens => Set<CampanhaEntregaItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -605,6 +606,14 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(i => i.Tamanho).HasMaxLength(30);
             entity.HasIndex(i => i.EntregaId);
             entity.HasOne(i => i.Entrega).WithMany(e => e.Itens).HasForeignKey(i => i.EntregaId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CampanhaEntregaItem>(entity =>
+        {
+            entity.Property(i => i.Descricao).IsRequired().HasMaxLength(200);
+            entity.Property(i => i.Tamanho).HasMaxLength(30);
+            entity.HasIndex(i => i.CampanhaEntregaId);
+            entity.HasOne(i => i.CampanhaEntrega).WithMany(c => c.Itens).HasForeignKey(i => i.CampanhaEntregaId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<LogAuditoria>(entity =>

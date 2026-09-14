@@ -8,4 +8,6 @@ public class CampanhaEntregaDto
     public string Status { get; set; } = string.Empty;
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
+
+    public List<EntregaItemDto> Itens { get; set; } = [];
 }

@@ -67,6 +67,12 @@ public class CampanhasEntregaController : ControllerBase
         return Ok(await _campanhaEntregaService.ObterResumoAsync(id));
     }
 
+    [HttpPut("{id:int}/itens")]
+    public async Task<ActionResult<CampanhaEntregaDto>> AtualizarItens(int id, UpdateEntregaItensDto dto)
+    {
+        return Ok(await _campanhaEntregaService.AtualizarItensCampanhaAsync(id, dto));
+    }
+
     [HttpGet("{id:int}/colaboradores-disponiveis")]
     public async Task<ActionResult<List<ColaboradorDisponivelDto>>> ListarColaboradoresDisponiveis(int id, [FromQuery] ColaboradorDisponivelFiltroDto filtro)
     {
