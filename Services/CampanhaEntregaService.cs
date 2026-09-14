@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using SoftwareLicense.Api.Data;
 using SoftwareLicense.Api.DTOs;
@@ -11,12 +13,24 @@ public class CampanhaEntregaService : ICampanhaEntregaService
     private readonly AppDbContext _context;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<CampanhaEntregaService> _logger;
+    private readonly IEmailSender _emailSender;
+    private readonly IAuditoriaService _auditoriaService;
+    private readonly string _frontendBaseUrl;
 
-    public CampanhaEntregaService(AppDbContext context, TimeProvider timeProvider, ILogger<CampanhaEntregaService> logger)
+    public CampanhaEntregaService(
+        AppDbContext context,
+        TimeProvider timeProvider,
+        ILogger<CampanhaEntregaService> logger,
+        IEmailSender emailSender,
+        IAuditoriaService auditoriaService,
+        IConfiguration configuration)
     {
         _context = context;
         _timeProvider = timeProvider;
         _logger = logger;
+        _emailSender = emailSender;
+        _auditoriaService = auditoriaService;
+        _frontendBaseUrl = configuration["Frontend:BaseUrl"] ?? "http://localhost:4200";
     }
 
     public async Task<List<CampanhaEntregaDto>> GetAllAsync(CampanhaEntregaFiltroDto filtro)
@@ -381,6 +395,136 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         _logger.LogInformation("Entrega {EntregaId} cancelada", entregaId);
 
         return ParaEntregaDto(entrega);
+    }
+
+    public async Task<EntregaDto> EnviarEmailAsync(int campanhaId, int entregaId)
+    {
+        var entrega = await BuscarEntregaOuFalhar(campanhaId, entregaId);
+
+        if (entrega.Itens.Count == 0)
+        {
+            throw new BusinessRuleException("Adicione ao menos um item antes de enviar o e-mail.");
+        }
+
+        if (entrega.Status is not (EntregaStatus.Pendente or EntregaStatus.EmailEnviado))
+        {
+            throw new BusinessRuleException("Só é possível enviar o e-mail enquanto a entrega estiver Pendente ou aguardando confirmação.");
+        }
+
+        var campanha = await BuscarCampanhaOuFalhar(campanhaId);
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+
+        var (tokenBruto, tokenHash) = GerarToken();
+        entrega.TokenHash = tokenHash;
+        entrega.DataEnvioEmail = agora;
+        entrega.Status = EntregaStatus.EmailEnviado;
+        entrega.DataAtualizacao = agora;
+
+        if (campanha.Status == CampanhaEntregaStatus.Rascunho)
+        {
+            campanha.Status = CampanhaEntregaStatus.EmAndamento;
+            campanha.DataAtualizacao = agora;
+        }
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("E-mail de confirmação da Entrega {EntregaId} enviado", entregaId);
+        await _auditoriaService.RegistrarAsync(null, LogAuditoriaEntidade.Entrega, entrega.Id, LogAuditoriaAcao.Enviado);
+
+        var aviso = await EnviarEmailConfirmacaoAsync(entrega, campanha, tokenBruto);
+
+        var resultado = ParaEntregaDto(entrega);
+        resultado.AvisoEmail = aviso;
+        return resultado;
+    }
+
+    public async Task<List<EntregaDto>> ReenviarPendentesAsync(int campanhaId)
+    {
+        var campanha = await BuscarCampanhaOuFalhar(campanhaId);
+
+        var candidatas = await MontarConsultaEntregas()
+            .Where(e => e.CampanhaEntregaId == campanhaId)
+            .Where(e => e.Status == EntregaStatus.Pendente || e.Status == EntregaStatus.EmailEnviado)
+            .Where(e => e.Itens.Count > 0)
+            .ToListAsync();
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        var resultados = new List<EntregaDto>();
+
+        foreach (var entrega in candidatas)
+        {
+            var (tokenBruto, tokenHash) = GerarToken();
+            entrega.TokenHash = tokenHash;
+            entrega.DataEnvioEmail = agora;
+            entrega.Status = EntregaStatus.EmailEnviado;
+            entrega.DataAtualizacao = agora;
+
+            if (campanha.Status == CampanhaEntregaStatus.Rascunho)
+            {
+                campanha.Status = CampanhaEntregaStatus.EmAndamento;
+                campanha.DataAtualizacao = agora;
+            }
+
+            await _context.SaveChangesAsync();
+
+            var aviso = await EnviarEmailConfirmacaoAsync(entrega, campanha, tokenBruto);
+
+            var dto = ParaEntregaDto(entrega);
+            dto.AvisoEmail = aviso;
+            resultados.Add(dto);
+        }
+
+        _logger.LogInformation("Reenvio em lote concluído para a campanha {CampanhaId}: {Quantidade} entregas processadas", campanhaId, resultados.Count);
+
+        return resultados;
+    }
+
+    // A entrega já foi marcada como EmailEnviado antes de chamar isto - uma falha aqui não deve reverter
+    // a transição de status, só fica registrada (log + auditoria) e devolve um aviso pra reenvio manual,
+    // mesmo espírito do e-mail de aprovação de Reembolso/Nota de Débito.
+    private async Task<string?> EnviarEmailConfirmacaoAsync(Entrega entrega, CampanhaEntrega campanha, string tokenBruto)
+    {
+        if (string.IsNullOrWhiteSpace(entrega.EmailDestino))
+        {
+            _logger.LogWarning("Entrega {EntregaId} marcada como enviada, mas o colaborador não tem e-mail cadastrado", entrega.Id);
+            return "A entrega foi marcada como enviada, mas o colaborador não tem e-mail cadastrado.";
+        }
+
+        try
+        {
+            var link = $"{_frontendBaseUrl}/recebimento/{tokenBruto}";
+            var itensHtml = string.Concat(entrega.Itens.Select(i =>
+                $"<li>{i.Quantidade}× {i.Descricao}{(string.IsNullOrWhiteSpace(i.Tamanho) ? "" : $" ({i.Tamanho})")}</li>"));
+            var assunto = $"Confirmação de recebimento — {campanha.Nome}";
+            var corpo = $"""
+                <p>Olá, {entrega.Usuario.Nome}!</p>
+                <p>Você recebeu os itens abaixo referentes à campanha <strong>{campanha.Nome}</strong>:</p>
+                <ul>{itensHtml}</ul>
+                <p>Por favor, confirme o recebimento acessando o link abaixo:</p>
+                <p><a href="{link}">Confirmar recebimento</a></p>
+                """;
+
+            await _emailSender.EnviarAsync(entrega.EmailDestino, assunto, corpo);
+
+            _logger.LogInformation("E-mail de confirmação da Entrega {EntregaId} enviado a {Email}", entrega.Id, entrega.EmailDestino);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Entrega {EntregaId} marcada como enviada, mas o envio do e-mail falhou", entrega.Id);
+            await _auditoriaService.RegistrarAsync(
+                null, LogAuditoriaEntidade.Entrega, entrega.Id, LogAuditoriaAcao.EmailNaoEnviado, ex.Message);
+
+            return "A entrega foi marcada como enviada, mas o e-mail não pôde ser entregue. Tente reenviar.";
+        }
+    }
+
+    private static (string TokenBruto, string TokenHash) GerarToken()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        var tokenBruto = Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(tokenBruto)));
+        return (tokenBruto, hash);
     }
 
     private static void ValidarCampanhaAberta(CampanhaEntrega campanha)

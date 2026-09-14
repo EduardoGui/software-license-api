@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using SoftwareLicense.Api.Data;
 using SoftwareLicense.Api.DTOs;
@@ -15,12 +16,21 @@ public class CampanhaEntregaServiceTests
 
     private static CampanhaEntregaService CriarService(out AppDbContext context)
     {
+        return CriarService(out context, out _);
+    }
+
+    private static CampanhaEntregaService CriarService(out AppDbContext context, out FakeEmailSender emailSender)
+    {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
 
         context = new AppDbContext(options);
-        return new CampanhaEntregaService(context, new FakeTimeProvider(Agora), NullLogger<CampanhaEntregaService>.Instance);
+        var configuracao = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        emailSender = new FakeEmailSender();
+        return new CampanhaEntregaService(
+            context, new FakeTimeProvider(Agora), NullLogger<CampanhaEntregaService>.Instance,
+            emailSender, new AuditoriaService(context, new FakeTimeProvider(Agora)), configuracao);
     }
 
     private static async Task<Usuario> CriarUsuarioAsync(AppDbContext context, string nome, string email, int? setorId = null)
@@ -225,5 +235,98 @@ public class CampanhaEntregaServiceTests
 
         Assert.Equal(new DateOnly(2026, 9, 14), atualizada.DataEntregaFisica);
         Assert.Equal("Ana (RH)", atualizada.ResponsavelEntregaNome);
+    }
+
+    [Fact]
+    public async Task EnviarEmailAsync_DeveGerarTokenEEnviarEmailEAvancarStatus()
+    {
+        var service = CriarService(out var context, out var emailSender);
+        var campanha = await service.CreateAsync(new CreateCampanhaEntregaDto { Nome = "Uniformes" });
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+        var entrega = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto
+        {
+            UsuarioId = joao.Id,
+            Itens = [new CreateEntregaItemDto { Descricao = "Mochila", Quantidade = 1 }],
+        });
+
+        var atualizada = await service.EnviarEmailAsync(campanha.Id, entrega.Id);
+
+        Assert.Equal(EntregaStatus.EmailEnviado, atualizada.Status);
+        Assert.NotNull(atualizada.DataEnvioEmail);
+        Assert.Null(atualizada.AvisoEmail);
+        Assert.Equal(1, emailSender.ChamadasSimples);
+
+        var entregaEntidade = await context.Entregas.FirstAsync(e => e.Id == entrega.Id);
+        Assert.NotNull(entregaEntidade.TokenHash);
+
+        var campanhaAtualizada = await service.GetByIdAsync(campanha.Id);
+        Assert.Equal(CampanhaEntregaStatus.EmAndamento, campanhaAtualizada.Status);
+    }
+
+    [Fact]
+    public async Task EnviarEmailAsync_DeveRejeitarSemItens()
+    {
+        var service = CriarService(out var context);
+        var campanha = await service.CreateAsync(new CreateCampanhaEntregaDto { Nome = "Uniformes" });
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+
+        var entregaEntidade = new Entrega
+        {
+            CampanhaEntregaId = campanha.Id,
+            UsuarioId = joao.Id,
+            EmailDestino = joao.Email,
+            Status = EntregaStatus.Pendente,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Entregas.Add(entregaEntidade);
+        await context.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.EnviarEmailAsync(campanha.Id, entregaEntidade.Id));
+    }
+
+    [Fact]
+    public async Task EnviarEmailAsync_DeveAvisarSemBloquearQuandoColaboradorNaoTemEmail()
+    {
+        var service = CriarService(out var context, out var emailSender);
+        var campanha = await service.CreateAsync(new CreateCampanhaEntregaDto { Nome = "Uniformes" });
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+        var entrega = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto
+        {
+            UsuarioId = joao.Id,
+            Itens = [new CreateEntregaItemDto { Descricao = "Mochila", Quantidade = 1 }],
+        });
+
+        var entregaEntidade = await context.Entregas.FirstAsync(e => e.Id == entrega.Id);
+        entregaEntidade.EmailDestino = "";
+        await context.SaveChangesAsync();
+
+        var atualizada = await service.EnviarEmailAsync(campanha.Id, entrega.Id);
+
+        Assert.Equal(EntregaStatus.EmailEnviado, atualizada.Status);
+        Assert.NotNull(atualizada.AvisoEmail);
+        Assert.Equal(0, emailSender.ChamadasSimples);
+    }
+
+    [Fact]
+    public async Task ReenviarPendentesAsync_DeveProcessarSoQuemAindaNaoConfirmouENaoMexerEmQuemJaConfirmou()
+    {
+        var service = CriarService(out var context, out var emailSender);
+        var campanha = await service.CreateAsync(new CreateCampanhaEntregaDto { Nome = "Uniformes" });
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+        var maria = await CriarUsuarioAsync(context, "Maria", "maria@hope.com");
+        var entregaJoao = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = joao.Id, Itens = [new CreateEntregaItemDto { Descricao = "Mochila", Quantidade = 1 }] });
+        var entregaMaria = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = maria.Id, Itens = [new CreateEntregaItemDto { Descricao = "Mochila", Quantidade = 1 }] });
+
+        var entregaMariaEntidade = await context.Entregas.FirstAsync(e => e.Id == entregaMaria.Id);
+        entregaMariaEntidade.Status = EntregaStatus.Confirmado;
+        await context.SaveChangesAsync();
+
+        var resultados = await service.ReenviarPendentesAsync(campanha.Id);
+
+        Assert.Single(resultados);
+        Assert.Equal(joao.Id, resultados[0].UsuarioId);
+        Assert.Equal(EntregaStatus.EmailEnviado, resultados[0].Status);
+        Assert.Equal(1, emailSender.ChamadasSimples);
     }
 }

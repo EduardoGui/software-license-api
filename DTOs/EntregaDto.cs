@@ -25,6 +25,8 @@ public class EntregaDto
     public string? TipoDivergencia { get; set; }
     public string? ObservacaoDivergencia { get; set; }
 
+    public string? AvisoEmail { get; set; }
+
     public List<EntregaItemDto> Itens { get; set; } = [];
 
     public DateTime DataCriacao { get; set; }

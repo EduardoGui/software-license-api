@@ -4,4 +4,5 @@ public static class LogAuditoriaEntidade
 {
     public const string ReembolsoDespesa = "ReembolsoDespesa";
     public const string NotaDebitoPj = "NotaDebitoPj";
+    public const string Entrega = "Entrega";
 }

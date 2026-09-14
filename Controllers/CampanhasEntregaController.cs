@@ -115,4 +115,16 @@ public class CampanhasEntregaController : ControllerBase
     {
         return Ok(await _campanhaEntregaService.CancelarEntregaAsync(id, entregaId));
     }
+
+    [HttpPost("{id:int}/entregas/{entregaId:int}/enviar-email")]
+    public async Task<ActionResult<EntregaDto>> EnviarEmail(int id, int entregaId)
+    {
+        return Ok(await _campanhaEntregaService.EnviarEmailAsync(id, entregaId));
+    }
+
+    [HttpPost("{id:int}/reenviar-pendentes")]
+    public async Task<ActionResult<List<EntregaDto>>> ReenviarPendentes(int id)
+    {
+        return Ok(await _campanhaEntregaService.ReenviarPendentesAsync(id));
+    }
 }

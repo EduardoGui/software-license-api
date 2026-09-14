@@ -22,4 +22,6 @@ public interface ICampanhaEntregaService
     Task<EntregaDto> AtualizarItensEntregaAsync(int campanhaId, int entregaId, UpdateEntregaItensDto dto);
     Task<EntregaDto> RegistrarEntregaFisicaAsync(int campanhaId, int entregaId, RegistrarEntregaFisicaDto dto);
     Task<EntregaDto> CancelarEntregaAsync(int campanhaId, int entregaId);
+    Task<EntregaDto> EnviarEmailAsync(int campanhaId, int entregaId);
+    Task<List<EntregaDto>> ReenviarPendentesAsync(int campanhaId);
 }
