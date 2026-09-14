@@ -483,4 +483,38 @@ public class CampanhaEntregaServiceTests
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.RegistrarDivergenciaPorTokenAsync(
             token, new RegistrarDivergenciaDto { TipoDivergencia = "TipoQualquerInvalido" }, "1.1.1.1", "UA"));
     }
+
+    [Fact]
+    public async Task ListarMinhasEntregasAsync_DeveRetornarSoConfirmadasOuComDivergenciaOrdenadasPorDataDesc()
+    {
+        var service = CriarService(out var context);
+        var campanhaA = await CriarCampanhaComItensAsync(service, "Kit Boas-vindas", ("Mochila", 1));
+        var campanhaB = await CriarCampanhaComItensAsync(service, "Uniformes", ("Camisa", 1));
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+
+        var entregaPendente = await service.AdicionarEntregaAsync(campanhaA.Id, new CreateEntregaDto { UsuarioId = joao.Id });
+        var entregaAntiga = await service.AdicionarEntregaAsync(campanhaB.Id, new CreateEntregaDto { UsuarioId = joao.Id });
+
+        var pendenteEntidade = await context.Entregas.FirstAsync(e => e.Id == entregaPendente.Id);
+        pendenteEntidade.Status = EntregaStatus.EmailEnviado;
+
+        var antigaEntidade = await context.Entregas.FirstAsync(e => e.Id == entregaAntiga.Id);
+        antigaEntidade.Status = EntregaStatus.Confirmado;
+        antigaEntidade.DataConfirmacao = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        await context.SaveChangesAsync();
+
+        // Cria uma terceira campanha só pra ter uma confirmação mais recente que a "antiga".
+        var campanhaC = await CriarCampanhaComItensAsync(service, "Brindes", ("Caneca", 1));
+        var entregaRecente = await service.AdicionarEntregaAsync(campanhaC.Id, new CreateEntregaDto { UsuarioId = joao.Id });
+        var recenteEntidade = await context.Entregas.FirstAsync(e => e.Id == entregaRecente.Id);
+        recenteEntidade.Status = EntregaStatus.Confirmado;
+        recenteEntidade.DataConfirmacao = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
+        await context.SaveChangesAsync();
+
+        var historico = await service.ListarMinhasEntregasAsync(joao.Id);
+
+        Assert.Equal(2, historico.Count);
+        Assert.Equal("Brindes", historico[0].CampanhaNome);
+        Assert.Equal("Uniformes", historico[1].CampanhaNome);
+    }
 }

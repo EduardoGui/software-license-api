@@ -29,4 +29,6 @@ public interface ICampanhaEntregaService
     Task<RecebimentoDto> ObterPorTokenAsync(string token, string? ip, string? userAgent);
     Task<RecebimentoDto> ConfirmarPorTokenAsync(string token, string? ip, string? userAgent);
     Task<RecebimentoDto> RegistrarDivergenciaPorTokenAsync(string token, RegistrarDivergenciaDto dto, string? ip, string? userAgent);
+
+    Task<List<MinhaEntregaDto>> ListarMinhasEntregasAsync(int usuarioId);
 }

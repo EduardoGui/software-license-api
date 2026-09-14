@@ -658,6 +658,31 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         return entrega;
     }
 
+    public async Task<List<MinhaEntregaDto>> ListarMinhasEntregasAsync(int usuarioId)
+    {
+        var entregas = await MontarConsultaEntregas()
+            .Where(e => e.UsuarioId == usuarioId && (e.Status == EntregaStatus.Confirmado || e.Status == EntregaStatus.Divergencia))
+            .OrderByDescending(e => e.DataConfirmacao)
+            .ToListAsync();
+
+        return entregas.Select(e => new MinhaEntregaDto
+        {
+            Id = e.Id,
+            CampanhaNome = e.CampanhaEntrega.Nome,
+            Status = e.Status,
+            DataEntregaFisica = e.DataEntregaFisica,
+            DataConfirmacao = e.DataConfirmacao,
+            Itens = e.Itens.Select(i => new EntregaItemDto
+            {
+                Id = i.Id,
+                Descricao = i.Descricao,
+                Tamanho = i.Tamanho,
+                Quantidade = i.Quantidade,
+                Validade = i.Validade,
+            }).ToList(),
+        }).ToList();
+    }
+
     private static RecebimentoDto ParaRecebimentoDto(Entrega e) => new()
     {
         CampanhaNome = e.CampanhaEntrega.Nome,
