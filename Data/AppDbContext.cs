@@ -60,6 +60,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<DespesaAvulsa> DespesasAvulsas => Set<DespesaAvulsa>();
     public DbSet<DespesaAvulsaAnexo> DespesaAvulsaAnexos => Set<DespesaAvulsaAnexo>();
     public DbSet<Obrigacao> Obrigacoes => Set<Obrigacao>();
+    public DbSet<CampanhaEntrega> CampanhasEntrega => Set<CampanhaEntrega>();
+    public DbSet<Entrega> Entregas => Set<Entrega>();
+    public DbSet<EntregaItem> EntregaItens => Set<EntregaItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -569,6 +572,39 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
             entity.HasIndex(a => a.PatrimonioItemId);
             entity.HasOne(a => a.PatrimonioItem).WithMany().HasForeignKey(a => a.PatrimonioItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CampanhaEntrega>(entity =>
+        {
+            entity.Property(c => c.Nome).IsRequired().HasMaxLength(200);
+            entity.Property(c => c.Descricao).HasMaxLength(1000);
+            entity.Property(c => c.Status).IsRequired().HasMaxLength(20);
+        });
+
+        modelBuilder.Entity<Entrega>(entity =>
+        {
+            entity.Property(e => e.EmailDestino).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.TokenHash).HasMaxLength(100);
+            entity.Property(e => e.IpAcessoLink).HasMaxLength(50);
+            entity.Property(e => e.UserAgentAcessoLink).HasMaxLength(500);
+            entity.Property(e => e.IpConfirmacao).HasMaxLength(50);
+            entity.Property(e => e.UserAgentConfirmacao).HasMaxLength(500);
+            entity.Property(e => e.TipoDivergencia).HasMaxLength(30);
+            entity.Property(e => e.ObservacaoDivergencia).HasMaxLength(1000);
+            entity.HasIndex(e => new { e.CampanhaEntregaId, e.UsuarioId }).IsUnique();
+            entity.HasIndex(e => e.TokenHash).IsUnique().HasFilter("\"TokenHash\" IS NOT NULL");
+            entity.HasOne(e => e.CampanhaEntrega).WithMany(c => c.Entregas).HasForeignKey(e => e.CampanhaEntregaId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Usuario).WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.ResponsavelEntrega).WithMany().HasForeignKey(e => e.ResponsavelEntregaId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<EntregaItem>(entity =>
+        {
+            entity.Property(i => i.Descricao).IsRequired().HasMaxLength(200);
+            entity.Property(i => i.Tamanho).HasMaxLength(30);
+            entity.HasIndex(i => i.EntregaId);
+            entity.HasOne(i => i.Entrega).WithMany(e => e.Itens).HasForeignKey(i => i.EntregaId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<LogAuditoria>(entity =>

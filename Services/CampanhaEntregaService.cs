@@ -1,0 +1,477 @@
+using Microsoft.EntityFrameworkCore;
+using SoftwareLicense.Api.Data;
+using SoftwareLicense.Api.DTOs;
+using SoftwareLicense.Api.Entities;
+using SoftwareLicense.Api.Exceptions;
+
+namespace SoftwareLicense.Api.Services;
+
+public class CampanhaEntregaService : ICampanhaEntregaService
+{
+    private readonly AppDbContext _context;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger<CampanhaEntregaService> _logger;
+
+    public CampanhaEntregaService(AppDbContext context, TimeProvider timeProvider, ILogger<CampanhaEntregaService> logger)
+    {
+        _context = context;
+        _timeProvider = timeProvider;
+        _logger = logger;
+    }
+
+    public async Task<List<CampanhaEntregaDto>> GetAllAsync(CampanhaEntregaFiltroDto filtro)
+    {
+        var query = _context.CampanhasEntrega.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(filtro.Nome))
+        {
+            query = query.Where(c => EF.Functions.ILike(c.Nome, $"%{filtro.Nome}%"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filtro.Status))
+        {
+            query = query.Where(c => c.Status == filtro.Status);
+        }
+
+        var campanhas = await query.OrderByDescending(c => c.DataCriacao).ToListAsync();
+        return campanhas.Select(ParaDto).ToList();
+    }
+
+    public async Task<CampanhaEntregaDto> GetByIdAsync(int id)
+    {
+        var campanha = await BuscarCampanhaOuFalhar(id);
+        return ParaDto(campanha);
+    }
+
+    public async Task<CampanhaEntregaDto> CreateAsync(CreateCampanhaEntregaDto dto)
+    {
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        var campanha = new CampanhaEntrega
+        {
+            Nome = dto.Nome.Trim(),
+            Descricao = dto.Descricao?.Trim(),
+            Status = CampanhaEntregaStatus.Rascunho,
+            DataCriacao = agora,
+            DataAtualizacao = agora,
+        };
+
+        _context.CampanhasEntrega.Add(campanha);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Campanha de entrega {CampanhaId} criada", campanha.Id);
+
+        return ParaDto(campanha);
+    }
+
+    public async Task<CampanhaEntregaDto> UpdateAsync(int id, UpdateCampanhaEntregaDto dto)
+    {
+        var campanha = await BuscarCampanhaOuFalhar(id);
+
+        if (campanha.Status == CampanhaEntregaStatus.Cancelada)
+        {
+            throw new BusinessRuleException("Não é possível editar uma campanha cancelada.");
+        }
+
+        campanha.Nome = dto.Nome.Trim();
+        campanha.Descricao = dto.Descricao?.Trim();
+        campanha.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Campanha de entrega {CampanhaId} atualizada", campanha.Id);
+
+        return ParaDto(campanha);
+    }
+
+    public async Task DeleteAsync(int id)
+    {
+        var campanha = await BuscarCampanhaOuFalhar(id);
+
+        if (campanha.Status != CampanhaEntregaStatus.Rascunho)
+        {
+            throw new BusinessRuleException("Só é possível excluir uma campanha enquanto estiver em Rascunho.");
+        }
+
+        _context.CampanhasEntrega.Remove(campanha);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Campanha de entrega {CampanhaId} excluída", id);
+    }
+
+    public async Task<CampanhaEntregaDto> CancelarAsync(int id)
+    {
+        var campanha = await BuscarCampanhaOuFalhar(id);
+
+        if (campanha.Status == CampanhaEntregaStatus.Cancelada)
+        {
+            throw new BusinessRuleException("Esta campanha já está cancelada.");
+        }
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        campanha.Status = CampanhaEntregaStatus.Cancelada;
+        campanha.DataAtualizacao = agora;
+
+        foreach (var entrega in campanha.Entregas)
+        {
+            if (entrega.Status is EntregaStatus.Pendente or EntregaStatus.EmailEnviado)
+            {
+                entrega.Status = EntregaStatus.Cancelado;
+                entrega.DataAtualizacao = agora;
+            }
+        }
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Campanha de entrega {CampanhaId} cancelada", id);
+
+        return ParaDto(campanha);
+    }
+
+    public async Task<CampanhaEntregaDto> EncerrarAsync(int id)
+    {
+        var campanha = await BuscarCampanhaOuFalhar(id);
+
+        if (campanha.Status is CampanhaEntregaStatus.Cancelada or CampanhaEntregaStatus.Encerrada)
+        {
+            throw new BusinessRuleException("Esta campanha não pode ser encerrada.");
+        }
+
+        campanha.Status = CampanhaEntregaStatus.Encerrada;
+        campanha.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Campanha de entrega {CampanhaId} encerrada", id);
+
+        return ParaDto(campanha);
+    }
+
+    public async Task<CampanhaEntregaResumoDto> ObterResumoAsync(int campanhaId)
+    {
+        await BuscarCampanhaOuFalhar(campanhaId);
+
+        var contagens = await _context.Entregas
+            .Where(e => e.CampanhaEntregaId == campanhaId)
+            .GroupBy(e => e.Status)
+            .Select(g => new { Status = g.Key, Quantidade = g.Count() })
+            .ToListAsync();
+
+        int ContarPor(string status) => contagens.FirstOrDefault(c => c.Status == status)?.Quantidade ?? 0;
+
+        return new CampanhaEntregaResumoDto
+        {
+            Total = contagens.Sum(c => c.Quantidade),
+            Pendentes = ContarPor(EntregaStatus.Pendente),
+            EmailEnviado = ContarPor(EntregaStatus.EmailEnviado),
+            Confirmados = ContarPor(EntregaStatus.Confirmado),
+            Divergencias = ContarPor(EntregaStatus.Divergencia),
+            Cancelados = ContarPor(EntregaStatus.Cancelado),
+        };
+    }
+
+    public async Task<List<ColaboradorDisponivelDto>> ListarColaboradoresDisponiveisAsync(int campanhaId, ColaboradorDisponivelFiltroDto filtro)
+    {
+        await BuscarCampanhaOuFalhar(campanhaId);
+
+        var hoje = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
+
+        var idsNaCampanha = _context.Entregas
+            .Where(e => e.CampanhaEntregaId == campanhaId)
+            .Select(e => e.UsuarioId);
+
+        var query = _context.Usuarios
+            .Include(u => u.Setor)
+            .Where(u => !idsNaCampanha.Contains(u.Id))
+            .Where(u => u.DataFim == null || u.DataFim > hoje);
+
+        if (!string.IsNullOrWhiteSpace(filtro.Nome))
+        {
+            query = query.Where(u => EF.Functions.ILike(u.Nome, $"%{filtro.Nome}%"));
+        }
+
+        if (filtro.SetorId is not null)
+        {
+            query = query.Where(u => u.SetorId == filtro.SetorId);
+        }
+
+        var usuarios = await query.OrderBy(u => u.Nome).ToListAsync();
+
+        return usuarios.Select(u => new ColaboradorDisponivelDto
+        {
+            Id = u.Id,
+            Nome = u.Nome,
+            Email = u.Email,
+            SetorNome = u.Setor?.Nome,
+        }).ToList();
+    }
+
+    public async Task<List<EntregaDto>> ListarEntregasAsync(int campanhaId, EntregaFiltroDto filtro)
+    {
+        await BuscarCampanhaOuFalhar(campanhaId);
+
+        var query = MontarConsultaEntregas().Where(e => e.CampanhaEntregaId == campanhaId);
+
+        if (filtro.UsuarioId is not null)
+        {
+            query = query.Where(e => e.UsuarioId == filtro.UsuarioId);
+        }
+
+        if (filtro.SetorId is not null)
+        {
+            query = query.Where(e => e.Usuario.SetorId == filtro.SetorId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filtro.Item))
+        {
+            query = query.Where(e => e.Itens.Any(i => EF.Functions.ILike(i.Descricao, $"%{filtro.Item}%")));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filtro.Status))
+        {
+            query = query.Where(e => e.Status == filtro.Status);
+        }
+
+        var entregas = await query.OrderBy(e => e.Usuario.Nome).ToListAsync();
+        return entregas.Select(ParaEntregaDto).ToList();
+    }
+
+    public async Task<EntregaDto> ObterEntregaAsync(int campanhaId, int entregaId)
+    {
+        var entrega = await BuscarEntregaOuFalhar(campanhaId, entregaId);
+        return ParaEntregaDto(entrega);
+    }
+
+    public async Task<EntregaDto> AdicionarEntregaAsync(int campanhaId, CreateEntregaDto dto)
+    {
+        var campanha = await BuscarCampanhaOuFalhar(campanhaId);
+        ValidarCampanhaAberta(campanha);
+
+        var usuario = await _context.Usuarios.FindAsync(dto.UsuarioId)
+            ?? throw new NotFoundException($"Colaborador {dto.UsuarioId} não encontrado.");
+
+        var jaExiste = await _context.Entregas.AnyAsync(e => e.CampanhaEntregaId == campanhaId && e.UsuarioId == dto.UsuarioId);
+        if (jaExiste)
+        {
+            throw new BusinessRuleException($"{usuario.Nome} já está nesta campanha.");
+        }
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        var entrega = new Entrega
+        {
+            CampanhaEntregaId = campanhaId,
+            UsuarioId = usuario.Id,
+            EmailDestino = usuario.Email,
+            Status = EntregaStatus.Pendente,
+            DataCriacao = agora,
+            DataAtualizacao = agora,
+            Itens = dto.Itens.Select(CriarItem).ToList(),
+        };
+
+        _context.Entregas.Add(entrega);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Entrega {EntregaId} adicionada à campanha {CampanhaId} para o colaborador {UsuarioId}", entrega.Id, campanhaId, usuario.Id);
+
+        entrega.Usuario = usuario;
+        return ParaEntregaDto(entrega);
+    }
+
+    public async Task<List<EntregaDto>> AdicionarEntregasLoteAsync(int campanhaId, CreateEntregaLoteDto dto)
+    {
+        var campanha = await BuscarCampanhaOuFalhar(campanhaId);
+        ValidarCampanhaAberta(campanha);
+
+        var idsJaNaCampanha = await _context.Entregas
+            .Where(e => e.CampanhaEntregaId == campanhaId)
+            .Select(e => e.UsuarioId)
+            .ToListAsync();
+
+        var idsNovos = dto.UsuarioIds.Distinct().Except(idsJaNaCampanha).ToList();
+        if (idsNovos.Count == 0)
+        {
+            return [];
+        }
+
+        var usuarios = await _context.Usuarios.Where(u => idsNovos.Contains(u.Id)).ToListAsync();
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        var novasEntregas = new List<Entrega>();
+
+        foreach (var usuario in usuarios)
+        {
+            var entrega = new Entrega
+            {
+                CampanhaEntregaId = campanhaId,
+                UsuarioId = usuario.Id,
+                Usuario = usuario,
+                EmailDestino = usuario.Email,
+                Status = EntregaStatus.Pendente,
+                DataCriacao = agora,
+                DataAtualizacao = agora,
+                Itens = dto.ItensPadrao.Select(CriarItem).ToList(),
+            };
+            novasEntregas.Add(entrega);
+        }
+
+        _context.Entregas.AddRange(novasEntregas);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("{Quantidade} entregas adicionadas em lote à campanha {CampanhaId}", novasEntregas.Count, campanhaId);
+
+        return novasEntregas.Select(ParaEntregaDto).ToList();
+    }
+
+    public async Task<EntregaDto> AtualizarItensEntregaAsync(int campanhaId, int entregaId, UpdateEntregaItensDto dto)
+    {
+        var entrega = await BuscarEntregaOuFalhar(campanhaId, entregaId);
+
+        if (entrega.Status != EntregaStatus.Pendente)
+        {
+            throw new BusinessRuleException("Só é possível editar os itens enquanto a entrega estiver Pendente (antes do e-mail ser enviado).");
+        }
+
+        _context.EntregaItens.RemoveRange(entrega.Itens);
+        entrega.Itens = dto.Itens.Select(CriarItem).ToList();
+        entrega.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Itens da entrega {EntregaId} atualizados", entregaId);
+
+        return ParaEntregaDto(entrega);
+    }
+
+    public async Task<EntregaDto> RegistrarEntregaFisicaAsync(int campanhaId, int entregaId, RegistrarEntregaFisicaDto dto)
+    {
+        var entrega = await BuscarEntregaOuFalhar(campanhaId, entregaId);
+
+        if (entrega.Status == EntregaStatus.Cancelado)
+        {
+            throw new BusinessRuleException("Não é possível registrar entrega física de uma entrega cancelada.");
+        }
+
+        var responsavel = await _context.Usuarios.FindAsync(dto.ResponsavelEntregaId)
+            ?? throw new NotFoundException($"Responsável {dto.ResponsavelEntregaId} não encontrado.");
+
+        entrega.DataEntregaFisica = dto.DataEntregaFisica;
+        entrega.ResponsavelEntregaId = responsavel.Id;
+        entrega.ResponsavelEntrega = responsavel;
+        entrega.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Entrega física da Entrega {EntregaId} registrada", entregaId);
+
+        return ParaEntregaDto(entrega);
+    }
+
+    public async Task<EntregaDto> CancelarEntregaAsync(int campanhaId, int entregaId)
+    {
+        var entrega = await BuscarEntregaOuFalhar(campanhaId, entregaId);
+
+        if (entrega.Status is not (EntregaStatus.Pendente or EntregaStatus.EmailEnviado))
+        {
+            throw new BusinessRuleException("Só é possível cancelar uma entrega enquanto ela estiver Pendente ou com e-mail já enviado (aguardando confirmação).");
+        }
+
+        entrega.Status = EntregaStatus.Cancelado;
+        entrega.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Entrega {EntregaId} cancelada", entregaId);
+
+        return ParaEntregaDto(entrega);
+    }
+
+    private static void ValidarCampanhaAberta(CampanhaEntrega campanha)
+    {
+        if (campanha.Status is CampanhaEntregaStatus.Encerrada or CampanhaEntregaStatus.Cancelada)
+        {
+            throw new BusinessRuleException("Não é possível adicionar colaboradores a uma campanha encerrada ou cancelada.");
+        }
+    }
+
+    private static EntregaItem CriarItem(CreateEntregaItemDto dto) => new()
+    {
+        Descricao = dto.Descricao.Trim(),
+        Tamanho = string.IsNullOrWhiteSpace(dto.Tamanho) ? null : dto.Tamanho.Trim(),
+        Quantidade = dto.Quantidade,
+        Validade = dto.Validade,
+        DataCriacao = DateTime.UtcNow,
+    };
+
+    private IQueryable<Entrega> MontarConsultaEntregas() => _context.Entregas
+        .Include(e => e.Usuario).ThenInclude(u => u.Setor)
+        .Include(e => e.ResponsavelEntrega)
+        .Include(e => e.Itens)
+        .AsQueryable();
+
+    private async Task<CampanhaEntrega> BuscarCampanhaOuFalhar(int id)
+    {
+        var campanha = await _context.CampanhasEntrega
+            .Include(c => c.Entregas)
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+        if (campanha is null)
+        {
+            throw new NotFoundException($"Campanha de entrega {id} não encontrada.");
+        }
+
+        return campanha;
+    }
+
+    private async Task<Entrega> BuscarEntregaOuFalhar(int campanhaId, int entregaId)
+    {
+        var entrega = await MontarConsultaEntregas()
+            .FirstOrDefaultAsync(e => e.Id == entregaId && e.CampanhaEntregaId == campanhaId);
+
+        if (entrega is null)
+        {
+            throw new NotFoundException($"Entrega {entregaId} não encontrada.");
+        }
+
+        return entrega;
+    }
+
+    private static CampanhaEntregaDto ParaDto(CampanhaEntrega c) => new()
+    {
+        Id = c.Id,
+        Nome = c.Nome,
+        Descricao = c.Descricao,
+        Status = c.Status,
+        DataCriacao = c.DataCriacao,
+        DataAtualizacao = c.DataAtualizacao,
+    };
+
+    private static EntregaDto ParaEntregaDto(Entrega e) => new()
+    {
+        Id = e.Id,
+        CampanhaEntregaId = e.CampanhaEntregaId,
+        UsuarioId = e.UsuarioId,
+        UsuarioNome = e.Usuario.Nome,
+        EmailDestino = e.EmailDestino,
+        DataEntregaFisica = e.DataEntregaFisica,
+        ResponsavelEntregaId = e.ResponsavelEntregaId,
+        ResponsavelEntregaNome = e.ResponsavelEntrega?.Nome,
+        Status = e.Status,
+        DataEnvioEmail = e.DataEnvioEmail,
+        DataAcessoLink = e.DataAcessoLink,
+        IpAcessoLink = e.IpAcessoLink,
+        UserAgentAcessoLink = e.UserAgentAcessoLink,
+        DataConfirmacao = e.DataConfirmacao,
+        IpConfirmacao = e.IpConfirmacao,
+        UserAgentConfirmacao = e.UserAgentConfirmacao,
+        TipoDivergencia = e.TipoDivergencia,
+        ObservacaoDivergencia = e.ObservacaoDivergencia,
+        Itens = e.Itens.Select(i => new EntregaItemDto
+        {
+            Id = i.Id,
+            Descricao = i.Descricao,
+            Tamanho = i.Tamanho,
+            Quantidade = i.Quantidade,
+            Validade = i.Validade,
+        }).ToList(),
+        DataCriacao = e.DataCriacao,
+        DataAtualizacao = e.DataAtualizacao,
+    };
+}

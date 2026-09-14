@@ -130,6 +130,7 @@ builder.Services.AddScoped<IDespesaAvulsaService, DespesaAvulsaService>();
 builder.Services.AddScoped<IObrigacaoService, ObrigacaoService>();
 builder.Services.AddScoped<ITarefaRecorrenteService, TarefaRecorrenteService>();
 builder.Services.AddScoped<ITarefaOcorrenciaService, TarefaOcorrenciaService>();
+builder.Services.AddScoped<ICampanhaEntregaService, CampanhaEntregaService>();
 
 builder.Services.AddCors(options =>
 {
