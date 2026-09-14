@@ -178,6 +178,7 @@ public class ObrigacaoService : IObrigacaoService
         TipoMovimento = o.TipoMovimento,
         MedicaoBmId = o.MedicaoBmId,
         MedicaoBmNumero = o.MedicaoBm?.Numero,
+        MedicaoBmNumeroReferencia = o.MedicaoBm?.NumeroReferencia,
         ContratoId = o.MedicaoBm?.ContratoId,
         ContratoNumero = o.MedicaoBm?.Contrato?.Numero,
         OrdemCompraId = o.OrdemCompraId,

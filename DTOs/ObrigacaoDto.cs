@@ -6,6 +6,7 @@ public class ObrigacaoDto
     public string TipoMovimento { get; set; } = string.Empty;
     public int? MedicaoBmId { get; set; }
     public int? MedicaoBmNumero { get; set; }
+    public string? MedicaoBmNumeroReferencia { get; set; }
     public int? ContratoId { get; set; }
     public string? ContratoNumero { get; set; }
     public int? OrdemCompraId { get; set; }
