@@ -419,9 +419,13 @@ public class NotaDebitoPjService : INotaDebitoPjService
         var empresaNome = _configuration["ReembolsoDespesa:EmpresaNome"] ?? "Hope";
         var empresaCnpj = _configuration["ReembolsoDespesa:EmpresaCnpj"] ?? "";
         var empresaEndereco = _configuration["ReembolsoDespesa:EmpresaEndereco"] ?? "";
+        var empresaEmail = _configuration["ReembolsoDespesa:EmpresaEmail"] ?? "";
+        var empresaSite = _configuration["ReembolsoDespesa:EmpresaSite"] ?? "";
 
         var corPrimaria = XColor.FromArgb(0x27, 0x39, 0x4F);
         var corRotulo = XColor.FromArgb(0x59, 0x66, 0x76);
+        var corAccent = XColor.FromArgb(0xE1, 0x74, 0x4F);
+        var corAccentFundo = XColor.FromArgb(0xFD, 0xEC, 0xE7);
 
         var fontTitulo = new XFont("DejaVuSans", 13, XFontStyleEx.Bold);
         var fontSubtitulo = new XFont("DejaVuSans", 8);
@@ -434,11 +438,29 @@ public class NotaDebitoPjService : INotaDebitoPjService
         var document = new PdfDocument();
         var page = document.AddPage();
         page.Size = PdfSharp.PageSize.A4;
-        using var gfx = XGraphics.FromPdfPage(page);
+        var gfx = XGraphics.FromPdfPage(page);
 
         var margem = 30.0;
         var largura = page.Width.Point - margem * 2;
+        var limiteInferior = page.Height.Point - margem;
         var y = margem;
+
+        // Evita que conteúdo de altura variável (tabela de beneficiários, QR code, assinaturas) seja
+        // desenhado além do fim da página e "suma" silenciosamente - quebra pra uma nova página quando
+        // o espaço restante não é suficiente pro próximo bloco.
+        void GarantirEspaco(double alturaNecessaria)
+        {
+            if (y + alturaNecessaria <= limiteInferior)
+            {
+                return;
+            }
+
+            gfx.Dispose();
+            page = document.AddPage();
+            page.Size = PdfSharp.PageSize.A4;
+            gfx = XGraphics.FromPdfPage(page);
+            y = margem;
+        }
 
         var xFaixa = margem + 90;
         var logo = LogoHope.Obter();
@@ -493,6 +515,7 @@ public class NotaDebitoPjService : INotaDebitoPjService
         var itensOrdenados = n.Itens.OrderBy(i => i.DependenteId.HasValue).ThenBy(i => i.NomeBeneficiario).ToList();
         if (itensOrdenados.Count > 0)
         {
+            GarantirEspaco(20 + (itensOrdenados.Count + 2) * 14 + 24);
             y = DesenharSecao(gfx, "BENEFICIÁRIOS", margem, y, largura, corPrimaria, fontSecao);
             y = DesenharTabelaBeneficiarios(gfx, itensOrdenados, margem, y, largura, fontRotulo, fontValor, fontValorBold, corRotulo);
             y = DesenharTextoMultilinha(
@@ -522,6 +545,7 @@ public class NotaDebitoPjService : INotaDebitoPjService
 
         if (!string.IsNullOrWhiteSpace(empresaCnpjPix))
         {
+            GarantirEspaco(100);
             var payload = PixBrCode.GerarPayload(empresaCnpjPix, empresaNomePix, empresaCidadePix, valorLiquido, $"NOTADEB{n.Id:D4}");
             var qrGenerator = new QRCodeGenerator();
             var qrCodeData = qrGenerator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.M);
@@ -540,6 +564,16 @@ public class NotaDebitoPjService : INotaDebitoPjService
             y += tamanhoQrCode + 6;
         }
 
+        if (!string.IsNullOrWhiteSpace(empresaEmail))
+        {
+            GarantirEspaco(70);
+            y = DesenharAvisoAtencao(
+                gfx,
+                $"Atenção: O comprovante de pagamento deverá ser enviado em nome da Pessoa Jurídica (CNPJ), " +
+                $"encaminhado para {empresaEmail}.",
+                margem, y, largura, fontValor, corAccent, corAccentFundo);
+        }
+
         y = DesenharSecao(gfx, "ANEXOS E OBSERVAÇÃO", margem, y, largura, corPrimaria, fontSecao);
         y = DesenharTextoMultilinha(
             gfx,
@@ -549,6 +583,7 @@ public class NotaDebitoPjService : INotaDebitoPjService
             fontDeclaracao, new XSolidBrush(corRotulo), margem, y, largura, alturaLinha: 10);
         y += 8;
 
+        GarantirEspaco(110);
         y = DesenharSecao(gfx, "LOCAL, DATA E ASSINATURAS", margem, y, largura, corPrimaria, fontSecao);
         y = DesenharLinha(
             gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
@@ -556,6 +591,14 @@ public class NotaDebitoPjService : INotaDebitoPjService
         y = DesenharLinha(
             gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
             ("Data de Envio", n.DataEnvio?.ToString("dd/MM/yyyy") ?? "-"), ("Data de Pagamento", n.DataPagamento?.ToString("dd/MM/yyyy") ?? "-"));
+
+        y += 10;
+        var rodape = string.Join(
+            " | ",
+            new[] { empresaNome, empresaEndereco, string.IsNullOrWhiteSpace(empresaCnpj) ? null : $"CNPJ: {empresaCnpj}", empresaSite }
+                .Where(parte => !string.IsNullOrWhiteSpace(parte)));
+        gfx.DrawString(rodape, fontDeclaracao, new XSolidBrush(corRotulo), new XRect(margem, y, largura, 10), XStringFormats.TopCenter);
+        gfx.Dispose();
 
         using var stream = new MemoryStream();
         document.Save(stream, false);
@@ -603,6 +646,52 @@ public class NotaDebitoPjService : INotaDebitoPjService
         gfx.DrawRectangle(new XSolidBrush(cor), margem, y, largura, 16);
         gfx.DrawString(titulo, fonte, XBrushes.White, new XRect(margem + 4, y, largura - 8, 16), XStringFormats.CenterLeft);
         return y + 20;
+    }
+
+    private static double DesenharAvisoAtencao(
+        XGraphics gfx, string texto, double margem, double y, double largura, XFont fonte, XColor corAccent, XColor corFundo)
+    {
+        const double padding = 8;
+        const double alturaLinha = 11;
+        const double larguraBarra = 4;
+
+        var larguraTexto = largura - padding * 2 - larguraBarra - 6;
+        var linhas = new List<string>();
+        var linhaAtual = string.Empty;
+        foreach (var palavra in texto.Split(' '))
+        {
+            var tentativa = linhaAtual.Length == 0 ? palavra : $"{linhaAtual} {palavra}";
+            if (linhaAtual.Length > 0 && gfx.MeasureString(tentativa, fonte).Width > larguraTexto)
+            {
+                linhas.Add(linhaAtual);
+                linhaAtual = palavra;
+            }
+            else
+            {
+                linhaAtual = tentativa;
+            }
+        }
+
+        if (linhaAtual.Length > 0)
+        {
+            linhas.Add(linhaAtual);
+        }
+
+        var altura = linhas.Count * alturaLinha + padding * 2;
+
+        gfx.DrawRectangle(new XSolidBrush(corFundo), margem, y, largura, altura);
+        gfx.DrawRectangle(new XSolidBrush(corAccent), margem, y, larguraBarra, altura);
+
+        var yTexto = y + padding;
+        foreach (var linha in linhas)
+        {
+            gfx.DrawString(
+                linha, fonte, new XSolidBrush(corAccent),
+                new XRect(margem + larguraBarra + 8, yTexto, larguraTexto, alturaLinha), XStringFormats.TopLeft);
+            yTexto += alturaLinha;
+        }
+
+        return y + altura + 8;
     }
 
     private static double DesenharTabelaBeneficiarios(
