@@ -38,6 +38,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Dependente> Dependentes => Set<Dependente>();
     public DbSet<PlanoSaudeCusto> PlanoSaudeCustos => Set<PlanoSaudeCusto>();
     public DbSet<NotaDebitoPj> NotasDebitoPj => Set<NotaDebitoPj>();
+    public DbSet<NotaDebitoPjItem> NotasDebitoPjItens => Set<NotaDebitoPjItem>();
     public DbSet<NotaDebitoPjAnexo> NotasDebitoPjAnexos => Set<NotaDebitoPjAnexo>();
     public DbSet<Fornecedor> Fornecedores => Set<Fornecedor>();
     public DbSet<TarefaRecorrente> TarefasRecorrentes => Set<TarefaRecorrente>();
@@ -190,7 +191,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(n => n.Desconto).HasPrecision(18, 2);
             entity.Property(n => n.RetencaoTributaria).HasPrecision(18, 2);
             entity.Property(n => n.OperadoraSaude).IsRequired().HasMaxLength(100);
-            entity.Property(n => n.NumeroDocumento).HasMaxLength(50);
+            entity.Property(n => n.NumeroFatura).HasMaxLength(50);
             entity.Property(n => n.Descricao).HasMaxLength(500);
             entity.Property(n => n.FormaPagamento).HasMaxLength(50);
             entity.Property(n => n.CentroCusto).HasMaxLength(100);
@@ -200,6 +201,16 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(n => n.Status).IsRequired().HasMaxLength(20);
             entity.HasIndex(n => new { n.UsuarioId, n.Ano, n.Mes }).IsUnique();
             entity.HasOne(n => n.Usuario).WithMany().HasForeignKey(n => n.UsuarioId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<NotaDebitoPjItem>(entity =>
+        {
+            entity.Property(i => i.NomeBeneficiario).IsRequired().HasMaxLength(200);
+            entity.Property(i => i.ValorMensalidade).HasPrecision(18, 2);
+            entity.Property(i => i.ValorCoparticipacao).HasPrecision(18, 2);
+            entity.HasIndex(i => i.NotaDebitoPjId);
+            entity.HasOne(i => i.NotaDebitoPj).WithMany(n => n.Itens).HasForeignKey(i => i.NotaDebitoPjId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(i => i.Dependente).WithMany().HasForeignKey(i => i.DependenteId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<NotaDebitoPjAnexo>(entity =>

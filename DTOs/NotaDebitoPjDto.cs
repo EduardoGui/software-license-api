@@ -14,8 +14,9 @@ public class NotaDebitoPjDto
     public decimal RetencaoTributaria { get; set; }
     public decimal ValorLiquido { get; set; }
     public string OperadoraSaude { get; set; } = string.Empty;
-    public string? NumeroDocumento { get; set; }
+    public string? NumeroFatura { get; set; }
     public string? Descricao { get; set; }
+    public DateOnly? DataEmissao { get; set; }
     public DateOnly? DataVencimento { get; set; }
     public string? FormaPagamento { get; set; }
     public string? CentroCusto { get; set; }
@@ -27,6 +28,8 @@ public class NotaDebitoPjDto
     public DateOnly? DataPagamento { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
+
+    public List<NotaDebitoPjItemDto> Itens { get; set; } = [];
 
     // Preenchido só quando EnviarAsync tentou mandar o e-mail ao colaborador e não conseguiu -
     // a nota já foi marcada como Enviada mesmo assim, isso é só um aviso pra reenviar manualmente.

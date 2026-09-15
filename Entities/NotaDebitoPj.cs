@@ -15,9 +15,10 @@ public class NotaDebitoPj
     public decimal RetencaoTributaria { get; set; }
 
     public string OperadoraSaude { get; set; } = string.Empty;
-    public string? NumeroDocumento { get; set; }
+    public string? NumeroFatura { get; set; }
     public string? Descricao { get; set; }
 
+    public DateOnly? DataEmissao { get; set; }
     public DateOnly? DataVencimento { get; set; }
     public string? FormaPagamento { get; set; }
 
@@ -33,4 +34,6 @@ public class NotaDebitoPj
 
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
+
+    public List<NotaDebitoPjItem> Itens { get; set; } = [];
 }

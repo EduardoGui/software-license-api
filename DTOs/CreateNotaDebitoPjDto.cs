@@ -17,7 +17,7 @@ public class CreateNotaDebitoPjDto
     public string OperadoraSaude { get; set; } = string.Empty;
 
     [MaxLength(50)]
-    public string? NumeroDocumento { get; set; }
+    public string? NumeroFatura { get; set; }
 
     [MaxLength(500)]
     public string? Descricao { get; set; }
@@ -28,6 +28,7 @@ public class CreateNotaDebitoPjDto
     [Range(0, double.MaxValue)]
     public decimal RetencaoTributaria { get; set; }
 
+    public DateOnly? DataEmissao { get; set; }
     public DateOnly? DataVencimento { get; set; }
 
     [MaxLength(50)]

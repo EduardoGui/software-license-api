@@ -39,7 +39,7 @@ public class NotaDebitoPjService : INotaDebitoPjService
 
     public async Task<List<NotaDebitoPjDto>> GetAllAsync(NotaDebitoPjFiltroDto filtro)
     {
-        var query = _context.NotasDebitoPj.Include(n => n.Usuario).ThenInclude(u => u.EmpresaPj).AsQueryable();
+        var query = _context.NotasDebitoPj.Include(n => n.Usuario).ThenInclude(u => u.EmpresaPj).Include(n => n.Itens).AsQueryable();
 
         if (filtro.Ano is not null)
         {
@@ -92,9 +92,12 @@ public class NotaDebitoPjService : INotaDebitoPjService
             throw new BusinessRuleException("Já existe uma nota de débito para este usuário neste mês.");
         }
 
-        var valorBruto = await _context.PlanoSaudeCustos
+        var lancamentos = await _context.PlanoSaudeCustos
+            .Include(p => p.Dependente)
             .Where(p => p.UsuarioId == dto.UsuarioId && p.Ano == dto.Ano && p.Mes == dto.Mes)
-            .SumAsync(p => p.ValorCoparticipacao);
+            .ToListAsync();
+
+        var valorBruto = lancamentos.Sum(p => p.ValorCoparticipacao);
 
         if (valorBruto <= 0)
         {
@@ -102,17 +105,28 @@ public class NotaDebitoPjService : INotaDebitoPjService
         }
 
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        var itens = lancamentos.Select(p => new NotaDebitoPjItem
+        {
+            DependenteId = p.DependenteId,
+            NomeBeneficiario = p.DependenteId is null ? usuario.Nome : p.Dependente!.Nome,
+            ValorMensalidade = p.ValorMensal,
+            ValorCoparticipacao = p.ValorCoparticipacao,
+            DataCriacao = agora,
+        }).ToList();
+
         var nota = new NotaDebitoPj
         {
             UsuarioId = dto.UsuarioId,
             Ano = dto.Ano,
             Mes = dto.Mes,
             ValorBruto = valorBruto,
+            Itens = itens,
             Desconto = dto.Desconto,
             RetencaoTributaria = dto.RetencaoTributaria,
             OperadoraSaude = dto.OperadoraSaude.Trim(),
-            NumeroDocumento = dto.NumeroDocumento?.Trim(),
+            NumeroFatura = dto.NumeroFatura?.Trim(),
             Descricao = dto.Descricao?.Trim(),
+            DataEmissao = dto.DataEmissao,
             DataVencimento = dto.DataVencimento,
             FormaPagamento = dto.FormaPagamento?.Trim(),
             CentroCusto = dto.CentroCusto?.Trim(),
@@ -139,10 +153,11 @@ public class NotaDebitoPjService : INotaDebitoPjService
         ValidarEditavel(nota);
 
         nota.OperadoraSaude = dto.OperadoraSaude.Trim();
-        nota.NumeroDocumento = dto.NumeroDocumento?.Trim();
+        nota.NumeroFatura = dto.NumeroFatura?.Trim();
         nota.Descricao = dto.Descricao?.Trim();
         nota.Desconto = dto.Desconto;
         nota.RetencaoTributaria = dto.RetencaoTributaria;
+        nota.DataEmissao = dto.DataEmissao;
         nota.DataVencimento = dto.DataVencimento;
         nota.FormaPagamento = dto.FormaPagamento?.Trim();
         nota.CentroCusto = dto.CentroCusto?.Trim();
@@ -256,7 +271,7 @@ public class NotaDebitoPjService : INotaDebitoPjService
 
     public async Task<byte[]> GerarPdfAsync(int id)
     {
-        var nota = await _context.NotasDebitoPj.Include(n => n.Usuario).ThenInclude(u => u.EmpresaPj).FirstOrDefaultAsync(n => n.Id == id)
+        var nota = await _context.NotasDebitoPj.Include(n => n.Usuario).ThenInclude(u => u.EmpresaPj).Include(n => n.Itens).FirstOrDefaultAsync(n => n.Id == id)
             ?? throw new NotFoundException($"Nota de débito {id} não encontrada.");
 
         return GerarPdfDocumento(nota);
@@ -346,7 +361,10 @@ public class NotaDebitoPjService : INotaDebitoPjService
 
     private async Task<NotaDebitoPj> BuscarOuFalhar(int id)
     {
-        var nota = await _context.NotasDebitoPj.Include(n => n.Usuario).ThenInclude(u => u.EmpresaPj).FirstOrDefaultAsync(n => n.Id == id);
+        var nota = await _context.NotasDebitoPj
+            .Include(n => n.Usuario).ThenInclude(u => u.EmpresaPj)
+            .Include(n => n.Itens)
+            .FirstOrDefaultAsync(n => n.Id == id);
         if (nota is null)
         {
             throw new NotFoundException($"Nota de débito {id} não encontrada.");
@@ -369,8 +387,9 @@ public class NotaDebitoPjService : INotaDebitoPjService
         RetencaoTributaria = n.RetencaoTributaria,
         ValorLiquido = n.ValorBruto - n.Desconto - n.RetencaoTributaria,
         OperadoraSaude = n.OperadoraSaude,
-        NumeroDocumento = n.NumeroDocumento,
+        NumeroFatura = n.NumeroFatura,
         Descricao = n.Descricao,
+        DataEmissao = n.DataEmissao,
         DataVencimento = n.DataVencimento,
         FormaPagamento = n.FormaPagamento,
         CentroCusto = n.CentroCusto,
@@ -382,6 +401,17 @@ public class NotaDebitoPjService : INotaDebitoPjService
         DataPagamento = n.DataPagamento,
         DataCriacao = n.DataCriacao,
         DataAtualizacao = n.DataAtualizacao,
+        Itens = n.Itens
+            .OrderBy(i => i.DependenteId.HasValue)
+            .ThenBy(i => i.NomeBeneficiario)
+            .Select(i => new NotaDebitoPjItemDto
+            {
+                DependenteId = i.DependenteId,
+                NomeBeneficiario = i.NomeBeneficiario,
+                ValorMensalidade = i.ValorMensalidade,
+                ValorCoparticipacao = i.ValorCoparticipacao,
+            })
+            .ToList(),
     };
 
     private byte[] GerarPdfDocumento(NotaDebitoPj n)
@@ -425,7 +455,11 @@ public class NotaDebitoPjService : INotaDebitoPjService
 
         y = DesenharLinha(
             gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
-            ("Data de Emissão", n.DataCriacao.ToString("dd/MM/yyyy")), ("Situação", n.Status));
+            ("Nº Fatura", n.NumeroFatura ?? "-"),
+            ("Data de Emissão", (n.DataEmissao ?? DateOnly.FromDateTime(n.DataCriacao)).ToString("dd/MM/yyyy")),
+            ("Vencimento", n.DataVencimento?.ToString("dd/MM/yyyy") ?? "-"),
+            ("Competência", $"{MesPorExtenso(n.Mes)}/{n.Ano}"));
+        y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Situação", n.Status));
 
         y = DesenharSecao(gfx, "EMITENTE", margem, y, largura, corPrimaria, fontSecao);
         y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Empresa", empresaNome), ("CNPJ", empresaCnpj));
@@ -453,13 +487,19 @@ public class NotaDebitoPjService : INotaDebitoPjService
         y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Colaborador (PJ) responsável", n.Usuario.Nome));
 
         y = DesenharSecao(gfx, "MOTIVO DA COBRANÇA", margem, y, largura, corPrimaria, fontSecao);
-        y = DesenharLinha(
-            gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
-            ("Assunto / Tipo", "Ressarcimento"), ("Período de Referência", $"{n.Mes:D2}/{n.Ano} a {n.Mes:D2}/{n.Ano}"));
-        y = DesenharLinha(
-            gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
-            ("Tipo de Despesa", $"Coparticipação {n.OperadoraSaude}"), ("Nº do Documento", n.NumeroDocumento ?? "-"));
+        y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Tipo de Despesa", $"Coparticipação {n.OperadoraSaude}"));
         y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Descrição", n.Descricao ?? "-"));
+
+        var itensOrdenados = n.Itens.OrderBy(i => i.DependenteId.HasValue).ThenBy(i => i.NomeBeneficiario).ToList();
+        if (itensOrdenados.Count > 0)
+        {
+            y = DesenharSecao(gfx, "BENEFICIÁRIOS", margem, y, largura, corPrimaria, fontSecao);
+            y = DesenharTabelaBeneficiarios(gfx, itensOrdenados, margem, y, largura, fontRotulo, fontValor, fontValorBold, corRotulo);
+            y = DesenharTextoMultilinha(
+                gfx, "Mensalidade exibida apenas como informativo — a cobrança desta nota é somente da Coparticipação.",
+                fontDeclaracao, new XSolidBrush(corRotulo), margem, y, largura, alturaLinha: 10);
+            y += 4;
+        }
 
         y = DesenharSecao(gfx, "VALORES", margem, y, largura, corPrimaria, fontSecao);
         y = DesenharLinha(
@@ -471,9 +511,7 @@ public class NotaDebitoPjService : INotaDebitoPjService
             ("VALOR LÍQUIDO (R$)", (n.ValorBruto - n.Desconto - n.RetencaoTributaria).ToString("N2")));
 
         y = DesenharSecao(gfx, "PAGAMENTO", margem, y, largura, corPrimaria, fontSecao);
-        y = DesenharLinha(
-            gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
-            ("Vencimento", n.DataVencimento?.ToString("dd/MM/yyyy") ?? "-"), ("Forma de Pagamento", n.FormaPagamento ?? "-"));
+        y = DesenharLinha(gfx, margem, y, largura, fontRotulo, fontValor, corRotulo, ("Forma de Pagamento", n.FormaPagamento ?? "-"));
 
         var empresaCnpjPix = _configuration["ReembolsoDespesa:EmpresaCnpj"] ?? "";
         var empresaNomePix = _configuration["ReembolsoDespesa:EmpresaNome"] ?? "Hope";
@@ -532,6 +570,14 @@ public class NotaDebitoPjService : INotaDebitoPjService
         return stream.ToArray();
     }
 
+    private static readonly string[] NomesMeses =
+    [
+        "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+        "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+    ];
+
+    private static string MesPorExtenso(int mes) => NomesMeses[mes - 1];
+
     private static double DesenharTextoMultilinha(
         XGraphics gfx, string texto, XFont fonte, XBrush brush, double margem, double y, double largura, double alturaLinha)
     {
@@ -565,6 +611,46 @@ public class NotaDebitoPjService : INotaDebitoPjService
         gfx.DrawRectangle(new XSolidBrush(cor), margem, y, largura, 16);
         gfx.DrawString(titulo, fonte, XBrushes.White, new XRect(margem + 4, y, largura - 8, 16), XStringFormats.CenterLeft);
         return y + 20;
+    }
+
+    private static double DesenharTabelaBeneficiarios(
+        XGraphics gfx, List<NotaDebitoPjItem> itens, double margem, double y, double largura,
+        XFont fonteRotulo, XFont fonteValor, XFont fonteValorBold, XColor corRotulo)
+    {
+        var larguraNome = largura * 0.5;
+        var larguraValor = (largura - larguraNome) / 2;
+
+        y = DesenharLinhaBeneficiario(
+            gfx, margem, y, larguraNome, larguraValor, "BENEFICIÁRIO", "MENSALIDADE", "COPARTICIPAÇÃO", fonteRotulo, new XSolidBrush(corRotulo));
+
+        foreach (var item in itens)
+        {
+            y = DesenharLinhaBeneficiario(
+                gfx, margem, y, larguraNome, larguraValor,
+                item.NomeBeneficiario,
+                item.ValorMensalidade > 0 ? item.ValorMensalidade.ToString("N2") : "-",
+                item.ValorCoparticipacao > 0 ? item.ValorCoparticipacao.ToString("N2") : "-",
+                fonteValor, XBrushes.Black);
+        }
+
+        gfx.DrawLine(new XPen(corRotulo, 0.5), margem, y, margem + largura, y);
+        y += 4;
+
+        y = DesenharLinhaBeneficiario(
+            gfx, margem, y, larguraNome, larguraValor,
+            "Total", string.Empty, itens.Sum(i => i.ValorCoparticipacao).ToString("N2"), fonteValorBold, XBrushes.Black);
+
+        return y + 6;
+    }
+
+    private static double DesenharLinhaBeneficiario(
+        XGraphics gfx, double margem, double y, double larguraNome, double larguraValor,
+        string nome, string mensalidade, string coparticipacao, XFont fonte, XBrush brush)
+    {
+        gfx.DrawString(nome, fonte, brush, new XRect(margem, y, larguraNome, 14), XStringFormats.CenterLeft);
+        gfx.DrawString(mensalidade, fonte, brush, new XRect(margem + larguraNome, y, larguraValor, 14), XStringFormats.CenterRight);
+        gfx.DrawString(coparticipacao, fonte, brush, new XRect(margem + larguraNome + larguraValor, y, larguraValor, 14), XStringFormats.CenterRight);
+        return y + 14;
     }
 
     private static double DesenharLinha(

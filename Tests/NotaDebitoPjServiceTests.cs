@@ -83,20 +83,36 @@ public class NotaDebitoPjServiceTests
         return usuario;
     }
 
-    private static void CriarLancamento(AppDbContext context, int usuarioId, int ano, int mes, decimal valorCoparticipacao)
+    private static void CriarLancamento(
+        AppDbContext context, int usuarioId, int ano, int mes, decimal valorCoparticipacao, int? dependenteId = null, decimal valorMensal = 0)
     {
         context.PlanoSaudeCustos.Add(new PlanoSaudeCusto
         {
             UsuarioId = usuarioId,
-            DependenteId = null,
+            DependenteId = dependenteId,
             Ano = ano,
             Mes = mes,
-            ValorMensal = 0,
+            ValorMensal = valorMensal,
             ValorCoparticipacao = valorCoparticipacao,
             DataCriacao = Agora.UtcDateTime,
             DataAtualizacao = Agora.UtcDateTime,
         });
         context.SaveChanges();
+    }
+
+    private static Dependente CriarDependente(AppDbContext context, int usuarioId, string nome)
+    {
+        var dependente = new Dependente
+        {
+            UsuarioId = usuarioId,
+            Nome = nome,
+            Ativo = true,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Dependentes.Add(dependente);
+        context.SaveChanges();
+        return dependente;
     }
 
     private static CreateNotaDebitoPjDto CriarDto(int usuarioId, int ano = 2026, int mes = 8) => new()
@@ -119,6 +135,44 @@ public class NotaDebitoPjServiceTests
         Assert.Equal(300m, nota.ValorBruto);
         Assert.Equal(300m, nota.ValorLiquido);
         Assert.Equal(NotaDebitoPjStatus.Rascunho, nota.Status);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DevePersistirNumeroFaturaEDataEmissao()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+
+        var dto = CriarDto(usuario.Id);
+        dto.NumeroFatura = "71264082";
+        dto.DataEmissao = new DateOnly(2026, 7, 20);
+
+        var nota = await service.CreateAsync(dto);
+
+        Assert.Equal("71264082", nota.NumeroFatura);
+        Assert.Equal(new DateOnly(2026, 7, 20), nota.DataEmissao);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveCongelarItensDeBeneficiariosTitularEDependentes()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        var dependente = CriarDependente(context, usuario.Id, "Maria Pj Dependente");
+        CriarLancamento(context, usuario.Id, 2026, 8, 150m, dependenteId: null, valorMensal: 500m);
+        CriarLancamento(context, usuario.Id, 2026, 8, 150m, dependenteId: dependente.Id, valorMensal: 300m);
+
+        var nota = await service.CreateAsync(CriarDto(usuario.Id));
+
+        Assert.Equal(300m, nota.ValorBruto);
+        Assert.Equal(2, nota.Itens.Count);
+        var itemTitular = Assert.Single(nota.Itens, i => i.DependenteId == null);
+        Assert.Equal("João Pj", itemTitular.NomeBeneficiario);
+        Assert.Equal(500m, itemTitular.ValorMensalidade);
+        var itemDependente = Assert.Single(nota.Itens, i => i.DependenteId == dependente.Id);
+        Assert.Equal("Maria Pj Dependente", itemDependente.NomeBeneficiario);
+        Assert.Equal(300m, itemDependente.ValorMensalidade);
     }
 
     [Fact]

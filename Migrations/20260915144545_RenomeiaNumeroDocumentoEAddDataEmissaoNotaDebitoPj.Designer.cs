@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SoftwareLicense.Api.Data;
@@ -11,9 +12,11 @@ using SoftwareLicense.Api.Data;
 namespace SoftwareLicense.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260915144545_RenomeiaNumeroDocumentoEAddDataEmissaoNotaDebitoPj")]
+    partial class RenomeiaNumeroDocumentoEAddDataEmissaoNotaDebitoPj
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1786,45 +1789,6 @@ namespace SoftwareLicense.Api.Migrations
                     b.ToTable("NotasDebitoPjAnexos");
                 });
 
-            modelBuilder.Entity("SoftwareLicense.Api.Entities.NotaDebitoPjItem", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("DataCriacao")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("DependenteId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("NomeBeneficiario")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int>("NotaDebitoPjId")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("ValorCoparticipacao")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("ValorMensalidade")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DependenteId");
-
-                    b.HasIndex("NotaDebitoPjId");
-
-                    b.ToTable("NotasDebitoPjItens");
-                });
-
             modelBuilder.Entity("SoftwareLicense.Api.Entities.NotaFiscalEntrada", b =>
                 {
                     b.Property<int>("Id")
@@ -3270,24 +3234,6 @@ namespace SoftwareLicense.Api.Migrations
                     b.Navigation("NotaDebitoPj");
                 });
 
-            modelBuilder.Entity("SoftwareLicense.Api.Entities.NotaDebitoPjItem", b =>
-                {
-                    b.HasOne("SoftwareLicense.Api.Entities.Dependente", "Dependente")
-                        .WithMany()
-                        .HasForeignKey("DependenteId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("SoftwareLicense.Api.Entities.NotaDebitoPj", "NotaDebitoPj")
-                        .WithMany("Itens")
-                        .HasForeignKey("NotaDebitoPjId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Dependente");
-
-                    b.Navigation("NotaDebitoPj");
-                });
-
             modelBuilder.Entity("SoftwareLicense.Api.Entities.NotaFiscalEntrada", b =>
                 {
                     b.HasOne("SoftwareLicense.Api.Entities.Fornecedor", "Fornecedor")
@@ -3624,11 +3570,6 @@ namespace SoftwareLicense.Api.Migrations
 
                     b.Navigation("Impostos");
 
-                    b.Navigation("Itens");
-                });
-
-            modelBuilder.Entity("SoftwareLicense.Api.Entities.NotaDebitoPj", b =>
-                {
                     b.Navigation("Itens");
                 });
 
