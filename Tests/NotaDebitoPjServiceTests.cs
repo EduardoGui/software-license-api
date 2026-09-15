@@ -123,6 +123,25 @@ public class NotaDebitoPjServiceTests
         OperadoraSaude = "AMIL",
     };
 
+    private static FaturaOperadoraSaude CriarFatura(
+        AppDbContext context, string operadora, int ano, int mes, string numeroFatura = "71264082")
+    {
+        var fatura = new FaturaOperadoraSaude
+        {
+            OperadoraSaude = operadora,
+            NumeroFatura = numeroFatura,
+            Ano = ano,
+            Mes = mes,
+            DataEmissao = new DateOnly(ano, mes, 20),
+            DataVencimento = new DateOnly(ano, mes, 28),
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.FaturasOperadoraSaude.Add(fatura);
+        context.SaveChanges();
+        return fatura;
+    }
+
     [Fact]
     public async Task CreateAsync_DeveCalcularValorBrutoComoSomaDaCoparticipacao()
     {
@@ -173,6 +192,88 @@ public class NotaDebitoPjServiceTests
         var itemDependente = Assert.Single(nota.Itens, i => i.DependenteId == dependente.Id);
         Assert.Equal("Maria Pj Dependente", itemDependente.NomeBeneficiario);
         Assert.Equal(300m, itemDependente.ValorMensalidade);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveHerdarCamposDaFaturaVinculada()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+        var fatura = CriarFatura(context, "AMIL ONE S2500", 2026, 8);
+
+        var nota = await service.CreateAsync(new CreateNotaDebitoPjDto
+        {
+            UsuarioId = usuario.Id,
+            Ano = 2026,
+            Mes = 8,
+            FaturaOperadoraSaudeId = fatura.Id,
+        });
+
+        Assert.Equal(fatura.Id, nota.FaturaOperadoraSaudeId);
+        Assert.Equal("AMIL ONE S2500", nota.OperadoraSaude);
+        Assert.Equal("71264082", nota.NumeroFatura);
+        Assert.Equal(new DateOnly(2026, 8, 20), nota.DataEmissao);
+        Assert.Equal(new DateOnly(2026, 8, 28), nota.DataVencimento);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveRejeitarFaturaDeMesDiferente()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+        var fatura = CriarFatura(context, "AMIL", 2026, 7);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(new CreateNotaDebitoPjDto
+        {
+            UsuarioId = usuario.Id,
+            Ano = 2026,
+            Mes = 8,
+            FaturaOperadoraSaudeId = fatura.Id,
+        }));
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveRejeitarSemOperadoraQuandoNaoTemFaturaVinculada()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(new CreateNotaDebitoPjDto
+        {
+            UsuarioId = usuario.Id,
+            Ano = 2026,
+            Mes = 8,
+        }));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_NaoDeveAlterarCamposDaFaturaQuandoVinculada()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+        var fatura = CriarFatura(context, "AMIL", 2026, 8);
+        var criada = await service.CreateAsync(new CreateNotaDebitoPjDto
+        {
+            UsuarioId = usuario.Id,
+            Ano = 2026,
+            Mes = 8,
+            FaturaOperadoraSaudeId = fatura.Id,
+        });
+
+        var atualizada = await service.UpdateAsync(criada.Id, new UpdateNotaDebitoPjDto
+        {
+            OperadoraSaude = "Tentativa de trocar",
+            NumeroFatura = "000000",
+            Desconto = 15m,
+        });
+
+        Assert.Equal("AMIL", atualizada.OperadoraSaude);
+        Assert.Equal("71264082", atualizada.NumeroFatura);
+        Assert.Equal(15m, atualizada.Desconto);
     }
 
     [Fact]

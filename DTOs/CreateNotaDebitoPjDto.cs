@@ -13,11 +13,15 @@ public class CreateNotaDebitoPjDto
     [Required]
     public int Mes { get; set; }
 
-    [Required, MaxLength(100)]
-    public string OperadoraSaude { get; set; } = string.Empty;
+    // Obrigatório só quando não há FaturaOperadoraSaudeId (validado no service) - com fatura
+    // vinculada, Operadora/Nº Fatura/Data Emissão/Vencimento vêm sempre dela.
+    [MaxLength(100)]
+    public string? OperadoraSaude { get; set; }
 
     [MaxLength(50)]
     public string? NumeroFatura { get; set; }
+
+    public int? FaturaOperadoraSaudeId { get; set; }
 
     [MaxLength(500)]
     public string? Descricao { get; set; }

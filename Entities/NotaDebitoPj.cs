@@ -18,6 +18,11 @@ public class NotaDebitoPj
     public string? NumeroFatura { get; set; }
     public string? Descricao { get; set; }
 
+    // Quando preenchida, Operadora/Nº Fatura/Data Emissão/Vencimento acima são sempre uma cópia
+    // sincronizada da fatura vinculada (nunca editados diretamente na ND) - ver FaturaOperadoraSaudeService.
+    public int? FaturaOperadoraSaudeId { get; set; }
+    public FaturaOperadoraSaude? FaturaOperadoraSaude { get; set; }
+
     public DateOnly? DataEmissao { get; set; }
     public DateOnly? DataVencimento { get; set; }
     public string? FormaPagamento { get; set; }

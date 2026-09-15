@@ -40,6 +40,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<NotaDebitoPj> NotasDebitoPj => Set<NotaDebitoPj>();
     public DbSet<NotaDebitoPjItem> NotasDebitoPjItens => Set<NotaDebitoPjItem>();
     public DbSet<NotaDebitoPjAnexo> NotasDebitoPjAnexos => Set<NotaDebitoPjAnexo>();
+    public DbSet<FaturaOperadoraSaude> FaturasOperadoraSaude => Set<FaturaOperadoraSaude>();
+    public DbSet<FaturaOperadoraSaudeAnexo> FaturasOperadoraSaudeAnexos => Set<FaturaOperadoraSaudeAnexo>();
     public DbSet<Fornecedor> Fornecedores => Set<Fornecedor>();
     public DbSet<TarefaRecorrente> TarefasRecorrentes => Set<TarefaRecorrente>();
     public DbSet<TarefaOcorrencia> TarefaOcorrencias => Set<TarefaOcorrencia>();
@@ -201,6 +203,26 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(n => n.Status).IsRequired().HasMaxLength(20);
             entity.HasIndex(n => new { n.UsuarioId, n.Ano, n.Mes }).IsUnique();
             entity.HasOne(n => n.Usuario).WithMany().HasForeignKey(n => n.UsuarioId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(n => n.FaturaOperadoraSaudeId);
+            entity.HasOne(n => n.FaturaOperadoraSaude).WithMany(f => f.NotasDebito)
+                .HasForeignKey(n => n.FaturaOperadoraSaudeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<FaturaOperadoraSaude>(entity =>
+        {
+            entity.Property(f => f.OperadoraSaude).IsRequired().HasMaxLength(100);
+            entity.Property(f => f.NumeroFatura).IsRequired().HasMaxLength(50);
+            entity.Property(f => f.ValorTotal).HasPrecision(18, 2);
+            entity.Property(f => f.Observacao).HasMaxLength(500);
+            entity.HasIndex(f => new { f.OperadoraSaude, f.Ano, f.Mes }).IsUnique();
+        });
+
+        modelBuilder.Entity<FaturaOperadoraSaudeAnexo>(entity =>
+        {
+            entity.Property(a => a.NomeArquivo).IsRequired().HasMaxLength(255);
+            entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
+            entity.HasIndex(a => a.FaturaOperadoraSaudeId);
+            entity.HasOne(a => a.FaturaOperadoraSaude).WithMany().HasForeignKey(a => a.FaturaOperadoraSaudeId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<NotaDebitoPjItem>(entity =>

@@ -61,6 +61,11 @@ public class NotaDebitoPjService : INotaDebitoPjService
             query = query.Where(n => n.Status == filtro.Status);
         }
 
+        if (filtro.FaturaOperadoraSaudeId is not null)
+        {
+            query = query.Where(n => n.FaturaOperadoraSaudeId == filtro.FaturaOperadoraSaudeId);
+        }
+
         var notas = await query.OrderByDescending(n => n.Ano).ThenByDescending(n => n.Mes).ThenBy(n => n.Usuario.Nome).ToListAsync();
         return notas.Select(ParaDto).ToList();
     }
@@ -90,6 +95,22 @@ public class NotaDebitoPjService : INotaDebitoPjService
         if (jaExiste)
         {
             throw new BusinessRuleException("Já existe uma nota de débito para este usuário neste mês.");
+        }
+
+        FaturaOperadoraSaude? fatura = null;
+        if (dto.FaturaOperadoraSaudeId is not null)
+        {
+            fatura = await _context.FaturasOperadoraSaude.FirstOrDefaultAsync(f => f.Id == dto.FaturaOperadoraSaudeId)
+                ?? throw new NotFoundException($"Fatura {dto.FaturaOperadoraSaudeId} não encontrada.");
+
+            if (fatura.Ano != dto.Ano || fatura.Mes != dto.Mes)
+            {
+                throw new BusinessRuleException("A fatura selecionada não é do mesmo mês/ano desta nota de débito.");
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(dto.OperadoraSaude))
+        {
+            throw new BusinessRuleException("Operadora de Saúde é obrigatória quando não há fatura vinculada.");
         }
 
         var lancamentos = await _context.PlanoSaudeCustos
@@ -123,11 +144,12 @@ public class NotaDebitoPjService : INotaDebitoPjService
             Itens = itens,
             Desconto = dto.Desconto,
             RetencaoTributaria = dto.RetencaoTributaria,
-            OperadoraSaude = dto.OperadoraSaude.Trim(),
-            NumeroFatura = dto.NumeroFatura?.Trim(),
+            FaturaOperadoraSaudeId = fatura?.Id,
+            OperadoraSaude = fatura?.OperadoraSaude ?? dto.OperadoraSaude!.Trim(),
+            NumeroFatura = fatura?.NumeroFatura ?? dto.NumeroFatura?.Trim(),
             Descricao = dto.Descricao?.Trim(),
-            DataEmissao = dto.DataEmissao,
-            DataVencimento = dto.DataVencimento,
+            DataEmissao = fatura?.DataEmissao ?? dto.DataEmissao,
+            DataVencimento = fatura?.DataVencimento ?? dto.DataVencimento,
             FormaPagamento = dto.FormaPagamento?.Trim(),
             CentroCusto = dto.CentroCusto?.Trim(),
             Area = dto.Area?.Trim(),
@@ -152,13 +174,19 @@ public class NotaDebitoPjService : INotaDebitoPjService
         var nota = await BuscarOuFalhar(id);
         ValidarEditavel(nota);
 
-        nota.OperadoraSaude = dto.OperadoraSaude.Trim();
-        nota.NumeroFatura = dto.NumeroFatura?.Trim();
+        // Com fatura vinculada, Operadora/Nº Fatura/Data Emissão/Vencimento nunca são editados aqui -
+        // continuam sempre uma cópia da fatura (corrigir lá, via FaturaOperadoraSaudeService.UpdateAsync).
+        if (nota.FaturaOperadoraSaudeId is null)
+        {
+            nota.OperadoraSaude = dto.OperadoraSaude.Trim();
+            nota.NumeroFatura = dto.NumeroFatura?.Trim();
+            nota.DataEmissao = dto.DataEmissao;
+            nota.DataVencimento = dto.DataVencimento;
+        }
+
         nota.Descricao = dto.Descricao?.Trim();
         nota.Desconto = dto.Desconto;
         nota.RetencaoTributaria = dto.RetencaoTributaria;
-        nota.DataEmissao = dto.DataEmissao;
-        nota.DataVencimento = dto.DataVencimento;
         nota.FormaPagamento = dto.FormaPagamento?.Trim();
         nota.CentroCusto = dto.CentroCusto?.Trim();
         nota.Area = dto.Area?.Trim();
@@ -388,6 +416,7 @@ public class NotaDebitoPjService : INotaDebitoPjService
         ValorLiquido = n.ValorBruto - n.Desconto - n.RetencaoTributaria,
         OperadoraSaude = n.OperadoraSaude,
         NumeroFatura = n.NumeroFatura,
+        FaturaOperadoraSaudeId = n.FaturaOperadoraSaudeId,
         Descricao = n.Descricao,
         DataEmissao = n.DataEmissao,
         DataVencimento = n.DataVencimento,

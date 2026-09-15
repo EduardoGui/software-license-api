@@ -6,4 +6,5 @@ public class NotaDebitoPjFiltroDto
     public int? Mes { get; set; }
     public int? UsuarioId { get; set; }
     public string? Status { get; set; }
+    public int? FaturaOperadoraSaudeId { get; set; }
 }

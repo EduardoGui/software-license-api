@@ -15,6 +15,7 @@ public class NotaDebitoPjDto
     public decimal ValorLiquido { get; set; }
     public string OperadoraSaude { get; set; } = string.Empty;
     public string? NumeroFatura { get; set; }
+    public int? FaturaOperadoraSaudeId { get; set; }
     public string? Descricao { get; set; }
     public DateOnly? DataEmissao { get; set; }
     public DateOnly? DataVencimento { get; set; }
