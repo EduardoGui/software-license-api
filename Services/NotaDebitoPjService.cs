@@ -540,14 +540,6 @@ public class NotaDebitoPjService : INotaDebitoPjService
             y += tamanhoQrCode + 6;
         }
 
-        y = DesenharSecao(gfx, "CLASSIFICAÇÃO CONTÁBIL", margem, y, largura, corPrimaria, fontSecao);
-        y = DesenharLinha(
-            gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
-            ("Centro de Custo", n.CentroCusto ?? "-"), ("Área", n.Area ?? "-"));
-        y = DesenharLinha(
-            gfx, margem, y, largura, fontRotulo, fontValor, corRotulo,
-            ("Conta Contábil", n.ContaContabil ?? "-"), ("Projeto / Contrato", n.ProjetoContrato ?? "-"));
-
         y = DesenharSecao(gfx, "ANEXOS E OBSERVAÇÃO", margem, y, largura, corPrimaria, fontSecao);
         y = DesenharTextoMultilinha(
             gfx,
