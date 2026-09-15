@@ -162,6 +162,20 @@ public class TarefaOcorrenciaService : ITarefaOcorrenciaService
         return ParaDto(ocorrencia, DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime));
     }
 
+    public async Task<TarefaOcorrenciaDto> AtualizarObservacaoAsync(int ocorrenciaId, AtualizarObservacaoTarefaOcorrenciaDto dto)
+    {
+        var ocorrencia = await BuscarOuFalhar(ocorrenciaId);
+
+        ocorrencia.Observacao = string.IsNullOrWhiteSpace(dto.Observacao) ? null : dto.Observacao.Trim();
+        ocorrencia.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Observação da ocorrência {OcorrenciaId} atualizada", ocorrencia.Id);
+
+        return ParaDto(ocorrencia, DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime));
+    }
+
     private async Task<TarefaOcorrencia> BuscarOuFalhar(int id)
     {
         var ocorrencia = await _context.TarefaOcorrencias

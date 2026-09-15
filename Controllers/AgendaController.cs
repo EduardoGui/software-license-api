@@ -38,6 +38,13 @@ public class AgendaController : ControllerBase
         return Ok(ocorrencia);
     }
 
+    [HttpPatch("{ocorrenciaId:int}/observacao")]
+    public async Task<ActionResult<TarefaOcorrenciaDto>> AtualizarObservacao(int ocorrenciaId, AtualizarObservacaoTarefaOcorrenciaDto dto)
+    {
+        var ocorrencia = await _tarefaOcorrenciaService.AtualizarObservacaoAsync(ocorrenciaId, dto);
+        return Ok(ocorrencia);
+    }
+
     [HttpPost("tarefa-unica")]
     public async Task<ActionResult<TarefaOcorrenciaDto>> CriarTarefaUnica(CreateTarefaUnicaDto dto)
     {

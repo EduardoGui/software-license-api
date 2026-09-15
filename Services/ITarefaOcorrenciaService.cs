@@ -8,5 +8,6 @@ public interface ITarefaOcorrenciaService
     Task<List<TarefaOcorrenciaDto>> ObterAgendaAsync();
     Task<TarefaOcorrenciaDto> ConcluirAsync(int ocorrenciaId);
     Task<TarefaOcorrenciaDto> AdiarAsync(int ocorrenciaId, AdiarTarefaOcorrenciaDto dto);
+    Task<TarefaOcorrenciaDto> AtualizarObservacaoAsync(int ocorrenciaId, AtualizarObservacaoTarefaOcorrenciaDto dto);
     Task<TarefaOcorrenciaDto> CriarTarefaUnicaAsync(CreateTarefaUnicaDto dto);
 }

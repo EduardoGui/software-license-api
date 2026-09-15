@@ -178,6 +178,35 @@ public class TarefaOcorrenciaServiceTests
     }
 
     [Fact]
+    public async Task AtualizarObservacaoAsync_DeveAtualizarSemMexerNaData()
+    {
+        var (service, context) = CriarService();
+        CriarTarefa(context, "Pedir boleto", diaDoMes: 28);
+        var agenda = await service.ObterAgendaAsync();
+
+        var atualizada = await service.AtualizarObservacaoAsync(agenda[0].Id, new AtualizarObservacaoTarefaOcorrenciaDto
+        {
+            Observacao = "Ligar antes das 10h",
+        });
+
+        Assert.Equal("Ligar antes das 10h", atualizada.Observacao);
+        Assert.Equal(new DateOnly(2026, 9, 28), atualizada.DataPrevistaAtual);
+    }
+
+    [Fact]
+    public async Task AtualizarObservacaoAsync_DeveLimparObservacaoQuandoVazia()
+    {
+        var (service, context) = CriarService();
+        CriarTarefa(context, "Pedir boleto", diaDoMes: 28);
+        var agenda = await service.ObterAgendaAsync();
+        await service.AtualizarObservacaoAsync(agenda[0].Id, new AtualizarObservacaoTarefaOcorrenciaDto { Observacao = "Algo" });
+
+        var atualizada = await service.AtualizarObservacaoAsync(agenda[0].Id, new AtualizarObservacaoTarefaOcorrenciaDto { Observacao = "   " });
+
+        Assert.Null(atualizada.Observacao);
+    }
+
+    [Fact]
     public async Task ConcluirAsync_DeveLancarNotFoundParaOcorrenciaInexistente()
     {
         var (service, _) = CriarService();
