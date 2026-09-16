@@ -31,10 +31,10 @@ public class AgendaController : ControllerBase
         return Ok(ocorrencia);
     }
 
-    [HttpPatch("{ocorrenciaId:int}/adiar")]
-    public async Task<ActionResult<TarefaOcorrenciaDto>> Adiar(int ocorrenciaId, AdiarTarefaOcorrenciaDto dto)
+    [HttpPatch("{ocorrenciaId:int}/editar")]
+    public async Task<ActionResult<TarefaOcorrenciaDto>> Editar(int ocorrenciaId, EditarTarefaOcorrenciaDto dto)
     {
-        var ocorrencia = await _tarefaOcorrenciaService.AdiarAsync(ocorrenciaId, dto);
+        var ocorrencia = await _tarefaOcorrenciaService.EditarAsync(ocorrenciaId, dto);
         return Ok(ocorrencia);
     }
 

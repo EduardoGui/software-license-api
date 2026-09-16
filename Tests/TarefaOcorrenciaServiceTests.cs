@@ -147,26 +147,28 @@ public class TarefaOcorrenciaServiceTests
     }
 
     [Fact]
-    public async Task AdiarAsync_DeveAtualizarDataAtualEObservacaoMantendoOriginal()
+    public async Task EditarAsync_DeveAtualizarTituloDataAtualEObservacaoMantendoOriginal()
     {
         var (service, context) = CriarService();
         CriarTarefa(context, "Pedir boleto", diaDoMes: 28);
         var agenda = await service.ObterAgendaAsync();
 
-        var adiada = await service.AdiarAsync(agenda[0].Id, new AdiarTarefaOcorrenciaDto
+        var editada = await service.EditarAsync(agenda[0].Id, new EditarTarefaOcorrenciaDto
         {
+            Titulo = "Pedir boleto do estacionamento",
             NovaData = new DateOnly(2026, 9, 30),
             Observacao = "Estacionamento fechado, remarcado",
         });
 
-        Assert.Equal(new DateOnly(2026, 9, 28), adiada.DataPrevistaOriginal);
-        Assert.Equal(new DateOnly(2026, 9, 30), adiada.DataPrevistaAtual);
-        Assert.Equal("Estacionamento fechado, remarcado", adiada.Observacao);
-        Assert.Equal(TarefaOcorrenciaStatus.Pendente, adiada.Status);
+        Assert.Equal("Pedir boleto do estacionamento", editada.Titulo);
+        Assert.Equal(new DateOnly(2026, 9, 28), editada.DataPrevistaOriginal);
+        Assert.Equal(new DateOnly(2026, 9, 30), editada.DataPrevistaAtual);
+        Assert.Equal("Estacionamento fechado, remarcado", editada.Observacao);
+        Assert.Equal(TarefaOcorrenciaStatus.Pendente, editada.Status);
     }
 
     [Fact]
-    public async Task AdiarAsync_DeveRejeitarAdiarOcorrenciaJaConcluida()
+    public async Task EditarAsync_DeveRejeitarEditarOcorrenciaJaConcluida()
     {
         var (service, context) = CriarService();
         CriarTarefa(context, "Pedir boleto", diaDoMes: 28);
@@ -174,7 +176,7 @@ public class TarefaOcorrenciaServiceTests
         await service.ConcluirAsync(agenda[0].Id);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.AdiarAsync(agenda[0].Id, new AdiarTarefaOcorrenciaDto { NovaData = new DateOnly(2026, 9, 30) }));
+            service.EditarAsync(agenda[0].Id, new EditarTarefaOcorrenciaDto { Titulo = "Pedir boleto", NovaData = new DateOnly(2026, 9, 30) }));
     }
 
     [Fact]
@@ -250,14 +252,14 @@ public class TarefaOcorrenciaServiceTests
     }
 
     [Fact]
-    public async Task CriarTarefaUnicaAsync_DevePoderSerConcluidaEAdiadaComoQualquerOcorrencia()
+    public async Task CriarTarefaUnicaAsync_DevePoderSerConcluidaEEditadaComoQualquerOcorrencia()
     {
         var (service, _) = CriarService();
         var criada = await service.CriarTarefaUnicaAsync(new CreateTarefaUnicaDto { Titulo = "Tarefa avulsa", Data = new DateOnly(2026, 9, 15) });
 
-        var adiada = await service.AdiarAsync(criada.Id, new AdiarTarefaOcorrenciaDto { NovaData = new DateOnly(2026, 9, 20) });
-        Assert.Equal(new DateOnly(2026, 9, 20), adiada.DataPrevistaAtual);
-        Assert.Equal(new DateOnly(2026, 9, 15), adiada.DataPrevistaOriginal);
+        var editada = await service.EditarAsync(criada.Id, new EditarTarefaOcorrenciaDto { Titulo = "Tarefa avulsa", NovaData = new DateOnly(2026, 9, 20) });
+        Assert.Equal(new DateOnly(2026, 9, 20), editada.DataPrevistaAtual);
+        Assert.Equal(new DateOnly(2026, 9, 15), editada.DataPrevistaOriginal);
 
         var concluida = await service.ConcluirAsync(criada.Id);
         Assert.Equal(TarefaOcorrenciaStatus.Concluida, concluida.Status);

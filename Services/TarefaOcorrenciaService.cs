@@ -142,22 +142,23 @@ public class TarefaOcorrenciaService : ITarefaOcorrenciaService
         return ParaDto(ocorrencia, DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime));
     }
 
-    public async Task<TarefaOcorrenciaDto> AdiarAsync(int ocorrenciaId, AdiarTarefaOcorrenciaDto dto)
+    public async Task<TarefaOcorrenciaDto> EditarAsync(int ocorrenciaId, EditarTarefaOcorrenciaDto dto)
     {
         var ocorrencia = await BuscarOuFalhar(ocorrenciaId);
 
         if (ocorrencia.Status == TarefaOcorrenciaStatus.Concluida)
         {
-            throw new BusinessRuleException("Não é possível adiar uma ocorrência já concluída.");
+            throw new BusinessRuleException("Não é possível editar uma ocorrência já concluída.");
         }
 
+        ocorrencia.Titulo = dto.Titulo.Trim();
         ocorrencia.DataPrevistaAtual = dto.NovaData;
         ocorrencia.Observacao = string.IsNullOrWhiteSpace(dto.Observacao) ? null : dto.Observacao.Trim();
         ocorrencia.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
 
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Ocorrência {OcorrenciaId} adiada para {NovaData}", ocorrencia.Id, dto.NovaData);
+        _logger.LogInformation("Ocorrência {OcorrenciaId} editada (nova data {NovaData})", ocorrencia.Id, dto.NovaData);
 
         return ParaDto(ocorrencia, DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime));
     }
