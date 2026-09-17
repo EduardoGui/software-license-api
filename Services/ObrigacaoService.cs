@@ -43,6 +43,16 @@ public class ObrigacaoService : IObrigacaoService
             query = query.Where(o => o.FornecedorId == filtro.FornecedorId);
         }
 
+        if (filtro.ContratoId is not null)
+        {
+            query = query.Where(o => o.MedicaoBm != null && o.MedicaoBm.ContratoId == filtro.ContratoId);
+        }
+
+        if (filtro.OrdemCompraId is not null)
+        {
+            query = query.Where(o => o.OrdemCompraId == filtro.OrdemCompraId);
+        }
+
         if (filtro.Pago is not null)
         {
             query = query.Where(o => o.Pago == filtro.Pago);
