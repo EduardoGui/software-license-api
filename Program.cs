@@ -114,6 +114,7 @@ builder.Services.AddScoped<IPatrimonioItemService, PatrimonioItemService>();
 builder.Services.AddScoped<IRelatorioMensalLocacaoService, RelatorioMensalLocacaoService>();
 builder.Services.AddScoped<IRelatorioMensalCustoLicencasService, RelatorioMensalCustoLicencasService>();
 builder.Services.AddScoped<ISetorService, SetorService>();
+builder.Services.AddScoped<IUnidadeOrcamentariaService, UnidadeOrcamentariaService>();
 builder.Services.AddScoped<ITipoDespesaService, TipoDespesaService>();
 builder.Services.AddScoped<ILocalService, LocalService>();
 builder.Services.AddScoped<IReembolsoDespesaService, ReembolsoDespesaService>();

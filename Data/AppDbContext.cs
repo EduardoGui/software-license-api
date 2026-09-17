@@ -14,6 +14,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Usuario> Usuarios => Set<Usuario>();
     public DbSet<Setor> Setores => Set<Setor>();
     public DbSet<SetorAprovador> SetorAprovadores => Set<SetorAprovador>();
+    public DbSet<UnidadeOrcamentaria> UnidadesOrcamentarias => Set<UnidadeOrcamentaria>();
     public DbSet<TipoDespesa> TiposDespesa => Set<TipoDespesa>();
     public DbSet<ReembolsoDespesa> ReembolsosDespesa => Set<ReembolsoDespesa>();
     public DbSet<ReembolsoDespesaItem> ReembolsoDespesaItens => Set<ReembolsoDespesaItem>();
@@ -106,6 +107,14 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(a => new { a.SetorId, a.UsuarioId }).IsUnique();
             entity.HasOne(a => a.Setor).WithMany().HasForeignKey(a => a.SetorId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(a => a.Usuario).WithMany().HasForeignKey(a => a.UsuarioId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<UnidadeOrcamentaria>(entity =>
+        {
+            entity.Property(u => u.Codigo).IsRequired().HasMaxLength(30);
+            entity.Property(u => u.Descricao).IsRequired().HasMaxLength(200);
+            entity.HasIndex(u => u.Codigo).IsUnique();
+            entity.HasOne(u => u.Setor).WithMany().HasForeignKey(u => u.SetorId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<TipoDespesa>(entity =>
