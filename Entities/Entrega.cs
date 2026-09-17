@@ -29,6 +29,12 @@ public class Entrega
     public string? TipoDivergencia { get; set; }
     public string? ObservacaoDivergencia { get; set; }
 
+    // Quantos kits essa entrega representa (padrão 1) - cobre o caso de diretores/gerentes que pegam
+    // vários de uma vez, em nome deles, pra repassar a clientes. Multiplica a quantidade de cada item
+    // copiado da campanha no momento da criação (ver CopiarItensDaCampanha).
+    public int QuantidadeKits { get; set; } = 1;
+    public string? Observacao { get; set; }
+
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
 

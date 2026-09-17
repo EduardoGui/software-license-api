@@ -56,9 +56,9 @@ public class CampanhaEntregaServiceTests
         CampanhaEntregaService service, string nome, params (string Descricao, int Quantidade)[] itens)
     {
         var campanha = await service.CreateAsync(new CreateCampanhaEntregaDto { Nome = nome });
-        await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateEntregaItensDto
+        await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
         {
-            Itens = itens.Select(i => new CreateEntregaItemDto { Descricao = i.Descricao, Quantidade = i.Quantidade }).ToList(),
+            Itens = itens.Select(i => new CampanhaEntregaItemInputDto { Descricao = i.Descricao, Quantidade = i.Quantidade }).ToList(),
         });
         return campanha;
     }
@@ -79,9 +79,9 @@ public class CampanhaEntregaServiceTests
         var service = CriarService(out _);
         var campanha = await CriarCampanhaComItensAsync(service, "Kit Boas-vindas", ("Mochila", 1));
 
-        var atualizada = await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateEntregaItensDto
+        var atualizada = await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
         {
-            Itens = [new CreateEntregaItemDto { Descricao = "Garrafa", Quantidade = 2 }],
+            Itens = [new CampanhaEntregaItemInputDto { Descricao = "Garrafa", Quantidade = 2 }],
         });
 
         Assert.Single(atualizada.Itens);
@@ -123,9 +123,9 @@ public class CampanhaEntregaServiceTests
         context.Entregas.Add(entregaMaria);
         await context.SaveChangesAsync();
 
-        await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateEntregaItensDto
+        await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
         {
-            Itens = [new CreateEntregaItemDto { Descricao = "Mochila", Quantidade = 1 }],
+            Itens = [new CampanhaEntregaItemInputDto { Descricao = "Mochila", Quantidade = 1 }],
         });
 
         var joaoAtualizado = await service.ObterEntregaAsync(campanha.Id, entregaJoao.Id);
@@ -162,15 +162,59 @@ public class CampanhaEntregaServiceTests
     }
 
     [Fact]
-    public async Task AdicionarEntregaAsync_DeveRejeitarColaboradorDuplicadoNaMesmaCampanha()
+    public async Task AdicionarEntregaAsync_DevePermitirMaisDeUmaEntregaParaOMesmoColaborador()
     {
+        // Diretores/gerentes às vezes pegam kits extras para terceiros em nome próprio -
+        // duplicidade deixou de ser bloqueada (ver QuantidadeKits/Observacao para o caso comum).
         var service = CriarService(out var context);
         var campanha = await CriarCampanhaComItensAsync(service, "Kit Boas-vindas", ("Mochila", 1));
         var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
 
         await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = joao.Id });
+        await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = joao.Id, QuantidadeKits = 2, Observacao = "Para clientes" });
 
-        await Assert.ThrowsAsync<BusinessRuleException>(() => service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = joao.Id }));
+        var entregas = await context.Entregas.Where(e => e.CampanhaEntregaId == campanha.Id && e.UsuarioId == joao.Id).ToListAsync();
+        Assert.Equal(2, entregas.Count);
+    }
+
+    [Fact]
+    public async Task AdicionarEntregaAsync_QuantidadeKitsDeveMultiplicarItensCopiadosDaCampanha()
+    {
+        var service = CriarService(out var context);
+        var campanha = await CriarCampanhaComItensAsync(service, "Kit Boas-vindas", ("Mochila", 1), ("Garrafa", 2));
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+
+        var entrega = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = joao.Id, QuantidadeKits = 3 });
+
+        Assert.Equal(3, entrega.QuantidadeKits);
+        Assert.Equal(3, entrega.Itens.Single(i => i.Descricao == "Mochila").Quantidade);
+        Assert.Equal(6, entrega.Itens.Single(i => i.Descricao == "Garrafa").Quantidade);
+    }
+
+    [Fact]
+    public async Task ObterCampanhaAsync_SaldoDisponivelDeveDescontarEntregasNaoCanceladasEIgnorarCanceladas()
+    {
+        var service = CriarService(out var context);
+        var campanha = await service.CreateAsync(new CreateCampanhaEntregaDto { Nome = "Kit Boas-vindas" });
+        await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
+        {
+            Itens = [new CampanhaEntregaItemInputDto { Descricao = "Mochila", Quantidade = 1, QuantidadeDisponivel = 10 }],
+        });
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+        var maria = await CriarUsuarioAsync(context, "Maria", "maria@hope.com");
+
+        var entregaJoao = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = joao.Id, QuantidadeKits = 2 });
+        var entregaMaria = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = maria.Id });
+
+        var entregaMariaEntidade = await context.Entregas.FirstAsync(e => e.Id == entregaMaria.Id);
+        entregaMariaEntidade.Status = EntregaStatus.Cancelado;
+        await context.SaveChangesAsync();
+
+        var campanhaAtualizada = await service.GetByIdAsync(campanha.Id);
+        var itemMochila = campanhaAtualizada.Itens.Single(i => i.Descricao == "Mochila");
+
+        Assert.Equal(2, itemMochila.QuantidadeEntregue);
+        Assert.Equal(8, itemMochila.SaldoDisponivel);
     }
 
     [Fact]

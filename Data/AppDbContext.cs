@@ -626,7 +626,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.UserAgentConfirmacao).HasMaxLength(500);
             entity.Property(e => e.TipoDivergencia).HasMaxLength(30);
             entity.Property(e => e.ObservacaoDivergencia).HasMaxLength(1000);
-            entity.HasIndex(e => new { e.CampanhaEntregaId, e.UsuarioId }).IsUnique();
+            entity.Property(e => e.Observacao).HasMaxLength(1000);
+            entity.Property(e => e.QuantidadeKits).HasDefaultValue(1);
+            // Não é mais único - o mesmo colaborador pode ter mais de uma entrega na campanha (ex.:
+            // diretor/gerente que pega kits extras em nome dele pra repassar a clientes). O índice
+            // continua existindo (sem IsUnique) só como otimização das consultas por colaborador+campanha.
+            entity.HasIndex(e => new { e.CampanhaEntregaId, e.UsuarioId });
             entity.HasIndex(e => e.TokenHash).IsUnique().HasFilter("\"TokenHash\" IS NOT NULL");
             entity.HasOne(e => e.CampanhaEntrega).WithMany(c => c.Entregas).HasForeignKey(e => e.CampanhaEntregaId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(e => e.Usuario).WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Restrict);

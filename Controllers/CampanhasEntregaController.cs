@@ -68,7 +68,7 @@ public class CampanhasEntregaController : ControllerBase
     }
 
     [HttpPut("{id:int}/itens")]
-    public async Task<ActionResult<CampanhaEntregaDto>> AtualizarItens(int id, UpdateEntregaItensDto dto)
+    public async Task<ActionResult<CampanhaEntregaDto>> AtualizarItens(int id, UpdateCampanhaEntregaItensDto dto)
     {
         return Ok(await _campanhaEntregaService.AtualizarItensCampanhaAsync(id, dto));
     }

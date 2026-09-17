@@ -12,5 +12,11 @@ public class CampanhaEntregaItem
     public string? Tamanho { get; set; }
     public int Quantidade { get; set; }
     public DateOnly? Validade { get; set; }
+
+    // Estoque de referência pra este item (opcional - null = não controla saldo). O saldo restante é
+    // sempre calculado (QuantidadeDisponivel - soma do que já foi entregue em Entregas não canceladas),
+    // nunca decrementado diretamente, pra não correr risco de ficar dessincronizado.
+    public int? QuantidadeDisponivel { get; set; }
+
     public DateTime DataCriacao { get; set; }
 }

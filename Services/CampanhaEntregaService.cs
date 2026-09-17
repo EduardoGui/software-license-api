@@ -35,7 +35,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
 
     public async Task<List<CampanhaEntregaDto>> GetAllAsync(CampanhaEntregaFiltroDto filtro)
     {
-        var query = _context.CampanhasEntrega.Include(c => c.Itens).AsQueryable();
+        var query = _context.CampanhasEntrega.Include(c => c.Itens).Include(c => c.Entregas).ThenInclude(e => e.Itens).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(filtro.Nome))
         {
@@ -264,12 +264,9 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         var usuario = await _context.Usuarios.FindAsync(dto.UsuarioId)
             ?? throw new NotFoundException($"Colaborador {dto.UsuarioId} não encontrado.");
 
-        var jaExiste = await _context.Entregas.AnyAsync(e => e.CampanhaEntregaId == campanhaId && e.UsuarioId == dto.UsuarioId);
-        if (jaExiste)
-        {
-            throw new BusinessRuleException($"{usuario.Nome} já está nesta campanha.");
-        }
-
+        // Um colaborador pode ter mais de uma entrega na mesma campanha (ex.: diretor/gerente que já
+        // recebeu a dele e agora precisa de mais kits em nome dele pra repassar a clientes) - cada
+        // chamada aqui sempre cria uma entrega nova, sem checar se ele já está na campanha.
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var entrega = new Entrega
         {
@@ -277,9 +274,11 @@ public class CampanhaEntregaService : ICampanhaEntregaService
             UsuarioId = usuario.Id,
             EmailDestino = usuario.Email,
             Status = EntregaStatus.Pendente,
+            QuantidadeKits = dto.QuantidadeKits,
+            Observacao = string.IsNullOrWhiteSpace(dto.Observacao) ? null : dto.Observacao.Trim(),
             DataCriacao = agora,
             DataAtualizacao = agora,
-            Itens = CopiarItensDaCampanha(campanha),
+            Itens = CopiarItensDaCampanha(campanha, dto.QuantidadeKits),
         };
 
         _context.Entregas.Add(entrega);
@@ -321,9 +320,11 @@ public class CampanhaEntregaService : ICampanhaEntregaService
                 Usuario = usuario,
                 EmailDestino = usuario.Email,
                 Status = EntregaStatus.Pendente,
+                QuantidadeKits = dto.QuantidadeKits,
+                Observacao = string.IsNullOrWhiteSpace(dto.Observacao) ? null : dto.Observacao.Trim(),
                 DataCriacao = agora,
                 DataAtualizacao = agora,
-                Itens = CopiarItensDaCampanha(campanha),
+                Itens = CopiarItensDaCampanha(campanha, dto.QuantidadeKits),
             };
             novasEntregas.Add(entrega);
         }
@@ -336,7 +337,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         return novasEntregas.Select(ParaEntregaDto).ToList();
     }
 
-    public async Task<CampanhaEntregaDto> AtualizarItensCampanhaAsync(int campanhaId, UpdateEntregaItensDto dto)
+    public async Task<CampanhaEntregaDto> AtualizarItensCampanhaAsync(int campanhaId, UpdateCampanhaEntregaItensDto dto)
     {
         var campanha = await BuscarCampanhaOuFalhar(campanhaId);
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
@@ -348,6 +349,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
             Tamanho = string.IsNullOrWhiteSpace(i.Tamanho) ? null : i.Tamanho.Trim(),
             Quantidade = i.Quantidade,
             Validade = i.Validade,
+            QuantidadeDisponivel = i.QuantidadeDisponivel,
             DataCriacao = agora,
         }).ToList();
         campanha.DataAtualizacao = agora;
@@ -718,11 +720,11 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         }
     }
 
-    private static List<EntregaItem> CopiarItensDaCampanha(CampanhaEntrega campanha) => campanha.Itens.Select(i => new EntregaItem
+    private static List<EntregaItem> CopiarItensDaCampanha(CampanhaEntrega campanha, int quantidadeKits = 1) => campanha.Itens.Select(i => new EntregaItem
     {
         Descricao = i.Descricao,
         Tamanho = i.Tamanho,
-        Quantidade = i.Quantidade,
+        Quantidade = i.Quantidade * quantidadeKits,
         Validade = i.Validade,
         DataCriacao = DateTime.UtcNow,
     }).ToList();
@@ -746,7 +748,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
     private async Task<CampanhaEntrega> BuscarCampanhaOuFalhar(int id)
     {
         var campanha = await _context.CampanhasEntrega
-            .Include(c => c.Entregas)
+            .Include(c => c.Entregas).ThenInclude(e => e.Itens)
             .Include(c => c.Itens)
             .FirstOrDefaultAsync(c => c.Id == id);
 
@@ -771,23 +773,40 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         return entrega;
     }
 
-    private static CampanhaEntregaDto ParaDto(CampanhaEntrega c) => new()
+    private static CampanhaEntregaDto ParaDto(CampanhaEntrega c)
     {
-        Id = c.Id,
-        Nome = c.Nome,
-        Descricao = c.Descricao,
-        Status = c.Status,
-        DataCriacao = c.DataCriacao,
-        DataAtualizacao = c.DataAtualizacao,
-        Itens = c.Itens.Select(i => new EntregaItemDto
+        // Cancelado não consome saldo (a entrega não aconteceu de fato); os demais status (inclusive
+        // Divergência) contam, porque o item já saiu fisicamente pra pessoa nesse ponto.
+        var itensEntreguesAtivos = c.Entregas.Where(e => e.Status != EntregaStatus.Cancelado).SelectMany(e => e.Itens).ToList();
+
+        return new CampanhaEntregaDto
         {
-            Id = i.Id,
-            Descricao = i.Descricao,
-            Tamanho = i.Tamanho,
-            Quantidade = i.Quantidade,
-            Validade = i.Validade,
-        }).ToList(),
-    };
+            Id = c.Id,
+            Nome = c.Nome,
+            Descricao = c.Descricao,
+            Status = c.Status,
+            DataCriacao = c.DataCriacao,
+            DataAtualizacao = c.DataAtualizacao,
+            Itens = c.Itens.Select(i =>
+            {
+                var quantidadeEntregue = itensEntreguesAtivos
+                    .Where(ei => ei.Descricao == i.Descricao && ei.Tamanho == i.Tamanho)
+                    .Sum(ei => ei.Quantidade);
+
+                return new CampanhaEntregaItemDto
+                {
+                    Id = i.Id,
+                    Descricao = i.Descricao,
+                    Tamanho = i.Tamanho,
+                    Quantidade = i.Quantidade,
+                    Validade = i.Validade,
+                    QuantidadeDisponivel = i.QuantidadeDisponivel,
+                    QuantidadeEntregue = quantidadeEntregue,
+                    SaldoDisponivel = i.QuantidadeDisponivel.HasValue ? i.QuantidadeDisponivel.Value - quantidadeEntregue : null,
+                };
+            }).ToList(),
+        };
+    }
 
     private static EntregaDto ParaEntregaDto(Entrega e) => new()
     {
@@ -809,6 +828,8 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         UserAgentConfirmacao = e.UserAgentConfirmacao,
         TipoDivergencia = e.TipoDivergencia,
         ObservacaoDivergencia = e.ObservacaoDivergencia,
+        QuantidadeKits = e.QuantidadeKits,
+        Observacao = e.Observacao,
         Itens = e.Itens.Select(i => new EntregaItemDto
         {
             Id = i.Id,

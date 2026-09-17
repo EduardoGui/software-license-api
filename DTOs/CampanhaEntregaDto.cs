@@ -9,5 +9,5 @@ public class CampanhaEntregaDto
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
 
-    public List<EntregaItemDto> Itens { get; set; } = [];
+    public List<CampanhaEntregaItemDto> Itens { get; set; } = [];
 }
