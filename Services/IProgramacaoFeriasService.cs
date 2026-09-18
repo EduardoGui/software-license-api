@@ -4,6 +4,7 @@ namespace SoftwareLicense.Api.Services;
 
 public interface IProgramacaoFeriasService
 {
+    Task<List<ProgramacaoFeriasDto>> GetPendentesAprovacaoAsync();
     Task<List<ProgramacaoFeriasDto>> GetByPeriodoAsync(int periodoFeriasId);
     Task<ProgramacaoFeriasDto> GetByIdAsync(int id);
     Task<ProgramacaoFeriasDto> CreateAsync(int periodoFeriasId, CreateProgramacaoFeriasDto dto, int? usuarioResponsavelId);

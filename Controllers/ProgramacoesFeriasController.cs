@@ -18,6 +18,13 @@ public class ProgramacoesFeriasController : ControllerBase
         _programacaoFeriasService = programacaoFeriasService;
     }
 
+    [HttpGet("pendentes-aprovacao")]
+    public async Task<ActionResult<List<ProgramacaoFeriasDto>>> GetPendentesAprovacao()
+    {
+        var pendentes = await _programacaoFeriasService.GetPendentesAprovacaoAsync();
+        return Ok(pendentes);
+    }
+
     [HttpGet]
     [Route("/api/periodos-ferias/{periodoFeriasId:int}/programacoes")]
     public async Task<ActionResult<List<ProgramacaoFeriasDto>>> GetByPeriodo(int periodoFeriasId)

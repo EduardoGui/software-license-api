@@ -25,6 +25,17 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
         _logger = logger;
     }
 
+    public async Task<List<ProgramacaoFeriasDto>> GetPendentesAprovacaoAsync()
+    {
+        var hoje = Hoje();
+        var pendentes = await MontarConsultaBase()
+            .Where(p => p.Status == ProgramacaoFeriasStatus.Solicitada)
+            .OrderBy(p => p.DataSolicitacao)
+            .ToListAsync();
+
+        return pendentes.Select(p => ParaDto(p, hoje)).ToList();
+    }
+
     public async Task<List<ProgramacaoFeriasDto>> GetByPeriodoAsync(int periodoFeriasId)
     {
         var hoje = Hoje();

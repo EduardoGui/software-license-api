@@ -299,6 +299,24 @@ public class ProgramacaoFeriasServiceTests
     }
 
     [Fact]
+    public async Task GetPendentesAprovacaoAsync_DeveListarSoSolicitadas()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context);
+        var periodo = await CriarPeriodoComSaldoAsync(periodoService, usuario.Id);
+
+        var solicitada = await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 1, 11), 14), null);
+        await service.SolicitarAsync(solicitada.Id, null);
+        var rascunho = await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 2, 8), 5), null);
+
+        var pendentes = await service.GetPendentesAprovacaoAsync();
+
+        Assert.Contains(pendentes, p => p.Id == solicitada.Id);
+        Assert.DoesNotContain(pendentes, p => p.Id == rascunho.Id);
+    }
+
+    [Fact]
     public async Task CancelarAsync_DeveRejeitarForaDoPrazoDeAntecedencia()
     {
         var (service, periodoService, context) = CriarServicos();
