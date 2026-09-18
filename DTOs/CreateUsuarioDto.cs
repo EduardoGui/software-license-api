@@ -24,4 +24,6 @@ public class CreateUsuarioDto
     public string? Tipo { get; set; }
 
     public int? EmpresaPjId { get; set; }
+
+    public int? GestorImediatoId { get; set; }
 }

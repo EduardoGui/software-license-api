@@ -15,6 +15,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Setor> Setores => Set<Setor>();
     public DbSet<SetorAprovador> SetorAprovadores => Set<SetorAprovador>();
     public DbSet<UnidadeOrcamentaria> UnidadesOrcamentarias => Set<UnidadeOrcamentaria>();
+    public DbSet<Feriado> Feriados => Set<Feriado>();
+    public DbSet<PoliticaFerias> PoliticasFerias => Set<PoliticaFerias>();
     public DbSet<TipoDespesa> TiposDespesa => Set<TipoDespesa>();
     public DbSet<ReembolsoDespesa> ReembolsosDespesa => Set<ReembolsoDespesa>();
     public DbSet<ReembolsoDespesaItem> ReembolsoDespesaItens => Set<ReembolsoDespesaItem>();
@@ -94,6 +96,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(u => u.Email).IsUnique();
             entity.HasOne(u => u.Setor).WithMany().HasForeignKey(u => u.SetorId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(u => u.EmpresaPj).WithMany().HasForeignKey(u => u.EmpresaPjId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(u => u.GestorImediato).WithMany().HasForeignKey(u => u.GestorImediatoId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Setor>(entity =>
@@ -115,6 +118,20 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(u => u.Descricao).IsRequired().HasMaxLength(200);
             entity.HasIndex(u => u.Codigo).IsUnique();
             entity.HasOne(u => u.Setor).WithMany().HasForeignKey(u => u.SetorId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Feriado>(entity =>
+        {
+            entity.Property(f => f.Descricao).IsRequired().HasMaxLength(150);
+            entity.Property(f => f.Abrangencia).IsRequired().HasMaxLength(20);
+            entity.Property(f => f.Uf).HasMaxLength(2);
+            entity.Property(f => f.Municipio).HasMaxLength(150);
+            entity.HasIndex(f => f.Data);
+        });
+
+        modelBuilder.Entity<PoliticaFerias>(entity =>
+        {
+            entity.Property(p => p.TipoVinculo).HasMaxLength(20);
         });
 
         modelBuilder.Entity<TipoDespesa>(entity =>

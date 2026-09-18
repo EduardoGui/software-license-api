@@ -63,6 +63,41 @@ public class UsuarioServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_DeveRejeitarGestorImediatoInexistente()
+    {
+        var service = CriarService(out _);
+        var dto = new CreateUsuarioDto { Nome = "Ana", Email = "ana@empresa.com", DataInicio = DateOnly.FromDateTime(Agora.Date), GestorImediatoId = 999 };
+
+        await Assert.ThrowsAsync<NotFoundException>(() => service.CreateAsync(dto));
+    }
+
+    [Fact]
+    public async Task CreateAsync_DevePreencherGestorImediatoNome()
+    {
+        var service = CriarService(out _);
+        var gestor = await service.CreateAsync(new CreateUsuarioDto { Nome = "Gestora", Email = "gestora@empresa.com", DataInicio = DateOnly.FromDateTime(Agora.Date) });
+
+        var colaborador = await service.CreateAsync(new CreateUsuarioDto
+        {
+            Nome = "Ana", Email = "ana@empresa.com", DataInicio = DateOnly.FromDateTime(Agora.Date), GestorImediatoId = gestor.Id,
+        });
+
+        Assert.Equal(gestor.Id, colaborador.GestorImediatoId);
+        Assert.Equal("Gestora", colaborador.GestorImediatoNome);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DeveRejeitarUsuarioComoGestorDeSiMesmo()
+    {
+        var service = CriarService(out _);
+        var usuario = await service.CreateAsync(new CreateUsuarioDto { Nome = "Ana", Email = "ana@empresa.com", DataInicio = DateOnly.FromDateTime(Agora.Date) });
+
+        var dto = new UpdateUsuarioDto { Nome = usuario.Nome, Email = usuario.Email, DataInicio = usuario.DataInicio, GestorImediatoId = usuario.Id };
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.UpdateAsync(usuario.Id, dto));
+    }
+
+    [Fact]
     public async Task CreateAsync_DeveRejeitarDataFimAnteriorADataInicio()
     {
         var service = CriarService(out _);

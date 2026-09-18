@@ -20,6 +20,8 @@ public class Usuario
     public string? Tipo { get; set; }
     public int? EmpresaPjId { get; set; }
     public EmpresaPj? EmpresaPj { get; set; }
+    public int? GestorImediatoId { get; set; }
+    public Usuario? GestorImediato { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
 }

@@ -52,11 +52,13 @@ public class UsuarioService : IUsuarioService
         var emUsoPorUsuario = await ContarEmUsoPorUsuarioAsync(usuarios.Select(u => u.Id));
         var nomesSetores = await ObterNomesSetoresAsync(usuarios.Where(u => u.SetorId is not null).Select(u => u.SetorId!.Value));
         var nomesEmpresasPj = await ObterNomesEmpresasPjAsync(usuarios.Where(u => u.EmpresaPjId is not null).Select(u => u.EmpresaPjId!.Value));
+        var nomesGestores = await ObterNomesGestoresAsync(usuarios.Where(u => u.GestorImediatoId is not null).Select(u => u.GestorImediatoId!.Value));
         var dependentesPorUsuario = await BuscarDependentesPorUsuarioAsync(usuarios.Select(u => u.Id));
 
         var resultado = usuarios.Select(u => ParaDto(
             u, hoje, emUsoPorUsuario.GetValueOrDefault(u.Id), NomeSetorOuNulo(u.SetorId, nomesSetores),
-            NomeEmpresaPjOuNulo(u.EmpresaPjId, nomesEmpresasPj), dependentesPorUsuario.GetValueOrDefault(u.Id, [])));
+            NomeEmpresaPjOuNulo(u.EmpresaPjId, nomesEmpresasPj), NomeGestorOuNulo(u.GestorImediatoId, nomesGestores),
+            dependentesPorUsuario.GetValueOrDefault(u.Id, [])));
 
         if (!string.IsNullOrWhiteSpace(filtro.Status))
         {
@@ -71,7 +73,8 @@ public class UsuarioService : IUsuarioService
         var usuario = await BuscarOuFalhar(id);
         return ParaDto(
             usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId),
-            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await BuscarDependentesAsync(usuario.Id));
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await ObterNomeGestorAsync(usuario.GestorImediatoId),
+            await BuscarDependentesAsync(usuario.Id));
     }
 
     public async Task<UsuarioDto> CreateAsync(CreateUsuarioDto dto)
@@ -79,6 +82,7 @@ public class UsuarioService : IUsuarioService
         await ValidarDatas(dto.DataInicio, dto.DataFim);
         await ValidarEmailUnico(dto.Email, usuarioIdAtual: null);
         await ValidarTipoEEmpresaPj(dto.Tipo, dto.EmpresaPjId);
+        await ValidarGestorImediato(dto.GestorImediatoId, usuarioIdAtual: null);
 
         var emailNormalizado = dto.Email.Trim();
         if (await _userManager.FindByEmailAsync(emailNormalizado) is not null)
@@ -96,6 +100,7 @@ public class UsuarioService : IUsuarioService
             Observacao = dto.Observacao,
             Tipo = dto.Tipo,
             EmpresaPjId = dto.EmpresaPjId,
+            GestorImediatoId = dto.GestorImediatoId,
             DataCriacao = agora,
             DataAtualizacao = agora,
         };
@@ -137,7 +142,8 @@ public class UsuarioService : IUsuarioService
         }
 
         return ParaDto(
-            usuario, Hoje(), licencasEmUso: 0, setorNome: null, await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), dependentes: []);
+            usuario, Hoje(), licencasEmUso: 0, setorNome: null, await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId),
+            await ObterNomeGestorAsync(usuario.GestorImediatoId), dependentes: []);
     }
 
     public async Task ReenviarConviteAsync(int id)
@@ -176,6 +182,7 @@ public class UsuarioService : IUsuarioService
         await ValidarDatas(dto.DataInicio, dto.DataFim);
         await ValidarEmailUnico(dto.Email, usuarioIdAtual: id);
         await ValidarTipoEEmpresaPj(dto.Tipo, dto.EmpresaPjId);
+        await ValidarGestorImediato(dto.GestorImediatoId, usuarioIdAtual: id);
 
         usuario.Nome = dto.Nome.Trim();
         usuario.Email = dto.Email.Trim();
@@ -184,6 +191,7 @@ public class UsuarioService : IUsuarioService
         usuario.Observacao = dto.Observacao;
         usuario.Tipo = dto.Tipo;
         usuario.EmpresaPjId = dto.EmpresaPjId;
+        usuario.GestorImediatoId = dto.GestorImediatoId;
         usuario.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
 
         await _context.SaveChangesAsync();
@@ -192,7 +200,8 @@ public class UsuarioService : IUsuarioService
 
         return ParaDto(
             usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId),
-            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await BuscarDependentesAsync(usuario.Id));
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await ObterNomeGestorAsync(usuario.GestorImediatoId),
+            await BuscarDependentesAsync(usuario.Id));
     }
 
     public async Task<UsuarioDto> DesativarAsync(int id, DesativarUsuarioDto dto)
@@ -240,7 +249,8 @@ public class UsuarioService : IUsuarioService
 
         return ParaDto(
             usuario, Hoje(), licencasEmUso: 0, await ObterNomeSetorAsync(usuario.SetorId),
-            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await BuscarDependentesAsync(usuario.Id));
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await ObterNomeGestorAsync(usuario.GestorImediatoId),
+            await BuscarDependentesAsync(usuario.Id));
     }
 
     public async Task<UsuarioDto> AtualizarPerfilAsync(int id, AtualizarPerfilDto dto)
@@ -267,7 +277,8 @@ public class UsuarioService : IUsuarioService
 
         return ParaDto(
             usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId),
-            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await BuscarDependentesAsync(usuario.Id));
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await ObterNomeGestorAsync(usuario.GestorImediatoId),
+            await BuscarDependentesAsync(usuario.Id));
     }
 
     public async Task<UsuarioDto> AdicionarDependenteAsync(int usuarioId, CreateDependenteDto dto)
@@ -289,7 +300,8 @@ public class UsuarioService : IUsuarioService
 
         return ParaDto(
             usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId),
-            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await BuscarDependentesAsync(usuario.Id));
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await ObterNomeGestorAsync(usuario.GestorImediatoId),
+            await BuscarDependentesAsync(usuario.Id));
     }
 
     public async Task<UsuarioDto> AtualizarDependenteAsync(int usuarioId, int dependenteId, UpdateDependenteDto dto)
@@ -307,7 +319,8 @@ public class UsuarioService : IUsuarioService
 
         return ParaDto(
             usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId),
-            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await BuscarDependentesAsync(usuario.Id));
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await ObterNomeGestorAsync(usuario.GestorImediatoId),
+            await BuscarDependentesAsync(usuario.Id));
     }
 
     public async Task<UsuarioDto> RemoverDependenteAsync(int usuarioId, int dependenteId)
@@ -322,7 +335,8 @@ public class UsuarioService : IUsuarioService
 
         return ParaDto(
             usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId),
-            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await BuscarDependentesAsync(usuario.Id));
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await ObterNomeGestorAsync(usuario.GestorImediatoId),
+            await BuscarDependentesAsync(usuario.Id));
     }
 
     private async Task<Dependente> BuscarDependenteOuFalhar(int usuarioId, int dependenteId)
@@ -374,6 +388,24 @@ public class UsuarioService : IUsuarioService
         else if (empresaPjId is not null)
         {
             throw new BusinessRuleException("Empresa PJ só pode ser informada para usuários do tipo PJ.");
+        }
+    }
+
+    private async Task ValidarGestorImediato(int? gestorImediatoId, int? usuarioIdAtual)
+    {
+        if (gestorImediatoId is null)
+        {
+            return;
+        }
+
+        if (gestorImediatoId == usuarioIdAtual)
+        {
+            throw new BusinessRuleException("Um usuário não pode ser gestor imediato de si mesmo.");
+        }
+
+        if (await _context.Usuarios.FindAsync(gestorImediatoId) is null)
+        {
+            throw new NotFoundException($"Usuário {gestorImediatoId} (gestor imediato) não encontrado.");
         }
     }
 
@@ -448,8 +480,22 @@ public class UsuarioService : IUsuarioService
     private static string? NomeEmpresaPjOuNulo(int? empresaPjId, Dictionary<int, string> nomesEmpresasPj) =>
         empresaPjId is not null && nomesEmpresasPj.TryGetValue(empresaPjId.Value, out var nome) ? nome : null;
 
+    private Task<string?> ObterNomeGestorAsync(int? gestorImediatoId) =>
+        gestorImediatoId is null
+            ? Task.FromResult<string?>(null)
+            : _context.Usuarios.Where(u => u.Id == gestorImediatoId).Select(u => u.Nome).FirstOrDefaultAsync();
+
+    private async Task<Dictionary<int, string>> ObterNomesGestoresAsync(IEnumerable<int> gestorImediatoIds) =>
+        await _context.Usuarios
+            .Where(u => gestorImediatoIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.Nome);
+
+    private static string? NomeGestorOuNulo(int? gestorImediatoId, Dictionary<int, string> nomesGestores) =>
+        gestorImediatoId is not null && nomesGestores.TryGetValue(gestorImediatoId.Value, out var nome) ? nome : null;
+
     private static UsuarioDto ParaDto(
-        Usuario u, DateOnly hoje, int licencasEmUso, string? setorNome, string? empresaPjNome, List<DependenteDto> dependentes) => new()
+        Usuario u, DateOnly hoje, int licencasEmUso, string? setorNome, string? empresaPjNome, string? gestorImediatoNome,
+        List<DependenteDto> dependentes) => new()
     {
         Id = u.Id,
         Nome = u.Nome,
@@ -470,6 +516,8 @@ public class UsuarioService : IUsuarioService
         Tipo = u.Tipo,
         EmpresaPjId = u.EmpresaPjId,
         EmpresaPjNome = empresaPjNome,
+        GestorImediatoId = u.GestorImediatoId,
+        GestorImediatoNome = gestorImediatoNome,
         Dependentes = dependentes,
         DataCriacao = u.DataCriacao,
         DataAtualizacao = u.DataAtualizacao,
