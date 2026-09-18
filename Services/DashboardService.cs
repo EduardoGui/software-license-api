@@ -13,17 +13,20 @@ public class DashboardService : IDashboardService
     private readonly TimeProvider _timeProvider;
     private readonly IRelatorioMensalLocacaoService _relatorioMensalLocacaoService;
     private readonly ITarefaOcorrenciaService _tarefaOcorrenciaService;
+    private readonly IFeriasConsolidadoService _feriasConsolidadoService;
 
     public DashboardService(
         AppDbContext context,
         TimeProvider timeProvider,
         IRelatorioMensalLocacaoService relatorioMensalLocacaoService,
-        ITarefaOcorrenciaService tarefaOcorrenciaService)
+        ITarefaOcorrenciaService tarefaOcorrenciaService,
+        IFeriasConsolidadoService feriasConsolidadoService)
     {
         _context = context;
         _timeProvider = timeProvider;
         _relatorioMensalLocacaoService = relatorioMensalLocacaoService;
         _tarefaOcorrenciaService = tarefaOcorrenciaService;
+        _feriasConsolidadoService = feriasConsolidadoService;
     }
 
     public async Task<DashboardDto> ObterAsync()
@@ -102,9 +105,10 @@ public class DashboardService : IDashboardService
             .ToList();
 
         var alertasMedicao = await ObterAlertasMedicaoAsync(hoje);
+        var alertasFerias = await _feriasConsolidadoService.ObterAlertasAsync();
         var tarefasPendentes = (await _tarefaOcorrenciaService.ObterAgendaAsync()).Take(10).ToList();
 
-        var pendencias = MontarPendencias(tarefasPendentes, proximosVencimentos, proximosVencimentosContratos, alertasMedicao);
+        var pendencias = MontarPendencias(tarefasPendentes, proximosVencimentos, proximosVencimentosContratos, alertasMedicao, alertasFerias);
 
         return new DashboardDto
         {
@@ -124,7 +128,8 @@ public class DashboardService : IDashboardService
     // precisa da minha atenção", só que num lugar só, com a mesma aparência de tabela.
     private static List<PendenciaDto> MontarPendencias(
         List<TarefaOcorrenciaDto> tarefasPendentes, List<VencimentoDto> proximosVencimentos,
-        List<VencimentoContratoDto> proximosVencimentosContratos, List<AlertaMedicaoDto> alertasMedicao)
+        List<VencimentoContratoDto> proximosVencimentosContratos, List<AlertaMedicaoDto> alertasMedicao,
+        List<PendenciaDto> alertasFerias)
     {
         var pendencias = new List<PendenciaDto>();
 
@@ -167,6 +172,8 @@ public class DashboardService : IDashboardService
             DiasParaVencer = a.DiasParaVencer,
             ContratoId = a.ContratoId,
         }));
+
+        pendencias.AddRange(alertasFerias);
 
         return pendencias.OrderBy(p => p.DiasParaVencer).Take(15).ToList();
     }

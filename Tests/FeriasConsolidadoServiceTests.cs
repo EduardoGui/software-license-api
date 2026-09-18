@@ -226,4 +226,91 @@ public class FeriasConsolidadoServiceTests
         var linha = Assert.Single(calendario);
         Assert.Equal("Colaborador A", linha.UsuarioNome);
     }
+
+    [Fact]
+    public async Task ObterAlertasAsync_DeveAlertarSaldoNegativo()
+    {
+        var (service, periodoService, _, _, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context, new DateOnly(2026, 1, 1));
+        var periodo = await periodoService.GerarProximoPeriodoAsync(usuario.Id, null);
+        await periodoService.RegistrarAjusteManualAsync(periodo.Id, new CreateAjusteManualSaldoFeriasDto { Quantidade = -40, Observacao = "Força saldo negativo para teste" }, null);
+
+        var alertas = await service.ObterAlertasAsync();
+
+        var alerta = Assert.Single(alertas);
+        Assert.Equal("Férias", alerta.Origem);
+        Assert.Equal(periodo.Id, alerta.PeriodoFeriasId);
+        Assert.Contains("negativo", alerta.Observacao);
+    }
+
+    [Fact]
+    public async Task ObterAlertasAsync_DeveAlertarConcessivoProximoDoVencimento()
+    {
+        var (service, periodoService, _, _, context) = CriarServicos();
+        CriarPoliticaPj(context, diasAntecedenciaMarcacaoCompulsoria: 30);
+        // InicioAquisitivo 01/07/2025 -> FimConcessivo 30/06/2027, a 15 dias de "hoje" (15/06/2027).
+        var usuario = CriarUsuarioPj(context, new DateOnly(2025, 7, 1));
+        var periodo = await periodoService.GerarProximoPeriodoAsync(usuario.Id, null);
+
+        var alertas = await service.ObterAlertasAsync();
+
+        var alerta = Assert.Single(alertas);
+        Assert.Equal(periodo.Id, alerta.PeriodoFeriasId);
+        Assert.Contains("vencer", alerta.Observacao);
+        Assert.Equal(15, alerta.DiasParaVencer);
+    }
+
+    [Fact]
+    public async Task ObterAlertasAsync_DeveAlertarSaldoSemProgramacaoQuandoConcessivoAindaLonge()
+    {
+        var (service, periodoService, _, _, context) = CriarServicos();
+        CriarPoliticaPj(context, diasAntecedenciaMarcacaoCompulsoria: 30);
+        // FimConcessivo 31/12/2027, bem longe dos 30 dias de antecedência - não é "vencendo".
+        var usuario = CriarUsuarioPj(context, new DateOnly(2026, 1, 1));
+        var periodo = await periodoService.GerarProximoPeriodoAsync(usuario.Id, null);
+
+        var alertas = await service.ObterAlertasAsync();
+
+        var alerta = Assert.Single(alertas);
+        Assert.Equal(periodo.Id, alerta.PeriodoFeriasId);
+        Assert.Contains("nenhuma programação", alerta.Observacao);
+    }
+
+    [Fact]
+    public async Task ObterAlertasAsync_NaoDeveAlertarSaldoSemProgramacaoQuandoJaExisteUmaAtiva()
+    {
+        var (service, periodoService, programacaoService, _, context) = CriarServicos();
+        CriarPoliticaPj(context, diasAntecedenciaMarcacaoCompulsoria: 30);
+        var usuario = CriarUsuarioPj(context, new DateOnly(2026, 1, 1));
+        var periodo = await periodoService.GerarProximoPeriodoAsync(usuario.Id, null);
+        await programacaoService.CreateAsync(periodo.Id, new CreateProgramacaoFeriasDto { DataInicio = new DateOnly(2027, 8, 2), QuantidadeDias = 5 }, null);
+
+        var alertas = await service.ObterAlertasAsync();
+
+        Assert.Empty(alertas);
+    }
+
+    [Fact]
+    public async Task ObterAlertasAsync_DeveAlertarConflitoDeSetorQuandoFeriasAprovadasSeSobrepoem()
+    {
+        var (service, periodoService, programacaoService, _, context) = CriarServicos();
+        CriarPoliticaPj(context, diasAntecedenciaMarcacaoCompulsoria: 30);
+        var setor = CriarSetor(context, "Financeiro");
+        var usuarioA = CriarUsuarioPj(context, new DateOnly(2026, 1, 1), "Colaborador A", setor.Id);
+        var usuarioB = CriarUsuarioPj(context, new DateOnly(2026, 1, 1), "Colaborador B", setor.Id);
+        var periodoA = await periodoService.GerarProximoPeriodoAsync(usuarioA.Id, null);
+        var periodoB = await periodoService.GerarProximoPeriodoAsync(usuarioB.Id, null);
+
+        var progA = await programacaoService.CreateAsync(periodoA.Id, new CreateProgramacaoFeriasDto { DataInicio = new DateOnly(2027, 8, 2), QuantidadeDias = 10 }, null);
+        await programacaoService.SolicitarAsync(progA.Id, null);
+        await programacaoService.AprovarAsync(progA.Id, null);
+        var progB = await programacaoService.CreateAsync(periodoB.Id, new CreateProgramacaoFeriasDto { DataInicio = new DateOnly(2027, 8, 9), QuantidadeDias = 5 }, null);
+        await programacaoService.SolicitarAsync(progB.Id, null);
+        await programacaoService.AprovarAsync(progB.Id, null);
+
+        var alertas = await service.ObterAlertasAsync();
+
+        Assert.Contains(alertas, a => a.Observacao != null && a.Observacao.Contains("mesmo setor"));
+    }
 }

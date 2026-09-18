@@ -22,7 +22,11 @@ public class DashboardServiceTests
         var timeProvider = new FakeTimeProvider(Agora);
         var relatorioMensalLocacaoService = new RelatorioMensalLocacaoService(context);
         var tarefaOcorrenciaService = new TarefaOcorrenciaService(context, timeProvider, NullLogger<TarefaOcorrenciaService>.Instance);
-        var service = new DashboardService(context, timeProvider, relatorioMensalLocacaoService, tarefaOcorrenciaService);
+        var auditoriaService = new AuditoriaService(context, timeProvider);
+        var periodoFeriasService = new PeriodoFeriasService(context, timeProvider, auditoriaService, NullLogger<PeriodoFeriasService>.Instance);
+        var programacaoFeriasService = new ProgramacaoFeriasService(context, timeProvider, auditoriaService, periodoFeriasService, NullLogger<ProgramacaoFeriasService>.Instance);
+        var feriasConsolidadoService = new FeriasConsolidadoService(context, timeProvider, periodoFeriasService, programacaoFeriasService);
+        var service = new DashboardService(context, timeProvider, relatorioMensalLocacaoService, tarefaOcorrenciaService, feriasConsolidadoService);
         return (service, context);
     }
 

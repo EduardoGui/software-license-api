@@ -151,5 +151,121 @@ public class FeriasConsolidadoService : IFeriasConsolidadoService
             .ToList();
     }
 
+    // Estrutura de alertas da Fase 5 - reaproveita a mesma lista de "Pendências" já usada no
+    // Dashboard geral (Tarefa/Licença/Equipamento/Medição), em vez de criar uma tela de alertas
+    // nova do zero (mesma orientação do plano do módulo). 4 tipos, todos com Origem="Férias":
+    // saldo negativo, concessivo perto de vencer, saldo sem nenhuma programação criada ainda, e
+    // conflito de setor (2+ colaboradores do mesmo setor com férias aprovadas sobrepostas).
+    public async Task<List<PendenciaDto>> ObterAlertasAsync()
+    {
+        var hoje = Hoje();
+        var alertas = new List<PendenciaDto>();
+
+        var usuariosPjAtivos = (await _context.Usuarios.Where(u => u.Tipo == UsuarioTipo.Pj).ToListAsync())
+            .Where(u => UsuarioStatus.Calcular(u, hoje) == UsuarioStatus.Ativo)
+            .ToList();
+
+        var periodoAtualPorUsuario = (await _periodoFeriasService.GetAllAsync(new PeriodoFeriasFiltroDto()))
+            .GroupBy(p => p.UsuarioId)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var politica = await _context.PoliticasFerias.FirstOrDefaultAsync(p => p.TipoVinculo == UsuarioTipo.Pj && p.Ativa);
+
+        var programacoesAtivasPorUsuario = (await _context.ProgramacoesFerias
+                .Include(p => p.PeriodoFerias)
+                .Where(p => p.Status != ProgramacaoFeriasStatus.Cancelada && p.Status != ProgramacaoFeriasStatus.Reprovada)
+                .ToListAsync())
+            .ToLookup(p => p.PeriodoFerias.UsuarioId);
+
+        foreach (var usuario in usuariosPjAtivos)
+        {
+            if (!periodoAtualPorUsuario.TryGetValue(usuario.Id, out var periodo))
+            {
+                continue;
+            }
+
+            if (periodo.SaldoDisponivel < 0)
+            {
+                alertas.Add(new PendenciaDto
+                {
+                    Origem = "Férias",
+                    Titulo = usuario.Nome,
+                    Observacao = $"Saldo negativo ({periodo.SaldoDisponivel} dia(s)) - recesso ou ajuste levou o período abaixo de zero.",
+                    Data = hoje,
+                    DiasParaVencer = -1,
+                    PeriodoFeriasId = periodo.Id,
+                });
+            }
+
+            if (politica is null || periodo.SaldoDisponivel <= 0)
+            {
+                continue;
+            }
+
+            var diasParaVencer = periodo.FimConcessivo.DayNumber - hoje.DayNumber;
+            if (diasParaVencer <= politica.DiasAntecedenciaMarcacaoCompulsoria)
+            {
+                alertas.Add(new PendenciaDto
+                {
+                    Origem = "Férias",
+                    Titulo = usuario.Nome,
+                    Observacao = $"Concessivo perto de vencer com {periodo.SaldoDisponivel} dia(s) ainda não programado(s).",
+                    Data = periodo.FimConcessivo,
+                    DiasParaVencer = diasParaVencer,
+                    PeriodoFeriasId = periodo.Id,
+                });
+            }
+            else if (!programacoesAtivasPorUsuario[usuario.Id].Any())
+            {
+                alertas.Add(new PendenciaDto
+                {
+                    Origem = "Férias",
+                    Titulo = usuario.Nome,
+                    Observacao = $"Tem {periodo.SaldoDisponivel} dia(s) de saldo disponível e nenhuma programação de férias criada ainda.",
+                    Data = periodo.FimConcessivo,
+                    DiasParaVencer = diasParaVencer,
+                    PeriodoFeriasId = periodo.Id,
+                });
+            }
+        }
+
+        var aprovadasPorSetor = (await _context.ProgramacoesFerias
+                .Include(p => p.PeriodoFerias).ThenInclude(pf => pf.Usuario)
+                .Where(p => p.Status == ProgramacaoFeriasStatus.Aprovada)
+                .ToListAsync())
+            .Where(p => p.PeriodoFerias.Usuario.SetorId is not null)
+            .GroupBy(p => p.PeriodoFerias.Usuario.SetorId!.Value);
+
+        foreach (var grupo in aprovadasPorSetor)
+        {
+            var programacoes = grupo.ToList();
+            for (var i = 0; i < programacoes.Count; i++)
+            {
+                for (var j = i + 1; j < programacoes.Count; j++)
+                {
+                    var a = programacoes[i];
+                    var b = programacoes[j];
+                    if (a.PeriodoFerias.UsuarioId == b.PeriodoFerias.UsuarioId || a.DataInicio > b.DataFim || b.DataInicio > a.DataFim)
+                    {
+                        continue;
+                    }
+
+                    var inicioConflito = a.DataInicio > b.DataInicio ? a.DataInicio : b.DataInicio;
+                    alertas.Add(new PendenciaDto
+                    {
+                        Origem = "Férias",
+                        Titulo = $"{a.PeriodoFerias.Usuario.Nome} e {b.PeriodoFerias.Usuario.Nome}",
+                        Observacao = "Férias aprovadas se sobrepõem no mesmo setor.",
+                        Data = inicioConflito,
+                        DiasParaVencer = inicioConflito.DayNumber - hoje.DayNumber,
+                        PeriodoFeriasId = a.PeriodoFeriasId,
+                    });
+                }
+            }
+        }
+
+        return alertas;
+    }
+
     private DateOnly Hoje() => DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
 }

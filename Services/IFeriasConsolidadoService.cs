@@ -6,4 +6,5 @@ public interface IFeriasConsolidadoService
 {
     Task<FeriasDashboardDto> ObterDashboardAsync();
     Task<List<FeriasCalendarioUsuarioDto>> ObterCalendarioAsync(FeriasCalendarioFiltroDto filtro);
+    Task<List<PendenciaDto>> ObterAlertasAsync();
 }
