@@ -48,6 +48,16 @@ public class UsuarioService : IUsuarioService
             query = query.Where(u => EF.Functions.ILike(u.Email, $"%{filtro.Email}%"));
         }
 
+        if (!string.IsNullOrWhiteSpace(filtro.Tipo))
+        {
+            query = query.Where(u => u.Tipo == filtro.Tipo);
+        }
+
+        if (filtro.SetorId is not null)
+        {
+            query = query.Where(u => u.SetorId == filtro.SetorId);
+        }
+
         var usuarios = await query.OrderBy(u => u.Nome).ToListAsync();
         var emUsoPorUsuario = await ContarEmUsoPorUsuarioAsync(usuarios.Select(u => u.Id));
         var nomesSetores = await ObterNomesSetoresAsync(usuarios.Where(u => u.SetorId is not null).Select(u => u.SetorId!.Value));

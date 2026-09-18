@@ -20,6 +20,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<PeriodoFerias> PeriodosFerias => Set<PeriodoFerias>();
     public DbSet<MovimentacaoSaldoFerias> MovimentacoesSaldoFerias => Set<MovimentacaoSaldoFerias>();
     public DbSet<ProgramacaoFerias> ProgramacoesFerias => Set<ProgramacaoFerias>();
+    public DbSet<RecessoCorporativo> RecessosCorporativos => Set<RecessoCorporativo>();
+    public DbSet<RecessoColaborador> RecessosColaborador => Set<RecessoColaborador>();
     public DbSet<TipoDespesa> TiposDespesa => Set<TipoDespesa>();
     public DbSet<ReembolsoDespesa> ReembolsosDespesa => Set<ReembolsoDespesa>();
     public DbSet<ReembolsoDespesaItem> ReembolsoDespesaItens => Set<ReembolsoDespesaItem>();
@@ -149,9 +151,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(m => m.Observacao).HasMaxLength(1000);
             entity.HasIndex(m => m.PeriodoFeriasId);
             entity.HasIndex(m => m.ProgramacaoFeriasId);
+            entity.HasIndex(m => m.RecessoColaboradorId);
             entity.HasOne(m => m.PeriodoFerias).WithMany(p => p.Movimentacoes).HasForeignKey(m => m.PeriodoFeriasId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(m => m.UsuarioResponsavel).WithMany().HasForeignKey(m => m.UsuarioResponsavelId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(m => m.ProgramacaoFerias).WithMany().HasForeignKey(m => m.ProgramacaoFeriasId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(m => m.RecessoColaborador).WithMany().HasForeignKey(m => m.RecessoColaboradorId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<ProgramacaoFerias>(entity =>
@@ -163,6 +167,22 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasOne(p => p.PeriodoFerias).WithMany(pf => pf.ProgramacoesFerias).HasForeignKey(p => p.PeriodoFeriasId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(p => p.Solicitante).WithMany().HasForeignKey(p => p.SolicitanteId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(p => p.Aprovador).WithMany().HasForeignKey(p => p.AprovadorId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<RecessoCorporativo>(entity =>
+        {
+            entity.Property(r => r.Nome).IsRequired().HasMaxLength(200);
+            entity.Property(r => r.Status).IsRequired().HasMaxLength(20);
+        });
+
+        modelBuilder.Entity<RecessoColaborador>(entity =>
+        {
+            entity.Property(c => c.Situacao).IsRequired().HasMaxLength(20);
+            entity.HasIndex(c => c.RecessoCorporativoId);
+            entity.HasIndex(c => c.UsuarioId);
+            entity.HasOne(c => c.RecessoCorporativo).WithMany(r => r.Colaboradores).HasForeignKey(c => c.RecessoCorporativoId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(c => c.Usuario).WithMany().HasForeignKey(c => c.UsuarioId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(c => c.PeriodoFerias).WithMany().HasForeignKey(c => c.PeriodoFeriasId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<TipoDespesa>(entity =>

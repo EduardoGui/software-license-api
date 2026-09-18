@@ -7,4 +7,5 @@ public static class LogAuditoriaEntidade
     public const string Entrega = "Entrega";
     public const string PeriodoFerias = "PeriodoFerias";
     public const string ProgramacaoFerias = "ProgramacaoFerias";
+    public const string RecessoCorporativo = "RecessoCorporativo";
 }
