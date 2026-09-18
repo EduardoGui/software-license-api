@@ -14,4 +14,5 @@ public class PeriodoFerias
     public DateTime DataAtualizacao { get; set; }
 
     public List<MovimentacaoSaldoFerias> Movimentacoes { get; set; } = [];
+    public List<ProgramacaoFerias> ProgramacoesFerias { get; set; } = [];
 }

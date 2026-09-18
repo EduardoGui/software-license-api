@@ -15,8 +15,9 @@ public class PeriodoFeriasDto
     // com a Projeção, que é só estimativa proporcional enquanto o aquisitivo está em curso.
     public int DireitoAdquirido { get; set; }
     public decimal ProjecaoProporcional { get; set; }
-    // Comprometido/Consumido dependem de ProgramacaoFerias (Fase 2) - sempre 0 por enquanto.
+    // Comprometido: soma de dias de ProgramacaoFerias Solicitada, ou Aprovada com início futuro.
     public int Comprometido { get; set; }
+    // Consumido: soma de dias de ProgramacaoFerias Aprovada com início já passado (em gozo ou concluída).
     public int Consumido { get; set; }
     public int SaldoDisponivel { get; set; }
     public bool AquisicaoMaterializada { get; set; }

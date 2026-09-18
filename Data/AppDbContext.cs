@@ -19,6 +19,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<PoliticaFerias> PoliticasFerias => Set<PoliticaFerias>();
     public DbSet<PeriodoFerias> PeriodosFerias => Set<PeriodoFerias>();
     public DbSet<MovimentacaoSaldoFerias> MovimentacoesSaldoFerias => Set<MovimentacaoSaldoFerias>();
+    public DbSet<ProgramacaoFerias> ProgramacoesFerias => Set<ProgramacaoFerias>();
     public DbSet<TipoDespesa> TiposDespesa => Set<TipoDespesa>();
     public DbSet<ReembolsoDespesa> ReembolsosDespesa => Set<ReembolsoDespesa>();
     public DbSet<ReembolsoDespesaItem> ReembolsoDespesaItens => Set<ReembolsoDespesaItem>();
@@ -147,8 +148,21 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(m => m.Tipo).IsRequired().HasMaxLength(30);
             entity.Property(m => m.Observacao).HasMaxLength(1000);
             entity.HasIndex(m => m.PeriodoFeriasId);
+            entity.HasIndex(m => m.ProgramacaoFeriasId);
             entity.HasOne(m => m.PeriodoFerias).WithMany(p => p.Movimentacoes).HasForeignKey(m => m.PeriodoFeriasId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(m => m.UsuarioResponsavel).WithMany().HasForeignKey(m => m.UsuarioResponsavelId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(m => m.ProgramacaoFerias).WithMany().HasForeignKey(m => m.ProgramacaoFeriasId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ProgramacaoFerias>(entity =>
+        {
+            entity.Property(p => p.Status).IsRequired().HasMaxLength(20);
+            entity.Property(p => p.ObservacaoAprovador).HasMaxLength(1000);
+            entity.Property(p => p.Observacao).HasMaxLength(1000);
+            entity.HasIndex(p => p.PeriodoFeriasId);
+            entity.HasOne(p => p.PeriodoFerias).WithMany(pf => pf.ProgramacoesFerias).HasForeignKey(p => p.PeriodoFeriasId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(p => p.Solicitante).WithMany().HasForeignKey(p => p.SolicitanteId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(p => p.Aprovador).WithMany().HasForeignKey(p => p.AprovadorId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<TipoDespesa>(entity =>

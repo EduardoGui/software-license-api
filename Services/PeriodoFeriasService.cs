@@ -202,7 +202,11 @@ public class PeriodoFeriasService : IPeriodoFeriasService
     }
 
     private IQueryable<PeriodoFerias> MontarConsultaBase() =>
-        _context.PeriodosFerias.Include(p => p.Usuario).Include(p => p.Movimentacoes).AsQueryable();
+        _context.PeriodosFerias
+            .Include(p => p.Usuario)
+            .Include(p => p.Movimentacoes).ThenInclude(m => m.ProgramacaoFerias)
+            .Include(p => p.ProgramacoesFerias)
+            .AsQueryable();
 
     private async Task<PeriodoFerias> BuscarOuFalhar(int id)
     {
@@ -228,11 +232,24 @@ public class PeriodoFeriasService : IPeriodoFeriasService
             ? p.DiasDireito
             : Math.Round(p.DiasDireito * (decimal)diasDecorridos / totalDiasAquisitivo, 1);
 
-        var somaAjustes = p.Movimentacoes.Where(m => m.Tipo != MovimentacaoSaldoFeriasTipo.Aquisicao).Sum(m => m.Quantidade);
+        // Cancelar/reprovar uma ProgramacaoFerias não gera lançamento de reversão - a soma do saldo
+        // simplesmente ignora movimentações cuja ProgramacaoFerias vinculada não está mais ativa
+        // (mesmo padrão de Entrega.Status != Cancelado em CampanhaEntregaItem.SaldoDisponivel).
+        var somaMovimentacoes = p.Movimentacoes
+            .Where(m => m.Tipo != MovimentacaoSaldoFeriasTipo.Aquisicao)
+            .Where(m => m.ProgramacaoFerias is null || (m.ProgramacaoFerias.Status != ProgramacaoFeriasStatus.Cancelada && m.ProgramacaoFerias.Status != ProgramacaoFeriasStatus.Reprovada))
+            .Sum(m => m.Quantidade);
         var aquisicaoMaterializada = p.Movimentacoes.Any(m => m.Tipo == MovimentacaoSaldoFeriasTipo.Aquisicao);
 
-        const int comprometido = 0; // Fase 2 (ProgramacaoFerias)
-        const int consumido = 0; // Fase 2 (ProgramacaoFerias)
+        var programacoesAtivas = p.ProgramacoesFerias
+            .Where(pf => pf.Status != ProgramacaoFeriasStatus.Cancelada && pf.Status != ProgramacaoFeriasStatus.Reprovada && pf.Status != ProgramacaoFeriasStatus.Rascunho)
+            .ToList();
+        var comprometido = programacoesAtivas
+            .Where(pf => pf.Status == ProgramacaoFeriasStatus.Solicitada || (pf.Status == ProgramacaoFeriasStatus.Aprovada && pf.DataInicio > hoje))
+            .Sum(pf => pf.QuantidadeDias);
+        var consumido = programacoesAtivas
+            .Where(pf => pf.Status == ProgramacaoFeriasStatus.Aprovada && pf.DataInicio <= hoje)
+            .Sum(pf => pf.QuantidadeDias);
 
         return new PeriodoFeriasDto
         {
@@ -249,7 +266,7 @@ public class PeriodoFeriasService : IPeriodoFeriasService
             ProjecaoProporcional = projecao,
             Comprometido = comprometido,
             Consumido = consumido,
-            SaldoDisponivel = direitoAdquirido - comprometido - consumido + somaAjustes,
+            SaldoDisponivel = direitoAdquirido + somaMovimentacoes,
             AquisicaoMaterializada = aquisicaoMaterializada,
             DataCriacao = p.DataCriacao,
             DataAtualizacao = p.DataAtualizacao,
