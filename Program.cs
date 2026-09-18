@@ -117,6 +117,7 @@ builder.Services.AddScoped<ISetorService, SetorService>();
 builder.Services.AddScoped<IUnidadeOrcamentariaService, UnidadeOrcamentariaService>();
 builder.Services.AddScoped<IFeriadoService, FeriadoService>();
 builder.Services.AddScoped<IPoliticaFeriasService, PoliticaFeriasService>();
+builder.Services.AddScoped<IPeriodoFeriasService, PeriodoFeriasService>();
 builder.Services.AddScoped<ITipoDespesaService, TipoDespesaService>();
 builder.Services.AddScoped<ILocalService, LocalService>();
 builder.Services.AddScoped<IReembolsoDespesaService, ReembolsoDespesaService>();

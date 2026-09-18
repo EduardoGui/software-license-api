@@ -17,6 +17,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<UnidadeOrcamentaria> UnidadesOrcamentarias => Set<UnidadeOrcamentaria>();
     public DbSet<Feriado> Feriados => Set<Feriado>();
     public DbSet<PoliticaFerias> PoliticasFerias => Set<PoliticaFerias>();
+    public DbSet<PeriodoFerias> PeriodosFerias => Set<PeriodoFerias>();
+    public DbSet<MovimentacaoSaldoFerias> MovimentacoesSaldoFerias => Set<MovimentacaoSaldoFerias>();
     public DbSet<TipoDespesa> TiposDespesa => Set<TipoDespesa>();
     public DbSet<ReembolsoDespesa> ReembolsosDespesa => Set<ReembolsoDespesa>();
     public DbSet<ReembolsoDespesaItem> ReembolsoDespesaItens => Set<ReembolsoDespesaItem>();
@@ -132,6 +134,21 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<PoliticaFerias>(entity =>
         {
             entity.Property(p => p.TipoVinculo).HasMaxLength(20);
+        });
+
+        modelBuilder.Entity<PeriodoFerias>(entity =>
+        {
+            entity.HasIndex(p => p.UsuarioId);
+            entity.HasOne(p => p.Usuario).WithMany().HasForeignKey(p => p.UsuarioId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<MovimentacaoSaldoFerias>(entity =>
+        {
+            entity.Property(m => m.Tipo).IsRequired().HasMaxLength(30);
+            entity.Property(m => m.Observacao).HasMaxLength(1000);
+            entity.HasIndex(m => m.PeriodoFeriasId);
+            entity.HasOne(m => m.PeriodoFerias).WithMany(p => p.Movimentacoes).HasForeignKey(m => m.PeriodoFeriasId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(m => m.UsuarioResponsavel).WithMany().HasForeignKey(m => m.UsuarioResponsavelId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<TipoDespesa>(entity =>
