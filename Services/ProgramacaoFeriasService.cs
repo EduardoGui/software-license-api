@@ -112,18 +112,102 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
             throw new NotFoundException($"Programação de Férias {id} não encontrada.");
         }
 
-        if (programacao.Status != ProgramacaoFeriasStatus.Rascunho)
+        var podeEditar = programacao.Status == ProgramacaoFeriasStatus.Rascunho || programacao.Status == ProgramacaoFeriasStatus.Aprovada;
+        if (!podeEditar)
         {
-            throw new BusinessRuleException("Só é possível editar uma programação que esteja em rascunho.");
+            throw new BusinessRuleException("Só é possível editar uma programação que esteja em rascunho ou aprovada.");
         }
 
         var periodo = programacao.PeriodoFerias;
         var politica = await BuscarPoliticaAtivaOuFalhar();
         var hoje = Hoje();
+        var estavaAprovada = programacao.Status == ProgramacaoFeriasStatus.Aprovada;
+
+        if (estavaAprovada)
+        {
+            // Mesma regra de antecedência do Cancelar (art. 137 CLT) - editar uma já aprovada é,
+            // na prática, uma remarcação.
+            var limite = programacao.DataInicio.AddDays(-politica.DiasAntecedenciaRemarcacao);
+            if (hoje > limite)
+            {
+                throw new BusinessRuleException(
+                    $"Uma programação já aprovada só pode ser editada/remarcada até {politica.DiasAntecedenciaRemarcacao} dias antes do início ({limite:dd/MM/yyyy}).");
+            }
+        }
+
         var dataFim = dto.DataInicio.AddDays(dto.QuantidadeDias - 1);
         var diasAbono = dto.AbonoPecuniario ? dto.DiasAbono : 0;
 
-        await ValidarRegrasDeCriacaoOuEdicaoAsync(periodo, politica, dto, dataFim, diasAbono, programacaoIdAtual: programacao.Id);
+        // Enquanto aprovada, o saldo atual já está descontando o débito antigo desta própria
+        // programação - soma ele de volta antes de validar, senão a comparação fica injusta (ex.:
+        // editar mantendo os mesmos dias pareceria "sem saldo").
+        var saldoAAdicionarDeVolta = estavaAprovada ? programacao.QuantidadeDias + programacao.DiasAbono : 0;
+        await ValidarRegrasDeCriacaoOuEdicaoAsync(periodo, politica, dto, dataFim, diasAbono, programacaoIdAtual: programacao.Id, saldoAAdicionarDeVolta);
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+
+        var mudouAlgoComEfeitoNoSaldo = estavaAprovada
+            && (programacao.DataInicio != dto.DataInicio || programacao.QuantidadeDias != dto.QuantidadeDias
+                || programacao.AbonoPecuniario != dto.AbonoPecuniario || programacao.DiasAbono != diasAbono);
+
+        if (mudouAlgoComEfeitoNoSaldo)
+        {
+            // Nunca edita/apaga um lançamento já feito (livro-razão) - estorna o débito antigo com
+            // lançamentos novos e lança o novo débito, tudo visível no extrato como histórico.
+            _context.MovimentacoesSaldoFerias.Add(new MovimentacaoSaldoFerias
+            {
+                PeriodoFeriasId = periodo.Id,
+                Tipo = MovimentacaoSaldoFeriasTipo.ProgramacaoFerias,
+                Quantidade = programacao.QuantidadeDias,
+                ProgramacaoFeriasId = programacao.Id,
+                Data = hoje,
+                UsuarioResponsavelId = usuarioResponsavelId,
+                Observacao = $"Estorno pela edição (era {programacao.QuantidadeDias} dia(s) a partir de {programacao.DataInicio:dd/MM/yyyy}).",
+                DataCriacao = agora,
+            });
+
+            if (programacao.AbonoPecuniario && programacao.DiasAbono > 0)
+            {
+                _context.MovimentacoesSaldoFerias.Add(new MovimentacaoSaldoFerias
+                {
+                    PeriodoFeriasId = periodo.Id,
+                    Tipo = MovimentacaoSaldoFeriasTipo.AbonoPecuniario,
+                    Quantidade = programacao.DiasAbono,
+                    ProgramacaoFeriasId = programacao.Id,
+                    Data = hoje,
+                    UsuarioResponsavelId = usuarioResponsavelId,
+                    Observacao = "Estorno do abono pela edição.",
+                    DataCriacao = agora,
+                });
+            }
+
+            _context.MovimentacoesSaldoFerias.Add(new MovimentacaoSaldoFerias
+            {
+                PeriodoFeriasId = periodo.Id,
+                Tipo = MovimentacaoSaldoFeriasTipo.ProgramacaoFerias,
+                Quantidade = -dto.QuantidadeDias,
+                ProgramacaoFeriasId = programacao.Id,
+                Data = dto.DataInicio,
+                UsuarioResponsavelId = usuarioResponsavelId,
+                Observacao = "Novo débito pela edição.",
+                DataCriacao = agora,
+            });
+
+            if (dto.AbonoPecuniario && diasAbono > 0)
+            {
+                _context.MovimentacoesSaldoFerias.Add(new MovimentacaoSaldoFerias
+                {
+                    PeriodoFeriasId = periodo.Id,
+                    Tipo = MovimentacaoSaldoFeriasTipo.AbonoPecuniario,
+                    Quantidade = -diasAbono,
+                    ProgramacaoFeriasId = programacao.Id,
+                    Data = dto.DataInicio,
+                    UsuarioResponsavelId = usuarioResponsavelId,
+                    Observacao = "Novo abono pela edição.",
+                    DataCriacao = agora,
+                });
+            }
+        }
 
         programacao.DataInicio = dto.DataInicio;
         programacao.DataFim = dataFim;
@@ -132,7 +216,7 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
         programacao.AdiantamentoDecimoTerceiro = dto.AdiantamentoDecimoTerceiro;
         programacao.AbonoPecuniario = dto.AbonoPecuniario;
         programacao.DiasAbono = diasAbono;
-        programacao.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+        programacao.DataAtualizacao = agora;
 
         await _context.SaveChangesAsync();
 
@@ -145,9 +229,11 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
 
     // Compartilhada por Create/Update - a única diferença entre criar e editar é que a edição
     // exclui a própria programação da contagem de fracionamentos ativos e da checagem de
-    // sobreposição (programacaoIdAtual), já que ela mesma está nessa lista.
+    // sobreposição (programacaoIdAtual), já que ela mesma está nessa lista, e pode compensar o
+    // saldo já debitado por ela mesma quando já estava aprovada (saldoAAdicionarDeVolta).
     private async Task ValidarRegrasDeCriacaoOuEdicaoAsync(
-        PeriodoFerias periodo, PoliticaFerias politica, CreateProgramacaoFeriasDto dto, DateOnly dataFim, int diasAbono, int? programacaoIdAtual)
+        PeriodoFerias periodo, PoliticaFerias politica, CreateProgramacaoFeriasDto dto, DateOnly dataFim, int diasAbono,
+        int? programacaoIdAtual, int saldoAAdicionarDeVolta = 0)
     {
         if (dto.QuantidadeDias < politica.DiasMinimoDemaisFracionamentos)
         {
@@ -160,14 +246,26 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
         }
 
         var ativasNoPeriodo = periodo.ProgramacoesFerias.Where(EstaAtiva).Where(p => p.Id != programacaoIdAtual).ToList();
-        if (ativasNoPeriodo.Count + 1 > politica.MaxFracionamentos)
+
+        // Um Recesso Corporativo confirmado também é um "fracionamento" de férias pra efeito da
+        // regra de divisão (CLT art. 134 §1º) - conta pra o máximo de fracionamentos e pode, ele
+        // sozinho, satisfazer a exigência de "pelo menos um com N dias" (achado do usuário: sem
+        // isso, quem já teve 12 dias consumidos por um recesso não conseguia agendar o restante
+        // fracionado, porque nenhuma ProgramacaoFerias isolada chegava aos N dias mínimos).
+        var recessosDoPeriodo = await _context.RecessosColaborador
+            .Where(rc => rc.PeriodoFeriasId == periodo.Id)
+            .ToListAsync();
+
+        var totalFracionamentosAtivos = ativasNoPeriodo.Count + recessosDoPeriodo.Count;
+        if (totalFracionamentosAtivos + 1 > politica.MaxFracionamentos)
         {
             throw new BusinessRuleException($"Este período já atingiu o máximo de {politica.MaxFracionamentos} fracionamento(s).");
         }
 
-        if (ativasNoPeriodo.Count + 1 >= 2)
+        if (totalFracionamentosAtivos + 1 >= 2)
         {
             var existeFracionamentoMaior = ativasNoPeriodo.Any(p => p.QuantidadeDias >= politica.DiasMinimoUltimoFracionamento)
+                || recessosDoPeriodo.Any(rc => rc.DiasAbatidos >= politica.DiasMinimoUltimoFracionamento)
                 || dto.QuantidadeDias >= politica.DiasMinimoUltimoFracionamento;
             if (!existeFracionamentoMaior)
             {
@@ -193,9 +291,10 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
         }
 
         var periodoDto = await _periodoFeriasService.GetByIdAsync(periodo.Id);
-        if (dto.QuantidadeDias + diasAbono > periodoDto.SaldoDisponivel)
+        var saldoDisponivelParaComparar = periodoDto.SaldoDisponivel + saldoAAdicionarDeVolta;
+        if (dto.QuantidadeDias + diasAbono > saldoDisponivelParaComparar)
         {
-            throw new BusinessRuleException($"Saldo disponível insuficiente ({periodoDto.SaldoDisponivel} dia(s)) para os {dto.QuantidadeDias + diasAbono} dia(s) solicitados.");
+            throw new BusinessRuleException($"Saldo disponível insuficiente ({saldoDisponivelParaComparar} dia(s)) para os {dto.QuantidadeDias + diasAbono} dia(s) solicitados.");
         }
     }
 

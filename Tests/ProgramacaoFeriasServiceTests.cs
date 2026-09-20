@@ -75,6 +75,53 @@ public class ProgramacaoFeriasServiceTests
         return await periodoService.GerarProximoPeriodoAsync(usuarioId, usuarioResponsavelId: null);
     }
 
+    /// Simula um Recesso Corporativo já confirmado pra este colaborador (sem passar pelo
+    /// RecessoCorporativoService - só o suficiente pra testar como ProgramacaoFeriasService reage
+    /// a um bloco já consumido por recesso).
+    private static void CriarRecessoConfirmado(AppDbContext context, int usuarioId, int periodoFeriasId, int diasAbatidos)
+    {
+        var recesso = new RecessoCorporativo
+        {
+            Nome = "Recesso de Fim de Ano (teste)",
+            DataInicio = new DateOnly(2026, 12, 21),
+            DataFim = new DateOnly(2027, 1, 3),
+            DiasCorridos = 14,
+            DiasADescontar = diasAbatidos,
+            Status = RecessoCorporativoStatus.Confirmado,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.RecessosCorporativos.Add(recesso);
+        context.SaveChanges();
+
+        var colaborador = new RecessoColaborador
+        {
+            RecessoCorporativoId = recesso.Id,
+            UsuarioId = usuarioId,
+            PeriodoFeriasId = periodoFeriasId,
+            SaldoAnterior = 30,
+            DiasAbatidos = diasAbatidos,
+            SaldoPosterior = 30 - diasAbatidos,
+            Situacao = RecessoColaboradorSituacao.Normal,
+            DataCriacao = Agora.UtcDateTime,
+        };
+        context.RecessosColaborador.Add(colaborador);
+        context.SaveChanges();
+
+        context.MovimentacoesSaldoFerias.Add(new MovimentacaoSaldoFerias
+        {
+            PeriodoFeriasId = periodoFeriasId,
+            Tipo = MovimentacaoSaldoFeriasTipo.Recesso,
+            Quantidade = -diasAbatidos,
+            RecessoColaboradorId = colaborador.Id,
+            Data = recesso.DataInicio,
+            UsuarioResponsavelId = null,
+            Observacao = null,
+            DataCriacao = Agora.UtcDateTime,
+        });
+        context.SaveChanges();
+    }
+
     private static CreateProgramacaoFeriasDto CriarDtoValido(DateOnly? dataInicio = null, int quantidadeDias = 10) => new()
     {
         DataInicio = dataInicio ?? new DateOnly(2027, 1, 11), // segunda-feira, sem feriado/fim de semana perto
@@ -201,6 +248,42 @@ public class ProgramacaoFeriasServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_DeveConsiderarRecessoConfirmadoComoOFracionamentoMaior()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context);
+        var periodo = await CriarPeriodoComSaldoAsync(periodoService, usuario.Id);
+        // Recesso já consumiu 14 dias de uma vez - satisfaz por si só a exigência do "maior".
+        CriarRecessoConfirmado(context, usuario.Id, periodo.Id, diasAbatidos: 14);
+
+        // Sem o recesso contar, nenhum desses dois fracionamentos (5 dias cada) atingiria o mínimo
+        // de 14 - com o recesso contando, ambos são aceitos (achado real do usuário em produção).
+        var primeira = await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 1, 11), 5), null);
+        var segunda = await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 2, 8), 5), null);
+
+        Assert.Equal(ProgramacaoFeriasStatus.Rascunho, primeira.Status);
+        Assert.Equal(ProgramacaoFeriasStatus.Rascunho, segunda.Status);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveContarRecessoNoMaximoDeFracionamentos()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context);
+        var periodo = await CriarPeriodoComSaldoAsync(periodoService, usuario.Id);
+        CriarRecessoConfirmado(context, usuario.Id, periodo.Id, diasAbatidos: 14);
+
+        // MaxFracionamentos=3: recesso (1) + 2 programações já preenchem os 3 - a 3ª programação
+        // deveria ser rejeitada por máximo de fracionamentos, contando o recesso como um deles.
+        await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 1, 11), 5), null);
+        await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 2, 8), 5), null);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 3, 8), 5), null));
+    }
+
+    [Fact]
     public async Task UpdateAsync_DevePermitirEditarEnquantoRascunho()
     {
         var (service, periodoService, context) = CriarServicos();
@@ -235,7 +318,7 @@ public class ProgramacaoFeriasServiceTests
     }
 
     [Fact]
-    public async Task UpdateAsync_DeveRejeitarEdicaoForaDeRascunho()
+    public async Task UpdateAsync_DeveRejeitarEdicaoQuandoSolicitada()
     {
         var (service, periodoService, context) = CriarServicos();
         CriarPoliticaPj(context);
@@ -245,6 +328,91 @@ public class ProgramacaoFeriasServiceTests
         await service.SolicitarAsync(programacao.Id, null);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.UpdateAsync(programacao.Id, CriarDtoValido(new DateOnly(2027, 2, 8), 7), null));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DevePermitirEditarAprovadaComEstornoENovoDebito()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context);
+        var periodo = await CriarPeriodoComSaldoAsync(periodoService, usuario.Id);
+        // Início bem no futuro (dezembro) pra caber na janela de 45 dias de antecedência.
+        var programacao = await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 12, 6), 10), null);
+        await service.SolicitarAsync(programacao.Id, null);
+        await service.AprovarAsync(programacao.Id, null);
+
+        // 2027-12-13 é segunda-feira - remarca pra uma semana depois, com menos dias.
+        var editada = await service.UpdateAsync(programacao.Id, CriarDtoValido(new DateOnly(2027, 12, 13), 7), null);
+
+        Assert.Equal(ProgramacaoFeriasStatus.Aprovada, editada.Status);
+        Assert.Equal(new DateOnly(2027, 12, 13), editada.DataInicio);
+        Assert.Equal(7, editada.QuantidadeDias);
+
+        var periodoAtualizado = await periodoService.GetByIdAsync(periodo.Id);
+        Assert.Equal(23, periodoAtualizado.SaldoDisponivel); // 30 - 7
+
+        var movimentacoes = await periodoService.GetMovimentacoesAsync(periodo.Id);
+        Assert.Contains(movimentacoes, m => m.Quantidade == 10 && m.Observacao != null && m.Observacao.Contains("Estorno"));
+        Assert.Contains(movimentacoes, m => m.Quantidade == -7 && m.Observacao != null && m.Observacao.Contains("Novo débito"));
+        // Nenhuma das movimentações da edição fica marcada como anulada - a programação continua Aprovada.
+        Assert.All(movimentacoes, m => Assert.False(m.Anulada));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DeveRejeitarEdicaoDeAprovadaForaDaJanelaDeAntecedencia()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context);
+        var periodo = await CriarPeriodoComSaldoAsync(periodoService, usuario.Id);
+        // Início logo depois de "hoje" (15/06/2027) - bem dentro dos 45 dias de antecedência mínima.
+        var programacao = await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 6, 21), 5), null);
+        await service.SolicitarAsync(programacao.Id, null);
+        await service.AprovarAsync(programacao.Id, null);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.UpdateAsync(programacao.Id, CriarDtoValido(new DateOnly(2027, 6, 21), 6), null));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_NaoDeveGerarMovimentacoesQuandoEdicaoDeAprovadaNaoAfetaSaldo()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context);
+        var periodo = await CriarPeriodoComSaldoAsync(periodoService, usuario.Id);
+        var programacao = await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 12, 6), 10), null);
+        await service.SolicitarAsync(programacao.Id, null);
+        await service.AprovarAsync(programacao.Id, null);
+        var movimentacoesAntes = await periodoService.GetMovimentacoesAsync(periodo.Id);
+
+        // Só troca a observação - mesma data, mesma quantidade de dias.
+        var dto = CriarDtoValido(new DateOnly(2027, 12, 6), 10);
+        dto.Observacao = "Só ajustando a observação";
+        await service.UpdateAsync(programacao.Id, dto, null);
+
+        var movimentacoesDepois = await periodoService.GetMovimentacoesAsync(periodo.Id);
+        Assert.Equal(movimentacoesAntes.Count, movimentacoesDepois.Count);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DevePermitirManterMesmosDiasAoEditarAprovada()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context);
+        var periodo = await CriarPeriodoComSaldoAsync(periodoService, usuario.Id);
+        // Programação usa os 30 dias inteiros do saldo - se o estorno não "devolver" o saldo antes
+        // de validar, editar mantendo os mesmos 30 dias falharia por "saldo insuficiente".
+        var programacao = await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 11, 1), 30), null);
+        await service.SolicitarAsync(programacao.Id, null);
+        await service.AprovarAsync(programacao.Id, null);
+
+        var editada = await service.UpdateAsync(programacao.Id, CriarDtoValido(new DateOnly(2027, 11, 1), 30), null);
+
+        Assert.Equal(30, editada.QuantidadeDias);
+        var periodoAtualizado = await periodoService.GetByIdAsync(periodo.Id);
+        Assert.Equal(0, periodoAtualizado.SaldoDisponivel);
     }
 
     [Fact]
