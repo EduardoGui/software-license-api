@@ -48,6 +48,13 @@ public class ProgramacoesFeriasController : ControllerBase
         return Ok(programacao);
     }
 
+    [HttpPut("{id:int}")]
+    public async Task<ActionResult<ProgramacaoFeriasDto>> Update(int id, CreateProgramacaoFeriasDto dto)
+    {
+        var programacao = await _programacaoFeriasService.UpdateAsync(id, dto, User.ObterUsuarioId());
+        return Ok(programacao);
+    }
+
     [HttpPatch("{id:int}/solicitar")]
     public async Task<ActionResult<ProgramacaoFeriasDto>> Solicitar(int id)
     {

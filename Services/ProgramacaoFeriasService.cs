@@ -69,54 +69,7 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
         var dataFim = dto.DataInicio.AddDays(dto.QuantidadeDias - 1);
         var diasAbono = dto.AbonoPecuniario ? dto.DiasAbono : 0;
 
-        if (dto.QuantidadeDias < politica.DiasMinimoDemaisFracionamentos)
-        {
-            throw new BusinessRuleException($"Cada fracionamento deve ter pelo menos {politica.DiasMinimoDemaisFracionamentos} dias.");
-        }
-
-        if (dataFim > periodo.FimConcessivo)
-        {
-            throw new BusinessRuleException($"As férias não podem ultrapassar o fim do período concessivo ({periodo.FimConcessivo:dd/MM/yyyy}).");
-        }
-
-        var ativasNoPeriodo = periodo.ProgramacoesFerias.Where(EstaAtiva).ToList();
-        if (ativasNoPeriodo.Count + 1 > politica.MaxFracionamentos)
-        {
-            throw new BusinessRuleException($"Este período já atingiu o máximo de {politica.MaxFracionamentos} fracionamento(s).");
-        }
-
-        if (ativasNoPeriodo.Count + 1 >= 2)
-        {
-            var existeFracionamentoMaior = ativasNoPeriodo.Any(p => p.QuantidadeDias >= politica.DiasMinimoUltimoFracionamento)
-                || dto.QuantidadeDias >= politica.DiasMinimoUltimoFracionamento;
-            if (!existeFracionamentoMaior)
-            {
-                throw new BusinessRuleException(
-                    $"Ao dividir em mais de um período, pelo menos um deles deve ter no mínimo {politica.DiasMinimoUltimoFracionamento} dias.");
-            }
-        }
-
-        await ValidarSemSobreposicao(periodo.UsuarioId, dto.DataInicio, dataFim, programacaoIdAtual: null);
-        await ValidarDataInicioForaDaJanelaDeFeriadoOuFimDeSemana(dto.DataInicio, politica.DiasMinimosAntesFeriadoOuFimDeSemana);
-
-        if (dto.AbonoPecuniario)
-        {
-            if (!politica.PermiteAbonoPecuniario)
-            {
-                throw new BusinessRuleException("A política de férias atual não permite abono pecuniário.");
-            }
-
-            if (dto.DiasAbono is < 1 || dto.DiasAbono > politica.MaxDiasAbono)
-            {
-                throw new BusinessRuleException($"Dias de abono deve estar entre 1 e {politica.MaxDiasAbono}.");
-            }
-        }
-
-        var periodoDto = await _periodoFeriasService.GetByIdAsync(periodoFeriasId);
-        if (dto.QuantidadeDias + diasAbono > periodoDto.SaldoDisponivel)
-        {
-            throw new BusinessRuleException($"Saldo disponível insuficiente ({periodoDto.SaldoDisponivel} dia(s)) para os {dto.QuantidadeDias + diasAbono} dia(s) solicitados.");
-        }
+        await ValidarRegrasDeCriacaoOuEdicaoAsync(periodo, politica, dto, dataFim, diasAbono, programacaoIdAtual: null);
 
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var programacao = new ProgramacaoFerias
@@ -146,6 +99,104 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
         _logger.LogInformation("Programação de Férias {ProgramacaoFeriasId} criada para o período {PeriodoFeriasId}", programacao.Id, periodoFeriasId);
 
         return ParaDto(await BuscarOuFalhar(programacao.Id), hoje);
+    }
+
+    public async Task<ProgramacaoFeriasDto> UpdateAsync(int id, CreateProgramacaoFeriasDto dto, int? usuarioResponsavelId)
+    {
+        var programacao = await _context.ProgramacoesFerias
+            .Include(p => p.PeriodoFerias).ThenInclude(pf => pf.Usuario)
+            .Include(p => p.PeriodoFerias).ThenInclude(pf => pf.ProgramacoesFerias)
+            .FirstOrDefaultAsync(p => p.Id == id);
+        if (programacao is null)
+        {
+            throw new NotFoundException($"Programação de Férias {id} não encontrada.");
+        }
+
+        if (programacao.Status != ProgramacaoFeriasStatus.Rascunho)
+        {
+            throw new BusinessRuleException("Só é possível editar uma programação que esteja em rascunho.");
+        }
+
+        var periodo = programacao.PeriodoFerias;
+        var politica = await BuscarPoliticaAtivaOuFalhar();
+        var hoje = Hoje();
+        var dataFim = dto.DataInicio.AddDays(dto.QuantidadeDias - 1);
+        var diasAbono = dto.AbonoPecuniario ? dto.DiasAbono : 0;
+
+        await ValidarRegrasDeCriacaoOuEdicaoAsync(periodo, politica, dto, dataFim, diasAbono, programacaoIdAtual: programacao.Id);
+
+        programacao.DataInicio = dto.DataInicio;
+        programacao.DataFim = dataFim;
+        programacao.QuantidadeDias = dto.QuantidadeDias;
+        programacao.Observacao = string.IsNullOrWhiteSpace(dto.Observacao) ? null : dto.Observacao.Trim();
+        programacao.AdiantamentoDecimoTerceiro = dto.AdiantamentoDecimoTerceiro;
+        programacao.AbonoPecuniario = dto.AbonoPecuniario;
+        programacao.DiasAbono = diasAbono;
+        programacao.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        await _auditoriaService.RegistrarAsync(
+            usuarioResponsavelId, LogAuditoriaEntidade.ProgramacaoFerias, id, LogAuditoriaAcao.Atualizado,
+            $"Programação editada: {dto.QuantidadeDias} dia(s) a partir de {dto.DataInicio:dd/MM/yyyy}.");
+
+        return ParaDto(await BuscarOuFalhar(id), hoje);
+    }
+
+    // Compartilhada por Create/Update - a única diferença entre criar e editar é que a edição
+    // exclui a própria programação da contagem de fracionamentos ativos e da checagem de
+    // sobreposição (programacaoIdAtual), já que ela mesma está nessa lista.
+    private async Task ValidarRegrasDeCriacaoOuEdicaoAsync(
+        PeriodoFerias periodo, PoliticaFerias politica, CreateProgramacaoFeriasDto dto, DateOnly dataFim, int diasAbono, int? programacaoIdAtual)
+    {
+        if (dto.QuantidadeDias < politica.DiasMinimoDemaisFracionamentos)
+        {
+            throw new BusinessRuleException($"Cada fracionamento deve ter pelo menos {politica.DiasMinimoDemaisFracionamentos} dias.");
+        }
+
+        if (dataFim > periodo.FimConcessivo)
+        {
+            throw new BusinessRuleException($"As férias não podem ultrapassar o fim do período concessivo ({periodo.FimConcessivo:dd/MM/yyyy}).");
+        }
+
+        var ativasNoPeriodo = periodo.ProgramacoesFerias.Where(EstaAtiva).Where(p => p.Id != programacaoIdAtual).ToList();
+        if (ativasNoPeriodo.Count + 1 > politica.MaxFracionamentos)
+        {
+            throw new BusinessRuleException($"Este período já atingiu o máximo de {politica.MaxFracionamentos} fracionamento(s).");
+        }
+
+        if (ativasNoPeriodo.Count + 1 >= 2)
+        {
+            var existeFracionamentoMaior = ativasNoPeriodo.Any(p => p.QuantidadeDias >= politica.DiasMinimoUltimoFracionamento)
+                || dto.QuantidadeDias >= politica.DiasMinimoUltimoFracionamento;
+            if (!existeFracionamentoMaior)
+            {
+                throw new BusinessRuleException(
+                    $"Ao dividir em mais de um período, pelo menos um deles deve ter no mínimo {politica.DiasMinimoUltimoFracionamento} dias.");
+            }
+        }
+
+        await ValidarSemSobreposicao(periodo.UsuarioId, dto.DataInicio, dataFim, programacaoIdAtual);
+        await ValidarDataInicioForaDaJanelaDeFeriadoOuFimDeSemana(dto.DataInicio, politica.DiasMinimosAntesFeriadoOuFimDeSemana);
+
+        if (dto.AbonoPecuniario)
+        {
+            if (!politica.PermiteAbonoPecuniario)
+            {
+                throw new BusinessRuleException("A política de férias atual não permite abono pecuniário.");
+            }
+
+            if (dto.DiasAbono is < 1 || dto.DiasAbono > politica.MaxDiasAbono)
+            {
+                throw new BusinessRuleException($"Dias de abono deve estar entre 1 e {politica.MaxDiasAbono}.");
+            }
+        }
+
+        var periodoDto = await _periodoFeriasService.GetByIdAsync(periodo.Id);
+        if (dto.QuantidadeDias + diasAbono > periodoDto.SaldoDisponivel)
+        {
+            throw new BusinessRuleException($"Saldo disponível insuficiente ({periodoDto.SaldoDisponivel} dia(s)) para os {dto.QuantidadeDias + diasAbono} dia(s) solicitados.");
+        }
     }
 
     public async Task<ProgramacaoFeriasDto> SolicitarAsync(int id, int? usuarioResponsavelId)

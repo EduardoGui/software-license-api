@@ -57,6 +57,8 @@ public class PeriodoFeriasService : IPeriodoFeriasService
                 UsuarioResponsavelId = m.UsuarioResponsavelId,
                 UsuarioResponsavelNome = m.UsuarioResponsavelId == null ? "Administrador" : m.UsuarioResponsavel!.Nome,
                 Observacao = m.Observacao,
+                Anulada = m.ProgramacaoFerias != null
+                    && (m.ProgramacaoFerias.Status == ProgramacaoFeriasStatus.Cancelada || m.ProgramacaoFerias.Status == ProgramacaoFeriasStatus.Reprovada),
                 DataCriacao = m.DataCriacao,
             })
             .ToListAsync();

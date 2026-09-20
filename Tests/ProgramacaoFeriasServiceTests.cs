@@ -201,6 +201,53 @@ public class ProgramacaoFeriasServiceTests
     }
 
     [Fact]
+    public async Task UpdateAsync_DevePermitirEditarEnquantoRascunho()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context);
+        var periodo = await CriarPeriodoComSaldoAsync(periodoService, usuario.Id);
+        var programacao = await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 1, 11), 10), null);
+
+        // 08/02/2027 é segunda-feira - troca a data e a quantidade de dias.
+        var editada = await service.UpdateAsync(programacao.Id, CriarDtoValido(new DateOnly(2027, 2, 8), 7), null);
+
+        Assert.Equal(new DateOnly(2027, 2, 8), editada.DataInicio);
+        Assert.Equal(new DateOnly(2027, 2, 14), editada.DataFim);
+        Assert.Equal(7, editada.QuantidadeDias);
+        Assert.Equal(ProgramacaoFeriasStatus.Rascunho, editada.Status);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_NaoDeveConsiderarSobreposicaoComElaMesma()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context);
+        var periodo = await CriarPeriodoComSaldoAsync(periodoService, usuario.Id);
+        var programacao = await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 1, 11), 10), null);
+
+        // Editar mantendo as mesmas datas não deveria disparar "sobrepõe com outra programação" -
+        // a própria programação sendo editada precisa ficar de fora dessa checagem.
+        var editada = await service.UpdateAsync(programacao.Id, CriarDtoValido(new DateOnly(2027, 1, 11), 10), null);
+
+        Assert.Equal(new DateOnly(2027, 1, 11), editada.DataInicio);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DeveRejeitarEdicaoForaDeRascunho()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context);
+        var periodo = await CriarPeriodoComSaldoAsync(periodoService, usuario.Id);
+        var programacao = await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 1, 11), 10), null);
+        await service.SolicitarAsync(programacao.Id, null);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.UpdateAsync(programacao.Id, CriarDtoValido(new DateOnly(2027, 2, 8), 7), null));
+    }
+
+    [Fact]
     public async Task SolicitarAsync_DeveMudarStatusParaSolicitada()
     {
         var (service, periodoService, context) = CriarServicos();
@@ -319,6 +366,30 @@ public class ProgramacaoFeriasServiceTests
         Assert.Equal(ProgramacaoFeriasStatus.Cancelada, cancelada.Status);
         var periodoAtualizado = await periodoService.GetByIdAsync(periodo.Id);
         Assert.Equal(30, periodoAtualizado.SaldoDisponivel);
+    }
+
+    [Fact]
+    public async Task CancelarAsync_DeveMarcarMovimentacaoComoAnuladaNoExtrato()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context);
+        var periodo = await CriarPeriodoComSaldoAsync(periodoService, usuario.Id);
+        var programacao = await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 12, 1), 10), null);
+        await service.SolicitarAsync(programacao.Id, null);
+        await service.AprovarAsync(programacao.Id, null);
+
+        var antesDeCancelar = await periodoService.GetMovimentacoesAsync(periodo.Id);
+        Assert.Contains(antesDeCancelar, m => m.Tipo == MovimentacaoSaldoFeriasTipo.ProgramacaoFerias && !m.Anulada);
+
+        await service.CancelarAsync(programacao.Id, null);
+
+        // A movimentação em si nunca é alterada/apagada (livro-razão), mas o extrato precisa deixar
+        // visível que ela não conta mais no saldo (achado do usuário: aparecia como se fosse ativa).
+        var depoisDeCancelar = await periodoService.GetMovimentacoesAsync(periodo.Id);
+        var movimentacao = Assert.Single(depoisDeCancelar, m => m.Tipo == MovimentacaoSaldoFeriasTipo.ProgramacaoFerias);
+        Assert.True(movimentacao.Anulada);
+        Assert.Equal(-10, movimentacao.Quantidade);
     }
 
     [Fact]
