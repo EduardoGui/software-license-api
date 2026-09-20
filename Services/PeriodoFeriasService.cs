@@ -205,6 +205,7 @@ public class PeriodoFeriasService : IPeriodoFeriasService
         _context.PeriodosFerias
             .Include(p => p.Usuario)
             .Include(p => p.Movimentacoes).ThenInclude(m => m.ProgramacaoFerias)
+            .Include(p => p.Movimentacoes).ThenInclude(m => m.RecessoColaborador).ThenInclude(rc => rc!.RecessoCorporativo)
             .Include(p => p.ProgramacoesFerias)
             .AsQueryable();
 
@@ -241,15 +242,42 @@ public class PeriodoFeriasService : IPeriodoFeriasService
             .Sum(m => m.Quantidade);
         var aquisicaoMaterializada = p.Movimentacoes.Any(m => m.Tipo == MovimentacaoSaldoFeriasTipo.Aquisicao);
 
-        var programacoesAtivas = p.ProgramacoesFerias
-            .Where(pf => pf.Status != ProgramacaoFeriasStatus.Cancelada && pf.Status != ProgramacaoFeriasStatus.Reprovada && pf.Status != ProgramacaoFeriasStatus.Rascunho)
-            .ToList();
-        var comprometido = programacoesAtivas
-            .Where(pf => pf.Status == ProgramacaoFeriasStatus.Solicitada || (pf.Status == ProgramacaoFeriasStatus.Aprovada && pf.DataInicio > hoje))
-            .Sum(pf => pf.QuantidadeDias);
-        var consumido = programacoesAtivas
-            .Where(pf => pf.Status == ProgramacaoFeriasStatus.Aprovada && pf.DataInicio <= hoje)
-            .Sum(pf => pf.QuantidadeDias);
+        // Comprometido/Consumido vêm das MOVIMENTAÇÕES (não só de ProgramacaoFerias) - senão dias
+        // debitados por Recesso Corporativo ou Abono Pecuniário ficam "invisíveis" nessas duas
+        // colunas mesmo já estando descontados do Disponível (achado do usuário: recesso não
+        // aparecia em nenhum dos dois). Mesma regra de corte já usada antes: data de referência no
+        // futuro = Comprometido, hoje ou no passado (já em gozo ou já concluído) = Consumido.
+        var comprometido = 0;
+        var consumido = 0;
+        foreach (var m in p.Movimentacoes)
+        {
+            DateOnly? dataReferencia = m.Tipo switch
+            {
+                MovimentacaoSaldoFeriasTipo.ProgramacaoFerias or MovimentacaoSaldoFeriasTipo.AbonoPecuniario => m.ProgramacaoFerias?.DataInicio,
+                MovimentacaoSaldoFeriasTipo.Recesso => m.RecessoColaborador?.RecessoCorporativo.DataInicio,
+                _ => null,
+            };
+
+            if (dataReferencia is null)
+            {
+                continue;
+            }
+
+            if (m.ProgramacaoFerias is not null
+                && (m.ProgramacaoFerias.Status == ProgramacaoFeriasStatus.Cancelada || m.ProgramacaoFerias.Status == ProgramacaoFeriasStatus.Reprovada))
+            {
+                continue;
+            }
+
+            if (dataReferencia > hoje)
+            {
+                comprometido += -m.Quantidade;
+            }
+            else
+            {
+                consumido += -m.Quantidade;
+            }
+        }
 
         return new PeriodoFeriasDto
         {

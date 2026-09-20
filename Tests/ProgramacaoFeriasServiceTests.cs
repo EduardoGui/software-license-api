@@ -251,6 +251,29 @@ public class ProgramacaoFeriasServiceTests
     }
 
     [Fact]
+    public async Task AprovarAsync_DeveIncluirDiasDeAbonoNoComprometido()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context);
+        var periodo = await CriarPeriodoComSaldoAsync(periodoService, usuario.Id);
+        var dto = CriarDtoValido(new DateOnly(2027, 8, 2), 10);
+        dto.AbonoPecuniario = true;
+        dto.DiasAbono = 5;
+        var programacao = await service.CreateAsync(periodo.Id, dto, null);
+        await service.SolicitarAsync(programacao.Id, null);
+
+        await service.AprovarAsync(programacao.Id, null);
+
+        var periodoAtualizado = await periodoService.GetByIdAsync(periodo.Id);
+        // Data futura (02/08/2027 vs. "hoje" 15/06/2027) - os 10 dias de férias + 5 de abono devem
+        // aparecer juntos no Comprometido (antes desta correção, o abono ficava de fora).
+        Assert.Equal(15, periodoAtualizado.Comprometido);
+        Assert.Equal(0, periodoAtualizado.Consumido);
+        Assert.Equal(15, periodoAtualizado.SaldoDisponivel);
+    }
+
+    [Fact]
     public async Task ReprovarAsync_DeveExigirJustificativa()
     {
         var (service, periodoService, context) = CriarServicos();

@@ -217,9 +217,34 @@ public class RecessoCorporativoServiceTests
 
         var periodoAtualizado = await periodoService.GetByIdAsync(periodo.Id);
         Assert.Equal(18, periodoAtualizado.SaldoDisponivel);
+        // Recesso com início em 21/12/2026, já no passado em relação a "hoje" (15/06/2027) - conta
+        // como Consumido, não Comprometido (achado real: antes dessa correção não aparecia em nenhum).
+        Assert.Equal(12, periodoAtualizado.Consumido);
+        Assert.Equal(0, periodoAtualizado.Comprometido);
 
         var movimentacoes = await periodoService.GetMovimentacoesAsync(periodo.Id);
         Assert.Contains(movimentacoes, m => m.Tipo == MovimentacaoSaldoFeriasTipo.Recesso && m.Quantidade == -12);
+    }
+
+    [Fact]
+    public async Task ConfirmarAsync_DeveContarComoComprometidoQuandoRecessoAindaNaoComecou()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context, "Eduardo Andrade");
+        var periodo = await periodoService.GerarProximoPeriodoAsync(usuario.Id, null);
+        // Início em 21/12/2027, ainda no futuro em relação a "hoje" (15/06/2027).
+        var recesso = await service.CreateAsync(
+            new CreateRecessoCorporativoDto { Nome = "Recesso de Fim de Ano", DataInicio = new DateOnly(2027, 12, 21), DataFim = new DateOnly(2028, 1, 3) }, null);
+        await service.UpdateAsync(recesso.Id,
+            new UpdateRecessoCorporativoDto { Nome = recesso.Nome, DataInicio = recesso.DataInicio, DataFim = recesso.DataFim, DiasADescontar = 12 }, null);
+
+        await service.ConfirmarAsync(recesso.Id, new SimularRecessoDto { UsuarioIds = [usuario.Id] }, null);
+
+        var periodoAtualizado = await periodoService.GetByIdAsync(periodo.Id);
+        Assert.Equal(12, periodoAtualizado.Comprometido);
+        Assert.Equal(0, periodoAtualizado.Consumido);
+        Assert.Equal(18, periodoAtualizado.SaldoDisponivel);
     }
 
     [Fact]
