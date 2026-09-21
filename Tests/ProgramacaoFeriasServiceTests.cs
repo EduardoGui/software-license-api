@@ -592,4 +592,27 @@ public class ProgramacaoFeriasServiceTests
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.CancelarAsync(programacao.Id, null));
     }
+
+    [Fact]
+    public async Task GetByUsuarioAsync_DeveRetornarSoDoUsuarioIndependenteDoStatus()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario1 = CriarUsuarioPj(context, "Colaborador Um");
+        var usuario2 = CriarUsuarioPj(context, "Colaborador Dois");
+        var periodo1 = await CriarPeriodoComSaldoAsync(periodoService, usuario1.Id);
+        var periodo2 = await CriarPeriodoComSaldoAsync(periodoService, usuario2.Id);
+
+        var rascunho = await service.CreateAsync(periodo1.Id, CriarDtoValido(new DateOnly(2027, 12, 1), 15), null);
+        var cancelada = await service.CreateAsync(periodo1.Id, CriarDtoValido(new DateOnly(2027, 8, 4), 5), null);
+        await service.CancelarAsync(cancelada.Id, null);
+        await service.CreateAsync(periodo2.Id, CriarDtoValido(new DateOnly(2027, 9, 1), 7), null);
+
+        var doUsuario1 = await service.GetByUsuarioAsync(usuario1.Id);
+
+        Assert.Equal(2, doUsuario1.Count);
+        Assert.All(doUsuario1, p => Assert.Equal(usuario1.Id, p.UsuarioId));
+        Assert.Contains(doUsuario1, p => p.Id == rascunho.Id && p.Status == ProgramacaoFeriasStatus.Rascunho);
+        Assert.Contains(doUsuario1, p => p.Id == cancelada.Id && p.Status == ProgramacaoFeriasStatus.Cancelada);
+    }
 }

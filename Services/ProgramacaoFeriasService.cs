@@ -47,6 +47,17 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
         return programacoes.Select(p => ParaDto(p, hoje)).ToList();
     }
 
+    public async Task<List<ProgramacaoFeriasDto>> GetByUsuarioAsync(int usuarioId)
+    {
+        var hoje = Hoje();
+        var programacoes = await MontarConsultaBase()
+            .Where(p => p.PeriodoFerias.UsuarioId == usuarioId)
+            .OrderByDescending(p => p.DataInicio)
+            .ToListAsync();
+
+        return programacoes.Select(p => ParaDto(p, hoje)).ToList();
+    }
+
     public async Task<ProgramacaoFeriasDto> GetByIdAsync(int id)
     {
         var programacao = await BuscarOuFalhar(id);
