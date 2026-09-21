@@ -73,6 +73,22 @@ public class ContratoServiceTests
     }
 
     [Fact]
+    public async Task GetByIdAsync_DeveRetornarContatoDeAprovacao()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var dto = CriarDtoValido(fornecedor.Id);
+        dto.ContatoAprovacaoNome = "Maria Responsável";
+        dto.ContatoAprovacaoEmail = "maria@fornecedor.com";
+        var contrato = await service.CreateAsync(dto);
+
+        var detalhe = await service.GetByIdAsync(contrato.Id);
+
+        Assert.Equal("Maria Responsável", detalhe.ContatoAprovacaoNome);
+        Assert.Equal("maria@fornecedor.com", detalhe.ContatoAprovacaoEmail);
+    }
+
+    [Fact]
     public async Task CreateAsync_DeveRejeitarFornecedorInexistente()
     {
         var (service, _) = CriarService();

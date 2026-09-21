@@ -90,6 +90,8 @@ public class ContratoService : IContratoService
             ValorAtual = CalcularValorAtual(contrato, aditivosFormalizados),
             Status = contrato.Status,
             Observacoes = contrato.Observacoes,
+            ContatoAprovacaoNome = contrato.ContatoAprovacaoNome,
+            ContatoAprovacaoEmail = contrato.ContatoAprovacaoEmail,
             DataCriacao = contrato.DataCriacao,
             DataAtualizacao = contrato.DataAtualizacao,
             Itens = contrato.Itens.Select(ParaItemDto).ToList(),
