@@ -149,6 +149,19 @@ public class ObrigacaoService : IObrigacaoService
         return ParaDto(obrigacao);
     }
 
+    public async Task<ObrigacaoDto> ReativarAsync(int id)
+    {
+        var obrigacao = await BuscarOuFalhar(id);
+
+        obrigacao.Cancelada = false;
+        obrigacao.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Obrigação {ObrigacaoId} reativada (cancelamento desfeito)", obrigacao.Id);
+
+        return ParaDto(obrigacao);
+    }
+
     private IQueryable<Obrigacao> MontarConsultaBase() => _context.Obrigacoes
         .Include(o => o.Fornecedor)
         .Include(o => o.MedicaoBm!).ThenInclude(m => m.Contrato)

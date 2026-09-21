@@ -58,4 +58,11 @@ public class ObrigacoesController : ControllerBase
         var obrigacao = await _obrigacaoService.CancelarAsync(id);
         return Ok(obrigacao);
     }
+
+    [HttpPatch("{id:int}/reativar")]
+    public async Task<ActionResult<ObrigacaoDto>> Reativar(int id)
+    {
+        var obrigacao = await _obrigacaoService.ReativarAsync(id);
+        return Ok(obrigacao);
+    }
 }
