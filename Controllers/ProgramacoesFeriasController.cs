@@ -12,10 +12,12 @@ namespace SoftwareLicense.Api.Controllers;
 public class ProgramacoesFeriasController : ControllerBase
 {
     private readonly IProgramacaoFeriasService _programacaoFeriasService;
+    private readonly IPeriodoFeriasService _periodoFeriasService;
 
-    public ProgramacoesFeriasController(IProgramacaoFeriasService programacaoFeriasService)
+    public ProgramacoesFeriasController(IProgramacaoFeriasService programacaoFeriasService, IPeriodoFeriasService periodoFeriasService)
     {
         _programacaoFeriasService = programacaoFeriasService;
+        _periodoFeriasService = periodoFeriasService;
     }
 
     [HttpGet("pendentes-aprovacao")]
@@ -50,11 +52,21 @@ public class ProgramacoesFeriasController : ControllerBase
         return Ok(programacoes);
     }
 
+    // Colaborador pode criar programação só no próprio período (autoatendimento pelo mobile);
+    // admin pode criar em qualquer período.
     [HttpPost]
     [Route("/api/periodos-ferias/{periodoFeriasId:int}/programacoes")]
-    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<ProgramacaoFeriasDto>> Create(int periodoFeriasId, CreateProgramacaoFeriasDto dto)
     {
+        if (!User.IsInRole(Roles.Administrador))
+        {
+            var periodo = await _periodoFeriasService.GetByIdAsync(periodoFeriasId);
+            if (!User.TemUsuarioId(periodo.UsuarioId))
+            {
+                return Forbid();
+            }
+        }
+
         var programacao = await _programacaoFeriasService.CreateAsync(periodoFeriasId, dto, User.ObterUsuarioId());
         return CreatedAtAction(nameof(GetById), new { id = programacao.Id }, programacao);
     }
@@ -75,10 +87,20 @@ public class ProgramacoesFeriasController : ControllerBase
         return Ok(programacao);
     }
 
+    // Colaborador pode solicitar só a própria programação (segue o Create no fluxo de
+    // autoatendimento do mobile); admin pode solicitar em nome de qualquer colaborador.
     [HttpPatch("{id:int}/solicitar")]
-    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<ProgramacaoFeriasDto>> Solicitar(int id)
     {
+        if (!User.IsInRole(Roles.Administrador))
+        {
+            var atual = await _programacaoFeriasService.GetByIdAsync(id);
+            if (!User.TemUsuarioId(atual.UsuarioId))
+            {
+                return Forbid();
+            }
+        }
+
         var programacao = await _programacaoFeriasService.SolicitarAsync(id, User.ObterUsuarioId());
         return Ok(programacao);
     }
@@ -107,10 +129,20 @@ public class ProgramacoesFeriasController : ControllerBase
         return Ok(programacao);
     }
 
+    // Colaborador pode cancelar/desistir só da própria programação (ex.: pedido em rascunho ou
+    // ainda não decidido pelo admin); admin pode cancelar qualquer uma.
     [HttpPatch("{id:int}/cancelar")]
-    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<ProgramacaoFeriasDto>> Cancelar(int id)
     {
+        if (!User.IsInRole(Roles.Administrador))
+        {
+            var atual = await _programacaoFeriasService.GetByIdAsync(id);
+            if (!User.TemUsuarioId(atual.UsuarioId))
+            {
+                return Forbid();
+            }
+        }
+
         var programacao = await _programacaoFeriasService.CancelarAsync(id, User.ObterUsuarioId());
         return Ok(programacao);
     }
