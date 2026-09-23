@@ -578,6 +578,23 @@ public class ContratoServiceTests
     }
 
     [Fact]
+    public async Task AtualizarMedicaoBmAsync_DeveRejeitarQuantidadeAcimaDoSaldoDisponivel()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        var itemId = bm.Itens[0].Id;
+        Assert.Equal(12m, bm.Itens[0].SaldoAntes);
+
+        var erro = await Assert.ThrowsAsync<BusinessRuleException>(() => service.AtualizarMedicaoBmAsync(contrato.Id, bm.Id, new UpdateMedicaoBmDto
+        {
+            Itens = [new UpdateMedicaoBmItemDto { ItemId = itemId, QuantidadeMedidaNestaBm = 12.5m }],
+        }));
+        Assert.Contains("saldo disponível", erro.Message);
+    }
+
+    [Fact]
     public async Task AtualizarMedicaoBmAsync_ComAjusteManual_DeveSobrepujarCalculo()
     {
         var (service, context) = CriarService();

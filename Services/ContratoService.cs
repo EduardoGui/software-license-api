@@ -609,6 +609,12 @@ public class ContratoService : IContratoService
             var item = medicao.Itens.FirstOrDefault(i => i.Id == itemDto.ItemId)
                 ?? throw new BusinessRuleException($"Item {itemDto.ItemId} não pertence a este BM.");
 
+            if (itemDto.QuantidadeMedidaNestaBm > item.SaldoAntes)
+            {
+                throw new BusinessRuleException(
+                    $"Quantidade medida do item '{item.DescricaoNoMomento}' ({itemDto.QuantidadeMedidaNestaBm}) não pode ultrapassar o saldo disponível ({item.SaldoAntes}).");
+            }
+
             item.QuantidadeMedidaNestaBm = itemDto.QuantidadeMedidaNestaBm;
             item.SaldoDepois = item.SaldoAntes - itemDto.QuantidadeMedidaNestaBm;
             item.InicioEfetivo = itemDto.InicioEfetivo;
