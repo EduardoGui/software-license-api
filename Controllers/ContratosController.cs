@@ -46,6 +46,13 @@ public class ContratosController : ControllerBase
         return Ok(contrato);
     }
 
+    [HttpPatch("{id:int}/itens/{itemId:int}/descricao")]
+    public async Task<ActionResult<ContratoItemDto>> AtualizarDescricaoItem(int id, int itemId, AtualizarDescricaoContratoItemDto dto)
+    {
+        var item = await _contratoService.AtualizarDescricaoItemAsync(id, itemId, dto);
+        return Ok(item);
+    }
+
     [HttpPut("{id:int}/medicao-config")]
     public async Task<ActionResult<ContratoMedicaoConfigDto>> AtualizarMedicaoConfig(int id, UpdateContratoMedicaoConfigDto dto)
     {

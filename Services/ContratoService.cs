@@ -219,6 +219,22 @@ public class ContratoService : IContratoService
         return ParaDto(contrato, aditivosFormalizados);
     }
 
+    public async Task<ContratoItemDto> AtualizarDescricaoItemAsync(int contratoId, int itemId, AtualizarDescricaoContratoItemDto dto)
+    {
+        var contrato = await BuscarComItensOuFalhar(contratoId);
+        var item = contrato.Itens.FirstOrDefault(i => i.Id == itemId)
+            ?? throw new NotFoundException($"Item {itemId} não encontrado neste contrato.");
+
+        item.Descricao = dto.Descricao.Trim();
+        item.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Descrição do item {ItemId} do contrato {ContratoId} atualizada", itemId, contratoId);
+
+        return ParaItemDto(item);
+    }
+
     public async Task<ContratoMedicaoConfigDto> AtualizarMedicaoConfigAsync(int id, UpdateContratoMedicaoConfigDto dto)
     {
         await BuscarOuFalhar(id);

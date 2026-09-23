@@ -8,6 +8,7 @@ public interface IContratoService
     Task<ContratoDetalheDto> GetByIdAsync(int id);
     Task<ContratoDto> CreateAsync(CreateContratoDto dto);
     Task<ContratoDto> UpdateAsync(int id, UpdateContratoDto dto);
+    Task<ContratoItemDto> AtualizarDescricaoItemAsync(int contratoId, int itemId, AtualizarDescricaoContratoItemDto dto);
     Task<ContratoMedicaoConfigDto> AtualizarMedicaoConfigAsync(int id, UpdateContratoMedicaoConfigDto dto);
     Task<ContratoFaturamentoConfigDto> AtualizarFaturamentoConfigAsync(int id, UpdateContratoFaturamentoConfigDto dto);
     Task<List<AnexoDto>> ListarAnexosAsync(int contratoId);

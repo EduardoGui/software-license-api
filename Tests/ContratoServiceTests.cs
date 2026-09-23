@@ -222,6 +222,36 @@ public class ContratoServiceTests
     }
 
     [Fact]
+    public async Task AtualizarDescricaoItemAsync_DeveAtualizarDescricao()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var detalhe = await service.GetByIdAsync(contrato.Id);
+        var itemId = detalhe.Itens[0].Id;
+
+        var atualizado = await service.AtualizarDescricaoItemAsync(
+            contrato.Id, itemId, new AtualizarDescricaoContratoItemDto { Descricao = "Descrição corrigida" });
+
+        Assert.Equal("Descrição corrigida", atualizado.Descricao);
+        var confirmado = await service.GetByIdAsync(contrato.Id);
+        Assert.Equal("Descrição corrigida", confirmado.Itens[0].Descricao);
+    }
+
+    [Fact]
+    public async Task AtualizarDescricaoItemAsync_DeveRejeitarItemDeOutroContrato()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contratoA = await service.CreateAsync(CriarDtoValido(fornecedor.Id, "SUB_HOPE_0001_2026"));
+        var contratoB = await service.CreateAsync(CriarDtoValido(fornecedor.Id, "SUB_HOPE_0002_2026"));
+        var itemDoContratoB = (await service.GetByIdAsync(contratoB.Id)).Itens[0].Id;
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            service.AtualizarDescricaoItemAsync(contratoA.Id, itemDoContratoB, new AtualizarDescricaoContratoItemDto { Descricao = "X" }));
+    }
+
+    [Fact]
     public async Task AtualizarFaturamentoConfigAsync_DeveRejeitarJanelaInvalida()
     {
         var (service, context) = CriarService();
