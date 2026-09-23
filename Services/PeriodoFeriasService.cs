@@ -227,13 +227,19 @@ public class PeriodoFeriasService : IPeriodoFeriasService
     private static PeriodoFeriasDto ParaDto(PeriodoFerias p, DateOnly hoje)
     {
         var aquisitivoFechado = hoje > p.FimAquisitivo;
-        var direitoAdquirido = aquisitivoFechado ? p.DiasDireito : 0;
+        // Antecipação de férias (decisão do usuário, 2026-09-23): concede o direito integral desde
+        // o 1º dia do período, sem esperar o aquisitivo fechar - "AquisitivoFechado" continua só
+        // controlando quando dá pra gerar o PRÓXIMO período (GerarProximoPeriodoAsync).
+        var direitoAdquirido = p.DiasDireito;
 
         var totalDiasAquisitivo = p.FimAquisitivo.DayNumber - p.InicioAquisitivo.DayNumber + 1;
         var diasDecorridos = Math.Clamp(hoje.DayNumber - p.InicioAquisitivo.DayNumber + 1, 0, totalDiasAquisitivo);
         var projecao = aquisitivoFechado
             ? p.DiasDireito
             : Math.Round(p.DiasDireito * (decimal)diasDecorridos / totalDiasAquisitivo, 1);
+        // Quanto do direito concedido ainda não foi "ganho" de verdade pela política - some sozinho
+        // conforme diasDecorridos avança, e zera quando o aquisitivo fecha (projecao == DiasDireito).
+        var antecipado = Math.Max(0, direitoAdquirido - projecao);
 
         // Cancelar/reprovar uma ProgramacaoFerias não gera lançamento de reversão - a soma do saldo
         // simplesmente ignora movimentações cuja ProgramacaoFerias vinculada não está mais ativa
@@ -294,6 +300,7 @@ public class PeriodoFeriasService : IPeriodoFeriasService
             AquisitivoFechado = aquisitivoFechado,
             DireitoAdquirido = direitoAdquirido,
             ProjecaoProporcional = projecao,
+            Antecipado = antecipado,
             Comprometido = comprometido,
             Consumido = consumido,
             SaldoDisponivel = direitoAdquirido + somaMovimentacoes,

@@ -186,24 +186,26 @@ public class PeriodoFeriasServiceTests
     }
 
     [Fact]
-    public async Task GetByIdAsync_DevePreencherProjecaoENaoDireitoAdquiridoAntesDeFecharAquisitivo()
+    public async Task GetByIdAsync_DeveConcederDireitoAdquiridoIntegralAntesDeFecharAquisitivo()
     {
         var (service, context) = CriarService();
         CriarPoliticaPj(context);
         // Início 01/01/2027, "hoje" fixado em 15/06/2027 (~165 dias decorridos de 365) - aquisitivo ainda em curso.
+        // Antecipação de férias: DireitoAdquirido já vem cheio (30), mesmo sem o aquisitivo ter fechado.
         var usuario = CriarUsuarioPj(context, new DateOnly(2027, 1, 1));
         var periodo = await service.GerarProximoPeriodoAsync(usuario.Id, null);
 
         var dto = await service.GetByIdAsync(periodo.Id);
 
         Assert.False(dto.AquisitivoFechado);
-        Assert.Equal(0, dto.DireitoAdquirido);
+        Assert.Equal(30, dto.DireitoAdquirido);
         Assert.True(dto.ProjecaoProporcional is > 12 and < 15);
-        Assert.Equal(0, dto.SaldoDisponivel);
+        Assert.True(dto.Antecipado is > 15 and < 18);
+        Assert.Equal(30, dto.SaldoDisponivel);
     }
 
     [Fact]
-    public async Task GetByIdAsync_DeveCalcularDireitoAdquiridoAposFecharAquisitivo()
+    public async Task GetByIdAsync_DeveZerarAntecipadoAposFecharAquisitivo()
     {
         var (service, context) = CriarService();
         CriarPoliticaPj(context);
@@ -214,6 +216,8 @@ public class PeriodoFeriasServiceTests
 
         Assert.True(dto.AquisitivoFechado);
         Assert.Equal(30, dto.DireitoAdquirido);
+        Assert.Equal(30, dto.ProjecaoProporcional);
+        Assert.Equal(0, dto.Antecipado);
         Assert.Equal(30, dto.SaldoDisponivel);
     }
 
