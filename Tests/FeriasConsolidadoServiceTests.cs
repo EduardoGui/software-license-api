@@ -46,6 +46,43 @@ public class FeriasConsolidadoServiceTests
         return usuario;
     }
 
+    private static Usuario CriarUsuarioComTipo(AppDbContext context, string tipo, DateOnly dataInicio, string nome)
+    {
+        var usuario = new Usuario
+        {
+            Nome = nome,
+            Email = $"{Guid.NewGuid():N}@empresa.com",
+            DataInicio = dataInicio,
+            Tipo = tipo,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Usuarios.Add(usuario);
+        context.SaveChanges();
+        return usuario;
+    }
+
+    private static void CriarPoliticaClt(AppDbContext context, int diasAntecedenciaMarcacaoCompulsoria = 30)
+    {
+        context.PoliticasFerias.Add(new PoliticaFerias
+        {
+            TipoVinculo = UsuarioTipo.Clt,
+            DiasDireitoPorAno = 30,
+            MaxFracionamentos = 3,
+            DiasMinimoUltimoFracionamento = 14,
+            DiasMinimoDemaisFracionamentos = 5,
+            DiasAntecedenciaRemarcacao = 45,
+            DiasAntecedenciaMarcacaoCompulsoria = diasAntecedenciaMarcacaoCompulsoria,
+            PermiteAbonoPecuniario = true,
+            MaxDiasAbono = 10,
+            DiasMinimosAntesFeriadoOuFimDeSemana = 2,
+            Ativa = true,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        });
+        context.SaveChanges();
+    }
+
     private static Setor CriarSetor(AppDbContext context, string nome)
     {
         var setor = new Setor { Nome = nome, Ativo = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
@@ -89,6 +126,25 @@ public class FeriasConsolidadoServiceTests
         Assert.Equal(2, dashboard.ColaboradoresPj);
         Assert.Equal(1, dashboard.ColaboradoresSemPeriodoGerado);
         Assert.Equal(30, dashboard.SaldoTotalDisponivel);
+    }
+
+    [Fact]
+    public async Task ObterDashboardAsync_DeveIncluirColaboradorClt()
+    {
+        var (service, periodoService, _, _, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        CriarPoliticaClt(context, diasAntecedenciaMarcacaoCompulsoria: 30);
+        var pj = CriarUsuarioPj(context, new DateOnly(2026, 1, 1), "Colaborador PJ");
+        // FimConcessivo 30/06/2027, a 15 dias de "hoje" (15/06/2027) - deve aparecer como concessivo vencendo.
+        var clt = CriarUsuarioComTipo(context, UsuarioTipo.Clt, new DateOnly(2025, 7, 1), "Colaborador CLT");
+        await periodoService.GerarProximoPeriodoAsync(pj.Id, null);
+        await periodoService.GerarProximoPeriodoAsync(clt.Id, null);
+
+        var dashboard = await service.ObterDashboardAsync();
+
+        Assert.Equal(2, dashboard.ColaboradoresPj);
+        var alerta = Assert.Single(dashboard.ConcessivosProximosDoVencimento);
+        Assert.Equal(clt.Id, alerta.UsuarioId);
     }
 
     [Fact]
@@ -184,6 +240,23 @@ public class FeriasConsolidadoServiceTests
         Assert.Equal(2, linha.Eventos.Count);
         Assert.Contains(linha.Eventos, e => e.Tipo == FeriasCalendarioEventoTipo.Programacao && e.DataInicio == new DateOnly(2027, 8, 2));
         Assert.Contains(linha.Eventos, e => e.Tipo == FeriasCalendarioEventoTipo.Recesso && e.DataInicio == new DateOnly(2027, 12, 21));
+    }
+
+    [Fact]
+    public async Task ObterCalendarioAsync_DeveIncluirColaboradorClt()
+    {
+        var (service, periodoService, programacaoService, _, context) = CriarServicos();
+        CriarPoliticaClt(context);
+        var usuario = CriarUsuarioComTipo(context, UsuarioTipo.Clt, new DateOnly(2026, 1, 1), "Colaborador CLT");
+        var periodo = await periodoService.GerarProximoPeriodoAsync(usuario.Id, null);
+        var programacao = await programacaoService.CreateAsync(periodo.Id, new CreateProgramacaoFeriasDto { DataInicio = new DateOnly(2027, 8, 2), QuantidadeDias = 5 }, null);
+        await programacaoService.SolicitarAsync(programacao.Id, null);
+        await programacaoService.AprovarAsync(programacao.Id, null);
+
+        var calendario = await service.ObterCalendarioAsync(new FeriasCalendarioFiltroDto { De = new DateOnly(2027, 1, 1), Ate = new DateOnly(2027, 12, 31) });
+
+        var linha = Assert.Single(calendario);
+        Assert.Equal("Colaborador CLT", linha.UsuarioNome);
     }
 
     [Fact]

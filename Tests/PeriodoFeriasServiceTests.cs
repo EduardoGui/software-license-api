@@ -80,10 +80,42 @@ public class PeriodoFeriasServiceTests
     }
 
     [Fact]
-    public async Task GerarProximoPeriodoAsync_DeveRejeitarUsuarioNaoPj()
+    public async Task GerarProximoPeriodoAsync_DeveRejeitarUsuarioEstagio()
     {
         var (service, context) = CriarService();
         CriarPoliticaPj(context);
+        var usuario = new Usuario
+        {
+            Nome = "Estagiário", Email = "estagiario@empresa.com", DataInicio = new DateOnly(2025, 1, 1), Tipo = UsuarioTipo.Estagio,
+            DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Usuarios.Add(usuario);
+        context.SaveChanges();
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.GerarProximoPeriodoAsync(usuario.Id, null));
+    }
+
+    [Fact]
+    public async Task GerarProximoPeriodoAsync_DeveFuncionarParaColaboradorClt()
+    {
+        var (service, context) = CriarService();
+        context.PoliticasFerias.Add(new PoliticaFerias
+        {
+            TipoVinculo = UsuarioTipo.Clt,
+            DiasDireitoPorAno = 30,
+            MaxFracionamentos = 3,
+            DiasMinimoUltimoFracionamento = 14,
+            DiasMinimoDemaisFracionamentos = 5,
+            DiasAntecedenciaRemarcacao = 45,
+            DiasAntecedenciaMarcacaoCompulsoria = 30,
+            PermiteAbonoPecuniario = true,
+            MaxDiasAbono = 10,
+            DiasMinimosAntesFeriadoOuFimDeSemana = 2,
+            Ativa = true,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        });
+        context.SaveChanges();
         var usuario = new Usuario
         {
             Nome = "Colaborador CLT", Email = "clt@empresa.com", DataInicio = new DateOnly(2025, 1, 1), Tipo = UsuarioTipo.Clt,
@@ -92,7 +124,27 @@ public class PeriodoFeriasServiceTests
         context.Usuarios.Add(usuario);
         context.SaveChanges();
 
-        await Assert.ThrowsAsync<BusinessRuleException>(() => service.GerarProximoPeriodoAsync(usuario.Id, null));
+        var periodo = await service.GerarProximoPeriodoAsync(usuario.Id, usuarioResponsavelId: null);
+
+        Assert.Equal(new DateOnly(2025, 1, 1), periodo.InicioAquisitivo);
+        Assert.Equal(30, periodo.DiasDireito);
+    }
+
+    [Fact]
+    public async Task GerarProximoPeriodoAsync_DeveRejeitarCltSemPoliticaPropria()
+    {
+        var (service, context) = CriarService();
+        CriarPoliticaPj(context);
+        var usuario = new Usuario
+        {
+            Nome = "Colaborador CLT", Email = "clt2@empresa.com", DataInicio = new DateOnly(2025, 1, 1), Tipo = UsuarioTipo.Clt,
+            DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Usuarios.Add(usuario);
+        context.SaveChanges();
+
+        var erro = await Assert.ThrowsAsync<BusinessRuleException>(() => service.GerarProximoPeriodoAsync(usuario.Id, null));
+        Assert.Contains("Clt", erro.Message);
     }
 
     [Fact]

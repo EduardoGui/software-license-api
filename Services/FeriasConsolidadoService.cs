@@ -26,7 +26,7 @@ public class FeriasConsolidadoService : IFeriasConsolidadoService
     {
         var hoje = Hoje();
 
-        var usuariosPjAtivos = (await _context.Usuarios.Where(u => u.Tipo == UsuarioTipo.Pj).ToListAsync())
+        var usuariosComFeriasAtivos = (await _context.Usuarios.Where(u => UsuarioTipo.ComModuloDeFerias.Contains(u.Tipo!)).ToListAsync())
             .Where(u => UsuarioStatus.Calcular(u, hoje) == UsuarioStatus.Ativo)
             .ToList();
 
@@ -34,11 +34,14 @@ public class FeriasConsolidadoService : IFeriasConsolidadoService
             .GroupBy(p => p.UsuarioId)
             .ToDictionary(g => g.Key, g => g.First());
 
-        var politica = await _context.PoliticasFerias.FirstOrDefaultAsync(p => p.TipoVinculo == UsuarioTipo.Pj && p.Ativa);
+        var politicasPorTipo = (await _context.PoliticasFerias.Where(p => p.Ativa).ToListAsync())
+            .Where(p => p.TipoVinculo is not null)
+            .ToDictionary(p => p.TipoVinculo!, p => p);
 
         var concessivosVencendo = new List<ConcessivoVencendoDto>();
-        foreach (var usuario in usuariosPjAtivos)
+        foreach (var usuario in usuariosComFeriasAtivos)
         {
+            var politica = politicasPorTipo.GetValueOrDefault(usuario.Tipo!);
             if (!periodoAtualPorUsuario.TryGetValue(usuario.Id, out var periodo) || periodo.SaldoDisponivel <= 0 || politica is null)
             {
                 continue;
@@ -71,9 +74,9 @@ public class FeriasConsolidadoService : IFeriasConsolidadoService
 
         return new FeriasDashboardDto
         {
-            ColaboradoresPj = usuariosPjAtivos.Count,
-            ColaboradoresSemPeriodoGerado = usuariosPjAtivos.Count(u => !periodoAtualPorUsuario.ContainsKey(u.Id)),
-            SaldoTotalDisponivel = usuariosPjAtivos.Sum(u => periodoAtualPorUsuario.GetValueOrDefault(u.Id)?.SaldoDisponivel ?? 0),
+            ColaboradoresPj = usuariosComFeriasAtivos.Count,
+            ColaboradoresSemPeriodoGerado = usuariosComFeriasAtivos.Count(u => !periodoAtualPorUsuario.ContainsKey(u.Id)),
+            SaldoTotalDisponivel = usuariosComFeriasAtivos.Sum(u => periodoAtualPorUsuario.GetValueOrDefault(u.Id)?.SaldoDisponivel ?? 0),
             ProgramacoesPendentesAprovacao = filaAprovacao.Count,
             ProgramacoesEmGozoHoje = programacoesEmGozoHoje,
             RecessosConfirmadosAnoAtual = recessosConfirmadosAnoAtual,
@@ -88,7 +91,7 @@ public class FeriasConsolidadoService : IFeriasConsolidadoService
         var de = filtro.De ?? new DateOnly(hoje.Year, hoje.Month, 1);
         var ate = filtro.Ate ?? de.AddMonths(1).AddDays(-1);
 
-        var usuariosQuery = _context.Usuarios.Where(u => u.Tipo == UsuarioTipo.Pj).AsQueryable();
+        var usuariosQuery = _context.Usuarios.Where(u => UsuarioTipo.ComModuloDeFerias.Contains(u.Tipo!)).AsQueryable();
         if (filtro.SetorId is not null)
         {
             usuariosQuery = usuariosQuery.Where(u => u.SetorId == filtro.SetorId);
@@ -161,7 +164,7 @@ public class FeriasConsolidadoService : IFeriasConsolidadoService
         var hoje = Hoje();
         var alertas = new List<PendenciaDto>();
 
-        var usuariosPjAtivos = (await _context.Usuarios.Where(u => u.Tipo == UsuarioTipo.Pj).ToListAsync())
+        var usuariosComFeriasAtivos = (await _context.Usuarios.Where(u => UsuarioTipo.ComModuloDeFerias.Contains(u.Tipo!)).ToListAsync())
             .Where(u => UsuarioStatus.Calcular(u, hoje) == UsuarioStatus.Ativo)
             .ToList();
 
@@ -169,7 +172,9 @@ public class FeriasConsolidadoService : IFeriasConsolidadoService
             .GroupBy(p => p.UsuarioId)
             .ToDictionary(g => g.Key, g => g.First());
 
-        var politica = await _context.PoliticasFerias.FirstOrDefaultAsync(p => p.TipoVinculo == UsuarioTipo.Pj && p.Ativa);
+        var politicasPorTipo = (await _context.PoliticasFerias.Where(p => p.Ativa).ToListAsync())
+            .Where(p => p.TipoVinculo is not null)
+            .ToDictionary(p => p.TipoVinculo!, p => p);
 
         var programacoesAtivasPorUsuario = (await _context.ProgramacoesFerias
                 .Include(p => p.PeriodoFerias)
@@ -177,7 +182,7 @@ public class FeriasConsolidadoService : IFeriasConsolidadoService
                 .ToListAsync())
             .ToLookup(p => p.PeriodoFerias.UsuarioId);
 
-        foreach (var usuario in usuariosPjAtivos)
+        foreach (var usuario in usuariosComFeriasAtivos)
         {
             if (!periodoAtualPorUsuario.TryGetValue(usuario.Id, out var periodo))
             {
@@ -197,6 +202,7 @@ public class FeriasConsolidadoService : IFeriasConsolidadoService
                 });
             }
 
+            var politica = politicasPorTipo.GetValueOrDefault(usuario.Tipo!);
             if (politica is null || periodo.SaldoDisponivel <= 0)
             {
                 continue;

@@ -72,15 +72,15 @@ public class PeriodoFeriasService : IPeriodoFeriasService
             throw new NotFoundException($"Usuário {usuarioId} não encontrado.");
         }
 
-        if (usuario.Tipo != UsuarioTipo.Pj)
+        if (!UsuarioTipo.ComModuloDeFerias.Contains(usuario.Tipo))
         {
-            throw new BusinessRuleException("Este módulo está disponível apenas para colaboradores PJ no momento.");
+            throw new BusinessRuleException("Este módulo está disponível apenas para colaboradores PJ ou CLT no momento.");
         }
 
-        var politica = await _context.PoliticasFerias.FirstOrDefaultAsync(p => p.TipoVinculo == UsuarioTipo.Pj && p.Ativa);
+        var politica = await _context.PoliticasFerias.FirstOrDefaultAsync(p => p.TipoVinculo == usuario.Tipo && p.Ativa);
         if (politica is null)
         {
-            throw new BusinessRuleException("Nenhuma política de férias ativa configurada para PJ.");
+            throw new BusinessRuleException($"Nenhuma política de férias ativa configurada para {usuario.Tipo}.");
         }
 
         var hoje = Hoje();

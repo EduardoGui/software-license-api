@@ -68,6 +68,27 @@ public class ProgramacaoFeriasServiceTests
         context.SaveChanges();
     }
 
+    private static void CriarPoliticaClt(AppDbContext context, int diasMinimosAntesFeriadoOuFimDeSemana = 2)
+    {
+        context.PoliticasFerias.Add(new PoliticaFerias
+        {
+            TipoVinculo = UsuarioTipo.Clt,
+            DiasDireitoPorAno = 30,
+            MaxFracionamentos = 3,
+            DiasMinimoUltimoFracionamento = 14,
+            DiasMinimoDemaisFracionamentos = 5,
+            DiasAntecedenciaRemarcacao = 45,
+            DiasAntecedenciaMarcacaoCompulsoria = 30,
+            PermiteAbonoPecuniario = true,
+            MaxDiasAbono = 10,
+            DiasMinimosAntesFeriadoOuFimDeSemana = diasMinimosAntesFeriadoOuFimDeSemana,
+            Ativa = true,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        });
+        context.SaveChanges();
+    }
+
     /// Período já com aquisitivo fechado (2026-01-01 a 2026-12-31) e saldo de 30 dias materializado,
     /// concessivo em curso (2027-01-01 a 2027-12-31) - pronto para programar férias de verdade.
     private static async Task<PeriodoFeriasDto> CriarPeriodoComSaldoAsync(PeriodoFeriasService periodoService, int usuarioId)
@@ -141,6 +162,21 @@ public class ProgramacaoFeriasServiceTests
         Assert.Equal(ProgramacaoFeriasStatus.Rascunho, programacao.Status);
         Assert.Equal(1, programacao.Sequencia);
         Assert.Equal(new DateOnly(2027, 1, 20), programacao.DataFim);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveFuncionarParaColaboradorClt()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaClt(context);
+        var usuario = CriarUsuarioComTipo(context, UsuarioTipo.Clt, "Colaborador CLT");
+        var periodo = await CriarPeriodoComSaldoAsync(periodoService, usuario.Id);
+
+        var programacao = await service.CreateAsync(periodo.Id, CriarDtoValido(), usuarioResponsavelId: null);
+        var solicitada = await service.SolicitarAsync(programacao.Id, null);
+        var aprovada = await service.AprovarAsync(solicitada.Id, null);
+
+        Assert.Equal(ProgramacaoFeriasStatus.Aprovada, aprovada.Status);
     }
 
     [Fact]

@@ -75,7 +75,7 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
             throw new NotFoundException($"Período de Férias {periodoFeriasId} não encontrado.");
         }
 
-        var politica = await BuscarPoliticaAtivaOuFalhar();
+        var politica = await BuscarPoliticaAtivaOuFalhar(periodo.Usuario.Tipo);
         var hoje = Hoje();
         var dataFim = dto.DataInicio.AddDays(dto.QuantidadeDias - 1);
         var diasAbono = dto.AbonoPecuniario ? dto.DiasAbono : 0;
@@ -130,7 +130,7 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
         }
 
         var periodo = programacao.PeriodoFerias;
-        var politica = await BuscarPoliticaAtivaOuFalhar();
+        var politica = await BuscarPoliticaAtivaOuFalhar(periodo.Usuario.Tipo);
         var hoje = Hoje();
         var estavaAprovada = programacao.Status == ProgramacaoFeriasStatus.Aprovada;
 
@@ -444,7 +444,7 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
     public async Task<ProgramacaoFeriasDto> CancelarAsync(int id, int? usuarioResponsavelId)
     {
         var programacao = await BuscarOuFalhar(id);
-        var politica = await BuscarPoliticaAtivaOuFalhar();
+        var politica = await BuscarPoliticaAtivaOuFalhar(programacao.PeriodoFerias.Usuario.Tipo);
 
         if (programacao.Status != ProgramacaoFeriasStatus.Rascunho
             && programacao.Status != ProgramacaoFeriasStatus.Solicitada
@@ -526,12 +526,12 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
         }
     }
 
-    private async Task<PoliticaFerias> BuscarPoliticaAtivaOuFalhar()
+    private async Task<PoliticaFerias> BuscarPoliticaAtivaOuFalhar(string? tipoVinculo)
     {
-        var politica = await _context.PoliticasFerias.FirstOrDefaultAsync(p => p.TipoVinculo == UsuarioTipo.Pj && p.Ativa);
+        var politica = await _context.PoliticasFerias.FirstOrDefaultAsync(p => p.TipoVinculo == tipoVinculo && p.Ativa);
         if (politica is null)
         {
-            throw new BusinessRuleException("Nenhuma política de férias ativa configurada para PJ.");
+            throw new BusinessRuleException($"Nenhuma política de férias ativa configurada para {tipoVinculo}.");
         }
 
         return politica;
