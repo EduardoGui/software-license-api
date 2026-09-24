@@ -53,6 +53,20 @@ public class ContratosController : ControllerBase
         return Ok(item);
     }
 
+    [HttpPut("{id:int}/itens/{itemId:int}")]
+    public async Task<ActionResult<ContratoItemDto>> AtualizarItem(int id, int itemId, UpdateContratoItemDto dto)
+    {
+        var item = await _contratoService.AtualizarItemAsync(id, itemId, dto);
+        return Ok(item);
+    }
+
+    [HttpDelete("{id:int}/itens/{itemId:int}")]
+    public async Task<IActionResult> ExcluirItem(int id, int itemId)
+    {
+        await _contratoService.ExcluirItemAsync(id, itemId);
+        return NoContent();
+    }
+
     [HttpPut("{id:int}/medicao-config")]
     public async Task<ActionResult<ContratoMedicaoConfigDto>> AtualizarMedicaoConfig(int id, UpdateContratoMedicaoConfigDto dto)
     {
@@ -171,6 +185,13 @@ public class ContratosController : ControllerBase
         // Qualquer Administrador pode aprovar, mesmo sem Usuario (colaborador) vinculado à conta
         // de acesso — diferente do fluxo de Reembolso, que exige um aprovador de setor específico.
         var medicao = await _contratoService.AprovarMedicaoBmAsync(id, medicaoId, User.ObterUsuarioId());
+        return Ok(medicao);
+    }
+
+    [HttpPatch("{id:int}/medicoes/{medicaoId:int}/reverter-aprovacao")]
+    public async Task<ActionResult<MedicaoBmDto>> ReverterAprovacaoMedicao(int id, int medicaoId)
+    {
+        var medicao = await _contratoService.ReverterAprovacaoMedicaoBmAsync(id, medicaoId);
         return Ok(medicao);
     }
 

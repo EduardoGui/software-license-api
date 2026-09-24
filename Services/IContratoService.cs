@@ -9,6 +9,8 @@ public interface IContratoService
     Task<ContratoDto> CreateAsync(CreateContratoDto dto);
     Task<ContratoDto> UpdateAsync(int id, UpdateContratoDto dto);
     Task<ContratoItemDto> AtualizarDescricaoItemAsync(int contratoId, int itemId, AtualizarDescricaoContratoItemDto dto);
+    Task<ContratoItemDto> AtualizarItemAsync(int contratoId, int itemId, UpdateContratoItemDto dto);
+    Task ExcluirItemAsync(int contratoId, int itemId);
     Task<ContratoMedicaoConfigDto> AtualizarMedicaoConfigAsync(int id, UpdateContratoMedicaoConfigDto dto);
     Task<ContratoFaturamentoConfigDto> AtualizarFaturamentoConfigAsync(int id, UpdateContratoFaturamentoConfigDto dto);
     Task<List<AnexoDto>> ListarAnexosAsync(int contratoId);
@@ -24,6 +26,7 @@ public interface IContratoService
     Task<MedicaoBmDto> AtualizarMedicaoBmAsync(int contratoId, int medicaoId, UpdateMedicaoBmDto dto);
     Task ExcluirMedicaoBmAsync(int contratoId, int medicaoId);
     Task<MedicaoBmDto> AprovarMedicaoBmAsync(int contratoId, int medicaoId, int? aprovadorUsuarioId);
+    Task<MedicaoBmDto> ReverterAprovacaoMedicaoBmAsync(int contratoId, int medicaoId);
     Task<MedicaoBmDto> ReprovarMedicaoBmAsync(int contratoId, int medicaoId, int? aprovadorUsuarioId, ReprovarMedicaoBmDto dto);
     Task<List<ContratoSaldoItemDto>> ObterSaldoAsync(int contratoId);
     Task<List<AnexoDto>> ListarAnexosMedicaoAsync(int contratoId, int medicaoId);

@@ -252,6 +252,92 @@ public class ContratoServiceTests
     }
 
     [Fact]
+    public async Task AtualizarItemAsync_DeveAtualizarCampos()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var itemId = (await service.GetByIdAsync(contrato.Id)).Itens[0].Id;
+
+        var atualizado = await service.AtualizarItemAsync(contrato.Id, itemId, new UpdateContratoItemDto
+        {
+            Descricao = "Consultoria consolidada",
+            Unidade = "VB",
+            QuantidadeContratada = 1m,
+            ValorUnitario = 6980m,
+        });
+
+        Assert.Equal("Consultoria consolidada", atualizado.Descricao);
+        Assert.Equal(1m, atualizado.QuantidadeContratada);
+        Assert.Equal(6980m, atualizado.ValorUnitario);
+    }
+
+    [Fact]
+    public async Task AtualizarItemAsync_DeveRejeitarQuantidadeMenorQueJaMedido()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var itemId = (await service.GetByIdAsync(contrato.Id)).Itens[0].Id;
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        await service.AtualizarMedicaoBmAsync(contrato.Id, bm.Id, new UpdateMedicaoBmDto
+        {
+            Itens = [new UpdateMedicaoBmItemDto { ItemId = bm.Itens[0].Id, QuantidadeMedidaNestaBm = 10m }],
+        });
+        await service.AprovarMedicaoBmAsync(contrato.Id, bm.Id, 1);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.AtualizarItemAsync(contrato.Id, itemId, new UpdateContratoItemDto
+        {
+            Descricao = "X",
+            Unidade = "VB",
+            QuantidadeContratada = 5m,
+            ValorUnitario = 13750m,
+        }));
+    }
+
+    [Fact]
+    public async Task ExcluirItemAsync_DeveExcluirItemSemMedicao()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var dto = CriarDtoValido(fornecedor.Id);
+        dto.Itens.Add(new CreateContratoItemDto { Descricao = "Item extra", Unidade = "UN", QuantidadeContratada = 1m, ValorUnitario = 100m });
+        var contrato = await service.CreateAsync(dto);
+        var itens = (await service.GetByIdAsync(contrato.Id)).Itens;
+        var itemExtraId = itens[1].Id;
+
+        await service.ExcluirItemAsync(contrato.Id, itemExtraId);
+
+        var restante = await service.GetByIdAsync(contrato.Id);
+        Assert.Single(restante.Itens);
+    }
+
+    [Fact]
+    public async Task ExcluirItemAsync_DeveRejeitarItemComMedicao()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var dto = CriarDtoValido(fornecedor.Id);
+        dto.Itens.Add(new CreateContratoItemDto { Descricao = "Item extra", Unidade = "UN", QuantidadeContratada = 1m, ValorUnitario = 100m });
+        var contrato = await service.CreateAsync(dto);
+        await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        var itens = (await service.GetByIdAsync(contrato.Id)).Itens;
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.ExcluirItemAsync(contrato.Id, itens[0].Id));
+    }
+
+    [Fact]
+    public async Task ExcluirItemAsync_DeveRejeitarUltimoItem()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var itemId = (await service.GetByIdAsync(contrato.Id)).Itens[0].Id;
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.ExcluirItemAsync(contrato.Id, itemId));
+    }
+
+    [Fact]
     public async Task AtualizarFaturamentoConfigAsync_DeveRejeitarJanelaInvalida()
     {
         var (service, context) = CriarService();
@@ -706,6 +792,33 @@ public class ContratoServiceTests
         await service.AprovarMedicaoBmAsync(contrato.Id, bm.Id, 7);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.AprovarMedicaoBmAsync(contrato.Id, bm.Id, 7));
+    }
+
+    [Fact]
+    public async Task ReverterAprovacaoMedicaoBmAsync_DeveVoltarParaRascunho()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        await service.AprovarMedicaoBmAsync(contrato.Id, bm.Id, 7);
+
+        var revertido = await service.ReverterAprovacaoMedicaoBmAsync(contrato.Id, bm.Id);
+
+        Assert.Equal(MedicaoBmStatus.Rascunho, revertido.Status);
+        Assert.Null(revertido.AprovadorId);
+        Assert.Null(revertido.DataDecisao);
+    }
+
+    [Fact]
+    public async Task ReverterAprovacaoMedicaoBmAsync_DeveRejeitarSeNaoEstiverAprovado()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.ReverterAprovacaoMedicaoBmAsync(contrato.Id, bm.Id));
     }
 
     [Fact]

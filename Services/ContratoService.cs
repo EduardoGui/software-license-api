@@ -235,6 +235,69 @@ public class ContratoService : IContratoService
         return ParaItemDto(item);
     }
 
+    // Edição completa (quantidade/valor incluídos) — diferente de AtualizarDescricaoItemAsync,
+    // aqui a mudança tem efeito real em saldo/medições, então bloqueia reduzir a quantidade abaixo
+    // do que já foi medido em BM Aprovado (mesma base de cálculo usada em CriarMedicaoBmAsync).
+    public async Task<ContratoItemDto> AtualizarItemAsync(int contratoId, int itemId, UpdateContratoItemDto dto)
+    {
+        var contrato = await BuscarComItensOuFalhar(contratoId);
+        var item = contrato.Itens.FirstOrDefault(i => i.Id == itemId)
+            ?? throw new NotFoundException($"Item {itemId} não encontrado neste contrato.");
+
+        var (_, _, itensDeMedicoesAprovadas) = await ObterContextoSaldoAsync(contratoId);
+        var jaMedido = itensDeMedicoesAprovadas
+            .Where(i => i.ContratoItemId == itemId && i.AditivoItemId == null)
+            .Sum(i => i.QuantidadeMedidaNestaBm);
+
+        if (dto.QuantidadeContratada < jaMedido)
+        {
+            throw new BusinessRuleException(
+                $"Quantidade contratada ({dto.QuantidadeContratada}) não pode ser menor que o que já foi medido em BM aprovado ({jaMedido}).");
+        }
+
+        item.Codigo = string.IsNullOrWhiteSpace(dto.Codigo) ? null : dto.Codigo.Trim();
+        item.Descricao = dto.Descricao.Trim();
+        item.Unidade = dto.Unidade.Trim();
+        item.QuantidadeContratada = dto.QuantidadeContratada;
+        item.ValorUnitario = dto.ValorUnitario;
+        item.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Item {ItemId} do contrato {ContratoId} atualizado", itemId, contratoId);
+
+        return ParaItemDto(item);
+    }
+
+    public async Task ExcluirItemAsync(int contratoId, int itemId)
+    {
+        var contrato = await BuscarComItensOuFalhar(contratoId);
+        var item = contrato.Itens.FirstOrDefault(i => i.Id == itemId)
+            ?? throw new NotFoundException($"Item {itemId} não encontrado neste contrato.");
+
+        if (contrato.Itens.Count <= 1)
+        {
+            throw new BusinessRuleException("O contrato precisa ter ao menos um item.");
+        }
+
+        var temMedicao = await _context.MedicaoBmItens.AnyAsync(i => i.ContratoItemId == itemId);
+        if (temMedicao)
+        {
+            throw new BusinessRuleException("Este item não pode ser excluído porque já tem medição (BM) registrada contra ele.");
+        }
+
+        var temAditivo = await _context.AditivoItens.AnyAsync(i => i.ContratoItemId == itemId);
+        if (temAditivo)
+        {
+            throw new BusinessRuleException("Este item não pode ser excluído porque já tem Aditivo registrado contra ele.");
+        }
+
+        _context.ContratoItens.Remove(item);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Item {ItemId} do contrato {ContratoId} excluído", itemId, contratoId);
+    }
+
     public async Task<ContratoMedicaoConfigDto> AtualizarMedicaoConfigAsync(int id, UpdateContratoMedicaoConfigDto dto)
     {
         await BuscarOuFalhar(id);
@@ -816,6 +879,33 @@ public class ContratoService : IContratoService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("BM {MedicaoId} do contrato {ContratoId} aprovado pelo usuário {AprovadorId}", medicaoId, contratoId, aprovadorUsuarioId);
+
+        return await ObterMedicaoAsync(contratoId, medicaoId);
+    }
+
+    // Reverte um BM já Aprovado de volta pra Rascunho - existe só como via de escape administrativa
+    // pra corrigir um BM aprovado por engano/incompleto (ex.: estrutura de itens errada); todas as
+    // outras transições (Aprovar/Reprovar/Excluir) continuam exigindo Rascunho, mantendo Aprovado
+    // como estado "final" pro fluxo normal.
+    public async Task<MedicaoBmDto> ReverterAprovacaoMedicaoBmAsync(int contratoId, int medicaoId)
+    {
+        var medicao = await BuscarMedicaoOuFalhar(contratoId, medicaoId);
+
+        if (medicao.Status != MedicaoBmStatus.Aprovado)
+        {
+            throw new BusinessRuleException("Só é possível reverter a aprovação de um BM que esteja Aprovado.");
+        }
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        medicao.Status = MedicaoBmStatus.Rascunho;
+        medicao.AprovadorId = null;
+        medicao.ObservacaoAprovador = null;
+        medicao.DataDecisao = null;
+        medicao.DataAtualizacao = agora;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Aprovação do BM {MedicaoId} do contrato {ContratoId} revertida", medicaoId, contratoId);
 
         return await ObterMedicaoAsync(contratoId, medicaoId);
     }
