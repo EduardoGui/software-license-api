@@ -7,4 +7,5 @@ public interface IPlanoSaudeCustoService
     Task<PlanoSaudeMesDto> GetMesAsync(PlanoSaudeMesFiltroDto filtro);
     Task<PlanoSaudeMesDto> SalvarMesAsync(SalvarPlanoSaudeMesDto dto);
     Task RemoverAsync(int id);
+    Task<UltimoMesPlanoSaudeDto> ObterUltimoMesLancadoAsync();
 }

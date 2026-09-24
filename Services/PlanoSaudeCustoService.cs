@@ -176,6 +176,19 @@ public class PlanoSaudeCustoService : IPlanoSaudeCustoService
         _logger.LogInformation("Lançamento de plano de saúde {Id} removido", id);
     }
 
+    // Usado pelo formulário de Nota de Débito PJ pra sugerir o mês certo por padrão (em vez do mês
+    // corrente do calendário, que quase sempre diverge do mês recém-lançado do plano de saúde).
+    public async Task<UltimoMesPlanoSaudeDto> ObterUltimoMesLancadoAsync()
+    {
+        var ultimo = await _context.PlanoSaudeCustos
+            .OrderByDescending(p => p.Ano)
+            .ThenByDescending(p => p.Mes)
+            .Select(p => new { p.Ano, p.Mes })
+            .FirstOrDefaultAsync();
+
+        return new UltimoMesPlanoSaudeDto { Ano = ultimo?.Ano, Mes = ultimo?.Mes };
+    }
+
     private static void ValidarAnoMes(int ano, int mes)
     {
         if (mes < 1 || mes > 12)

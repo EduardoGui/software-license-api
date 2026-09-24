@@ -41,6 +41,13 @@ public class PlanoSaudeCustosController : ControllerBase
         return NoContent();
     }
 
+    [HttpGet("ultimo-mes")]
+    public async Task<ActionResult<UltimoMesPlanoSaudeDto>> ObterUltimoMes()
+    {
+        var ultimoMes = await _planoSaudeCustoService.ObterUltimoMesLancadoAsync();
+        return Ok(ultimoMes);
+    }
+
     [HttpGet("relatorio-mensal")]
     public async Task<IActionResult> RelatorioMensal([FromQuery] RelatorioMensalPlanoSaudeFiltroDto filtro, [FromQuery] string? formato)
     {
