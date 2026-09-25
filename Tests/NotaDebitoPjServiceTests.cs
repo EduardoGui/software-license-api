@@ -339,6 +339,36 @@ public class NotaDebitoPjServiceTests
     }
 
     [Fact]
+    public async Task CorrigirCompetenciaAsync_DeveFuncionarMesmoAposEnviada()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+        var criada = await service.CreateAsync(CriarDto(usuario.Id));
+        await service.EnviarAsync(criada.Id);
+
+        var corrigida = await service.CorrigirCompetenciaAsync(criada.Id, new CorrigirCompetenciaNotaDebitoPjDto { Ano = 2026, Mes = 7 });
+
+        Assert.Equal(2026, corrigida.Ano);
+        Assert.Equal(7, corrigida.Mes);
+        Assert.Equal(300m, corrigida.ValorBruto);
+    }
+
+    [Fact]
+    public async Task CorrigirCompetenciaAsync_DeveRejeitarSeUsuarioJaTemNdNaCompetenciaNova()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        CriarLancamento(context, usuario.Id, 2026, 7, 100m);
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+        await service.CreateAsync(CriarDto(usuario.Id, mes: 7));
+        var ndDeAgosto = await service.CreateAsync(CriarDto(usuario.Id, mes: 8));
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.CorrigirCompetenciaAsync(ndDeAgosto.Id, new CorrigirCompetenciaNotaDebitoPjDto { Ano = 2026, Mes = 7 }));
+    }
+
+    [Fact]
     public async Task DeleteAsync_DeveRejeitarExclusaoAposEnviada()
     {
         var (service, context, _) = CriarService();

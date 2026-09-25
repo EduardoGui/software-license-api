@@ -201,6 +201,44 @@ public class NotaDebitoPjService : INotaDebitoPjService
         return ParaDto(nota);
     }
 
+    // Correção pontual de Ano/Mês - diferente de UpdateAsync, funciona em qualquer status (inclusive
+    // Enviada/Recebida). Existe porque a competência real de uma fatura de plano de saúde só costuma
+    // ficar clara depois que a ND já foi gerada (às vezes já paga) - ver project_licencas_progresso.
+    // Não recalcula ValorBruto/Itens (continuam o snapshot congelado de quando a ND foi criada).
+    public async Task<NotaDebitoPjDto> CorrigirCompetenciaAsync(int id, CorrigirCompetenciaNotaDebitoPjDto dto)
+    {
+        var nota = await BuscarOuFalhar(id);
+
+        if (dto.Mes < 1 || dto.Mes > 12)
+        {
+            throw new BusinessRuleException("Mês deve estar entre 1 e 12.");
+        }
+
+        if (dto.Ano == nota.Ano && dto.Mes == nota.Mes)
+        {
+            return ParaDto(nota);
+        }
+
+        var jaExiste = await _context.NotasDebitoPj
+            .AnyAsync(n => n.Id != id && n.UsuarioId == nota.UsuarioId && n.Ano == dto.Ano && n.Mes == dto.Mes);
+        if (jaExiste)
+        {
+            throw new BusinessRuleException("Já existe uma nota de débito para este usuário nesta competência.");
+        }
+
+        _logger.LogInformation(
+            "Competência da nota de débito PJ {NotaId} corrigida de {AnoAntigo}/{MesAntigo} para {AnoNovo}/{MesNovo} (status {Status})",
+            nota.Id, nota.Ano, nota.Mes, dto.Ano, dto.Mes, nota.Status);
+
+        nota.Ano = dto.Ano;
+        nota.Mes = dto.Mes;
+        nota.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        return ParaDto(nota);
+    }
+
     public async Task DeleteAsync(int id)
     {
         var nota = await BuscarOuFalhar(id);

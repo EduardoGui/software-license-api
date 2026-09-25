@@ -142,6 +142,58 @@ public class FaturaOperadoraSaudeServiceTests
     }
 
     [Fact]
+    public async Task UpdateAsync_DevePermitirCorrigirAnoEMes()
+    {
+        var (service, _) = CriarService();
+        var criada = await service.CreateAsync(CriarDto(ano: 2026, mes: 9));
+
+        var atualizada = await service.UpdateAsync(criada.Id, new UpdateFaturaOperadoraSaudeDto
+        {
+            NumeroFatura = criada.NumeroFatura,
+            Ano = 2026,
+            Mes = 8,
+        });
+
+        Assert.Equal(2026, atualizada.Ano);
+        Assert.Equal(8, atualizada.Mes);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DeveCascatearCorrecaoDeMesParaNotasVinculadas()
+    {
+        var (service, context) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj");
+        var criada = await service.CreateAsync(CriarDto(ano: 2026, mes: 9));
+        CriarNotaVinculada(context, usuario.Id, criada.Id, 2026, 9);
+
+        await service.UpdateAsync(criada.Id, new UpdateFaturaOperadoraSaudeDto
+        {
+            NumeroFatura = criada.NumeroFatura,
+            Ano = 2026,
+            Mes = 8,
+        });
+
+        var nota = await context.NotasDebitoPj.FirstAsync(n => n.UsuarioId == usuario.Id);
+        Assert.Equal(8, nota.Mes);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DeveRejeitarNovaCompetenciaJaUsadaPelaMesmaOperadora()
+    {
+        var (service, _) = CriarService();
+        await service.CreateAsync(CriarDto(ano: 2026, mes: 8));
+        var segunda = await service.CreateAsync(CriarDto(ano: 2026, mes: 9));
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.UpdateAsync(segunda.Id, new UpdateFaturaOperadoraSaudeDto
+            {
+                NumeroFatura = segunda.NumeroFatura,
+                Ano = 2026,
+                Mes = 8,
+            }));
+    }
+
+    [Fact]
     public async Task DeleteAsync_DeveRejeitarQuandoTemNotaVinculada()
     {
         var (service, context) = CriarService();

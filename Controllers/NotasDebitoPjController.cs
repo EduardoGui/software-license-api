@@ -59,6 +59,14 @@ public class NotasDebitoPjController : ControllerBase
         return Ok(nota);
     }
 
+    [HttpPatch("{id:int}/corrigir-competencia")]
+    [Authorize(Roles = Roles.Administrador)]
+    public async Task<ActionResult<NotaDebitoPjDto>> CorrigirCompetencia(int id, CorrigirCompetenciaNotaDebitoPjDto dto)
+    {
+        var nota = await _notaDebitoPjService.CorrigirCompetenciaAsync(id, dto);
+        return Ok(nota);
+    }
+
     [HttpDelete("{id:int}")]
     [Authorize(Roles = Roles.Administrador)]
     public async Task<IActionResult> Delete(int id)

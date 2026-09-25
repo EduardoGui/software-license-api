@@ -91,6 +91,42 @@ public class FaturaOperadoraSaudeService : IFaturaOperadoraSaudeService
         var fatura = await BuscarOuFalhar(id);
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
 
+        if (dto.Ano is not null && dto.Mes is not null && (dto.Ano != fatura.Ano || dto.Mes != fatura.Mes))
+        {
+            if (dto.Mes < 1 || dto.Mes > 12)
+            {
+                throw new BusinessRuleException("Mês deve estar entre 1 e 12.");
+            }
+
+            var jaExiste = await _context.FaturasOperadoraSaude
+                .AnyAsync(f => f.Id != id && f.OperadoraSaude == fatura.OperadoraSaude && f.Ano == dto.Ano && f.Mes == dto.Mes);
+            if (jaExiste)
+            {
+                throw new BusinessRuleException("Já existe uma fatura cadastrada para esta operadora neste mês.");
+            }
+
+            // Cada ND vinculada também precisa continuar única por (Usuário, Ano, Mês) - checa antes
+            // de mudar qualquer coisa, pra não deixar a fatura e as NDs em estados inconsistentes.
+            foreach (var nota in fatura.NotasDebito)
+            {
+                var notaConflita = await _context.NotasDebitoPj
+                    .AnyAsync(n => n.Id != nota.Id && n.UsuarioId == nota.UsuarioId && n.Ano == dto.Ano && n.Mes == dto.Mes);
+                if (notaConflita)
+                {
+                    throw new BusinessRuleException(
+                        $"Não é possível mudar a competência: o usuário {nota.UsuarioId} já tem outra nota de débito em {dto.Mes}/{dto.Ano}.");
+                }
+            }
+
+            fatura.Ano = dto.Ano.Value;
+            fatura.Mes = dto.Mes.Value;
+            foreach (var nota in fatura.NotasDebito)
+            {
+                nota.Ano = dto.Ano.Value;
+                nota.Mes = dto.Mes.Value;
+            }
+        }
+
         fatura.NumeroFatura = dto.NumeroFatura.Trim();
         fatura.DataEmissao = dto.DataEmissao;
         fatura.DataVencimento = dto.DataVencimento;

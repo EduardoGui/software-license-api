@@ -8,6 +8,7 @@ public interface INotaDebitoPjService
     Task<NotaDebitoPjDto> GetByIdAsync(int id);
     Task<NotaDebitoPjDto> CreateAsync(CreateNotaDebitoPjDto dto);
     Task<NotaDebitoPjDto> UpdateAsync(int id, UpdateNotaDebitoPjDto dto);
+    Task<NotaDebitoPjDto> CorrigirCompetenciaAsync(int id, CorrigirCompetenciaNotaDebitoPjDto dto);
     Task DeleteAsync(int id);
     Task<NotaDebitoPjDto> EnviarAsync(int id);
     Task<NotaDebitoPjDto> PagarAsync(int id, PagarNotaDebitoPjDto dto);
