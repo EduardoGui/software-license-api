@@ -374,6 +374,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         {
             entity.Property(f => f.Nome).IsRequired().HasMaxLength(200);
             entity.Property(f => f.Cnpj).HasMaxLength(20);
+            entity.Property(f => f.Cpf).HasMaxLength(20);
             entity.Property(f => f.Contato).HasMaxLength(150);
             entity.Property(f => f.Telefone).HasMaxLength(30);
             entity.Property(f => f.Endereco).HasMaxLength(300);

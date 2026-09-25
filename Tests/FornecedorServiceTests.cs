@@ -74,6 +74,37 @@ public class FornecedorServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_DevePermitirSomenteCpfSemCnpj()
+    {
+        // Fornecedor pessoa física (ex.: estagiária sem PJ, pagamento avulso a acompanhar).
+        var service = CriarService(out _);
+
+        var fornecedor = await service.CreateAsync(new CreateFornecedorDto { Nome = "Maria Estagiária", Cpf = "529.982.247-25" });
+
+        Assert.Null(fornecedor.Cnpj);
+        Assert.Equal("529.982.247-25", fornecedor.Cpf);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveRejeitarSemCnpjESemCpf()
+    {
+        var service = CriarService(out _);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.CreateAsync(new CreateFornecedorDto { Nome = "Sem Identificação" }));
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveRejeitarCpfDuplicado()
+    {
+        var service = CriarService(out _);
+        await service.CreateAsync(new CreateFornecedorDto { Nome = "Maria Estagiária", Cpf = "529.982.247-25" });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.CreateAsync(new CreateFornecedorDto { Nome = "Outra Pessoa", Cpf = "529.982.247-25" }));
+    }
+
+    [Fact]
     public async Task UpdateAsync_DevePermitirSalvarSemCnpj()
     {
         // Cobre o cenário de fornecedor migrado dos nomes já digitados nas notas fiscais

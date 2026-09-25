@@ -5,6 +5,7 @@ public class FornecedorDto
     public int Id { get; set; }
     public string Nome { get; set; } = string.Empty;
     public string? Cnpj { get; set; }
+    public string? Cpf { get; set; }
     public string? Contato { get; set; }
     public string? Telefone { get; set; }
     public string? Endereco { get; set; }

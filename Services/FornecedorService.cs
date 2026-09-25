@@ -46,14 +46,17 @@ public class FornecedorService : IFornecedorService
     public async Task<FornecedorDto> CreateAsync(CreateFornecedorDto dto)
     {
         await ValidarNomeUnico(dto.Nome, idAtual: null);
+        ValidarCnpjOuCpfInformado(dto.Cnpj, dto.Cpf);
         ValidarCnpjFormato(dto.Cnpj);
         await ValidarCnpjUnico(dto.Cnpj, idAtual: null);
+        await ValidarCpfUnico(dto.Cpf, idAtual: null);
 
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var fornecedor = new Fornecedor
         {
             Nome = dto.Nome.Trim(),
-            Cnpj = dto.Cnpj.Trim(),
+            Cnpj = string.IsNullOrWhiteSpace(dto.Cnpj) ? null : dto.Cnpj.Trim(),
+            Cpf = string.IsNullOrWhiteSpace(dto.Cpf) ? null : dto.Cpf.Trim(),
             Contato = dto.Contato?.Trim(),
             Telefone = dto.Telefone?.Trim(),
             Endereco = dto.Endereco?.Trim(),
@@ -78,12 +81,17 @@ public class FornecedorService : IFornecedorService
     {
         var fornecedor = await BuscarOuFalhar(id);
 
+        // Diferente de CreateAsync, não exige Cnpj/Cpf aqui - fornecedores migrados de antes de
+        // existir esse campo nunca tiveram nenhum dos dois, e editar outros campos não pode ficar
+        // bloqueado por uma exigência que não existia quando o registro foi criado.
         await ValidarNomeUnico(dto.Nome, idAtual: id);
         ValidarCnpjFormato(dto.Cnpj);
         await ValidarCnpjUnico(dto.Cnpj, idAtual: id);
+        await ValidarCpfUnico(dto.Cpf, idAtual: id);
 
         fornecedor.Nome = dto.Nome.Trim();
         fornecedor.Cnpj = string.IsNullOrWhiteSpace(dto.Cnpj) ? null : dto.Cnpj.Trim();
+        fornecedor.Cpf = string.IsNullOrWhiteSpace(dto.Cpf) ? null : dto.Cpf.Trim();
         fornecedor.Contato = dto.Contato?.Trim();
         fornecedor.Telefone = dto.Telefone?.Trim();
         fornecedor.Endereco = dto.Endereco?.Trim();
@@ -120,6 +128,35 @@ public class FornecedorService : IFornecedorService
         if (existe)
         {
             throw new BusinessRuleException("Já existe um fornecedor cadastrado com este nome.");
+        }
+    }
+
+    private static void ValidarCnpjOuCpfInformado(string? cnpj, string? cpf)
+    {
+        if (string.IsNullOrWhiteSpace(cnpj) && string.IsNullOrWhiteSpace(cpf))
+        {
+            throw new BusinessRuleException("Informe o CNPJ (pessoa jurídica) ou o CPF (pessoa física) do fornecedor.");
+        }
+    }
+
+    private async Task ValidarCpfUnico(string? cpf, int? idAtual)
+    {
+        if (string.IsNullOrWhiteSpace(cpf))
+        {
+            return;
+        }
+
+        var digitosInformados = CnpjValidator.SomenteDigitos(cpf);
+        var outrosFornecedores = await _context.Fornecedores
+            .Where(f => f.Cpf != null && f.Id != idAtual)
+            .Select(f => f.Cpf!)
+            .ToListAsync();
+
+        var existe = outrosFornecedores.Any(c => CnpjValidator.SomenteDigitos(c) == digitosInformados);
+
+        if (existe)
+        {
+            throw new BusinessRuleException("Já existe um fornecedor cadastrado com este CPF.");
         }
     }
 
@@ -162,6 +199,7 @@ public class FornecedorService : IFornecedorService
         Id = f.Id,
         Nome = f.Nome,
         Cnpj = f.Cnpj,
+        Cpf = f.Cpf,
         Contato = f.Contato,
         Telefone = f.Telefone,
         Endereco = f.Endereco,

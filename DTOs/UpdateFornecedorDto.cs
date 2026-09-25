@@ -11,6 +11,9 @@ public class UpdateFornecedorDto
     [MaxLength(20)]
     public string? Cnpj { get; set; }
 
+    [MaxLength(20)]
+    public string? Cpf { get; set; }
+
     [MaxLength(150)]
     public string? Contato { get; set; }
 

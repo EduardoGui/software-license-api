@@ -8,9 +8,13 @@ public class CreateFornecedorDto
     [MaxLength(200)]
     public string Nome { get; set; } = string.Empty;
 
-    [Required(ErrorMessage = "CNPJ é obrigatório.")]
+    // Nem sempre obrigatório - fornecedor pessoa física (ex.: estagiária sem PJ) usa Cpf no lugar.
+    // A regra "pelo menos um dos dois" é validada no service, não aqui.
     [MaxLength(20)]
-    public string Cnpj { get; set; } = string.Empty;
+    public string? Cnpj { get; set; }
+
+    [MaxLength(20)]
+    public string? Cpf { get; set; }
 
     [MaxLength(150)]
     public string? Contato { get; set; }
