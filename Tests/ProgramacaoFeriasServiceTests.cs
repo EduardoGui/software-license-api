@@ -630,7 +630,7 @@ public class ProgramacaoFeriasServiceTests
     }
 
     [Fact]
-    public async Task GetByUsuarioAsync_DeveRetornarSoDoUsuarioIndependenteDoStatus()
+    public async Task GetByUsuarioAsync_DeveRetornarSoDoUsuarioEExcluirCanceladas()
     {
         var (service, periodoService, context) = CriarServicos();
         CriarPoliticaPj(context);
@@ -646,9 +646,28 @@ public class ProgramacaoFeriasServiceTests
 
         var doUsuario1 = await service.GetByUsuarioAsync(usuario1.Id);
 
-        Assert.Equal(2, doUsuario1.Count);
+        Assert.Single(doUsuario1);
         Assert.All(doUsuario1, p => Assert.Equal(usuario1.Id, p.UsuarioId));
         Assert.Contains(doUsuario1, p => p.Id == rascunho.Id && p.Status == ProgramacaoFeriasStatus.Rascunho);
-        Assert.Contains(doUsuario1, p => p.Id == cancelada.Id && p.Status == ProgramacaoFeriasStatus.Cancelada);
+        Assert.DoesNotContain(doUsuario1, p => p.Id == cancelada.Id);
+    }
+
+    [Fact]
+    public async Task GetByPeriodoAsync_DeveExcluirCanceladas()
+    {
+        var (service, periodoService, context) = CriarServicos();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context, "Colaborador");
+        var periodo = await CriarPeriodoComSaldoAsync(periodoService, usuario.Id);
+
+        var rascunho = await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 12, 1), 15), null);
+        var cancelada = await service.CreateAsync(periodo.Id, CriarDtoValido(new DateOnly(2027, 8, 4), 5), null);
+        await service.CancelarAsync(cancelada.Id, null);
+
+        var doPeriodo = await service.GetByPeriodoAsync(periodo.Id);
+
+        Assert.Single(doPeriodo);
+        Assert.Contains(doPeriodo, p => p.Id == rascunho.Id);
+        Assert.DoesNotContain(doPeriodo, p => p.Id == cancelada.Id);
     }
 }

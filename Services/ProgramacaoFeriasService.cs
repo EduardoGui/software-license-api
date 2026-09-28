@@ -40,7 +40,7 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
     {
         var hoje = Hoje();
         var programacoes = await MontarConsultaBase()
-            .Where(p => p.PeriodoFeriasId == periodoFeriasId)
+            .Where(p => p.PeriodoFeriasId == periodoFeriasId && p.Status != ProgramacaoFeriasStatus.Cancelada)
             .OrderBy(p => p.Sequencia)
             .ToListAsync();
 
@@ -51,7 +51,7 @@ public class ProgramacaoFeriasService : IProgramacaoFeriasService
     {
         var hoje = Hoje();
         var programacoes = await MontarConsultaBase()
-            .Where(p => p.PeriodoFerias.UsuarioId == usuarioId)
+            .Where(p => p.PeriodoFerias.UsuarioId == usuarioId && p.Status != ProgramacaoFeriasStatus.Cancelada)
             .OrderByDescending(p => p.DataInicio)
             .ToListAsync();
 
