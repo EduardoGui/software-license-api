@@ -240,6 +240,53 @@ public class PeriodoFeriasServiceTests
     }
 
     [Fact]
+    public async Task GetMovimentacoesAsync_DeveExcluirMovimentacaoDeProgramacaoCancelada()
+    {
+        var (service, context) = CriarService();
+        CriarPoliticaPj(context);
+        var usuario = CriarUsuarioPj(context, new DateOnly(2025, 1, 1));
+        var periodo = await service.GerarProximoPeriodoAsync(usuario.Id, null);
+
+        var programacaoCancelada = new ProgramacaoFerias
+        {
+            PeriodoFeriasId = periodo.Id,
+            Sequencia = 1,
+            DataInicio = new DateOnly(2027, 8, 1),
+            DataFim = new DateOnly(2027, 8, 5),
+            QuantidadeDias = 5,
+            Status = ProgramacaoFeriasStatus.Cancelada,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.ProgramacoesFerias.Add(programacaoCancelada);
+        context.SaveChanges();
+
+        context.MovimentacoesSaldoFerias.Add(new MovimentacaoSaldoFerias
+        {
+            PeriodoFeriasId = periodo.Id,
+            Tipo = MovimentacaoSaldoFeriasTipo.ProgramacaoFerias,
+            Quantidade = -5,
+            ProgramacaoFeriasId = programacaoCancelada.Id,
+            Data = new DateOnly(2027, 8, 1),
+            DataCriacao = Agora.UtcDateTime,
+        });
+        context.MovimentacoesSaldoFerias.Add(new MovimentacaoSaldoFerias
+        {
+            PeriodoFeriasId = periodo.Id,
+            Tipo = MovimentacaoSaldoFeriasTipo.AjusteManual,
+            Quantidade = 2,
+            Data = new DateOnly(2027, 8, 2),
+            DataCriacao = Agora.UtcDateTime,
+        });
+        context.SaveChanges();
+
+        var movimentacoes = await service.GetMovimentacoesAsync(periodo.Id);
+
+        Assert.DoesNotContain(movimentacoes, m => m.Quantidade == -5);
+        Assert.Contains(movimentacoes, m => m.Tipo == MovimentacaoSaldoFeriasTipo.AjusteManual && m.Quantidade == 2);
+    }
+
+    [Fact]
     public async Task RegistrarAjusteManualAsync_DeveRejeitarQuantidadeZero()
     {
         var (service, context) = CriarService();

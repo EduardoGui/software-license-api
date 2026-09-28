@@ -13,5 +13,6 @@ public class MovimentacaoSaldoFeriasDto
     // ter sido lançada - o valor NUNCA é alterado (livro-razão), mas deixa de contar no saldo, então
     // a tela precisa deixar isso visível (senão o extrato parece um débito ainda ativo).
     public bool Anulada { get; set; }
+    public int? ProgramacaoFeriasId { get; set; }
     public DateTime DataCriacao { get; set; }
 }

@@ -45,7 +45,7 @@ public class PeriodoFeriasService : IPeriodoFeriasService
     {
         await BuscarOuFalhar(periodoFeriasId);
 
-        return await _context.MovimentacoesSaldoFerias
+        var movimentacoes = await _context.MovimentacoesSaldoFerias
             .Where(m => m.PeriodoFeriasId == periodoFeriasId)
             .OrderByDescending(m => m.Data).ThenByDescending(m => m.Id)
             .Select(m => new MovimentacaoSaldoFeriasDto
@@ -57,11 +57,32 @@ public class PeriodoFeriasService : IPeriodoFeriasService
                 UsuarioResponsavelId = m.UsuarioResponsavelId,
                 UsuarioResponsavelNome = m.UsuarioResponsavelId == null ? "Administrador" : m.UsuarioResponsavel!.Nome,
                 Observacao = m.Observacao,
-                Anulada = m.ProgramacaoFerias != null
-                    && (m.ProgramacaoFerias.Status == ProgramacaoFeriasStatus.Cancelada || m.ProgramacaoFerias.Status == ProgramacaoFeriasStatus.Reprovada),
+                ProgramacaoFeriasId = m.ProgramacaoFeriasId,
                 DataCriacao = m.DataCriacao,
             })
             .ToListAsync();
+
+        var idsProgramacoes = movimentacoes
+            .Where(m => m.ProgramacaoFeriasId is not null)
+            .Select(m => m.ProgramacaoFeriasId!.Value)
+            .Distinct()
+            .ToList();
+
+        var statusPorProgramacao = await _context.ProgramacoesFerias
+            .Where(p => idsProgramacoes.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => p.Status);
+
+        // Programação cancelada não deve mais aparecer no extrato (nem em auditoria) - reprovada
+        // continua aparecendo, marcada como Anulada, pra manter a rastreabilidade de saldo debitado
+        // e depois excluído da soma.
+        return movimentacoes
+            .Where(m => m.ProgramacaoFeriasId is null || statusPorProgramacao[m.ProgramacaoFeriasId.Value] != ProgramacaoFeriasStatus.Cancelada)
+            .Select(m =>
+            {
+                m.Anulada = m.ProgramacaoFeriasId is not null && statusPorProgramacao[m.ProgramacaoFeriasId.Value] == ProgramacaoFeriasStatus.Reprovada;
+                return m;
+            })
+            .ToList();
     }
 
     public async Task<PeriodoFeriasDto> GerarProximoPeriodoAsync(int usuarioId, int? usuarioResponsavelId)

@@ -573,7 +573,7 @@ public class ProgramacaoFeriasServiceTests
     }
 
     [Fact]
-    public async Task CancelarAsync_DeveMarcarMovimentacaoComoAnuladaNoExtrato()
+    public async Task CancelarAsync_DeveExcluirMovimentacaoDoExtrato()
     {
         var (service, periodoService, context) = CriarServicos();
         CriarPoliticaPj(context);
@@ -588,12 +588,11 @@ public class ProgramacaoFeriasServiceTests
 
         await service.CancelarAsync(programacao.Id, null);
 
-        // A movimentação em si nunca é alterada/apagada (livro-razão), mas o extrato precisa deixar
-        // visível que ela não conta mais no saldo (achado do usuário: aparecia como se fosse ativa).
+        // A movimentação em si nunca é alterada/apagada (livro-razão), mas uma programação cancelada
+        // não deve aparecer em nenhuma tela nem no extrato de auditoria do período (pedido explícito
+        // do usuário - "cancelados não precisam aparecer nas telas").
         var depoisDeCancelar = await periodoService.GetMovimentacoesAsync(periodo.Id);
-        var movimentacao = Assert.Single(depoisDeCancelar, m => m.Tipo == MovimentacaoSaldoFeriasTipo.ProgramacaoFerias);
-        Assert.True(movimentacao.Anulada);
-        Assert.Equal(-10, movimentacao.Quantidade);
+        Assert.DoesNotContain(depoisDeCancelar, m => m.Tipo == MovimentacaoSaldoFeriasTipo.ProgramacaoFerias);
     }
 
     [Fact]
