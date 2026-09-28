@@ -102,6 +102,39 @@ public class RelatorioMensalLocacaoServiceTests
     }
 
     [Fact]
+    public async Task GerarAsync_DeveTrazerUsuarioResponsavelEOrdenarPorEle()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+
+        var equipamentoSemUsuario = CriarEquipamentoLocado(context, tipo, new DateOnly(2026, 1, 1), null, valorMensal: 100m);
+        var equipamentoJoao = CriarEquipamentoLocado(context, tipo, new DateOnly(2026, 1, 1), null, valorMensal: 100m);
+        var equipamentoAna = CriarEquipamentoLocado(context, tipo, new DateOnly(2026, 1, 1), null, valorMensal: 100m);
+
+        var joao = new Usuario { Nome = "João Silva", Email = "joao@empresa.com", DataInicio = new DateOnly(2025, 1, 1), DataCriacao = Agora, DataAtualizacao = Agora };
+        var ana = new Usuario { Nome = "Ana Costa", Email = "ana@empresa.com", DataInicio = new DateOnly(2025, 1, 1), DataCriacao = Agora, DataAtualizacao = Agora };
+        context.Usuarios.AddRange(joao, ana);
+        context.SaveChanges();
+
+        context.EquipamentoAlocacoes.AddRange(
+            new EquipamentoAlocacao { EquipamentoId = equipamentoJoao.Id, UsuarioId = joao.Id, DataInicio = new DateOnly(2026, 1, 1), DataCriacao = Agora, DataAtualizacao = Agora },
+            new EquipamentoAlocacao { EquipamentoId = equipamentoAna.Id, UsuarioId = ana.Id, DataInicio = new DateOnly(2026, 1, 1), DataCriacao = Agora, DataAtualizacao = Agora });
+        context.SaveChanges();
+
+        var relatorio = await service.GerarAsync(new RelatorioMensalLocacaoFiltroDto { Ano = 2026, Mes = 8 });
+
+        Assert.Equal(3, relatorio.Itens.Count);
+        // Ana antes de João (ordem alfabética), sem usuário por último.
+        Assert.Equal(equipamentoAna.Id, relatorio.Itens[0].EquipamentoId);
+        Assert.Equal("Ana Costa", relatorio.Itens[0].UsuarioResponsavelNome);
+        Assert.Equal("ana@empresa.com", relatorio.Itens[0].UsuarioResponsavelEmail);
+        Assert.Equal(equipamentoJoao.Id, relatorio.Itens[1].EquipamentoId);
+        Assert.Equal(equipamentoSemUsuario.Id, relatorio.Itens[2].EquipamentoId);
+        Assert.Null(relatorio.Itens[2].UsuarioResponsavelNome);
+        Assert.Null(relatorio.Itens[2].UsuarioResponsavelEmail);
+    }
+
+    [Fact]
     public async Task GerarAsync_DeveIncluirEquipamentoLocadoSemValorLancadoComoZero()
     {
         // Achado real: um equipamento locado sem valor de faturamento lançado (ValorMensal null)

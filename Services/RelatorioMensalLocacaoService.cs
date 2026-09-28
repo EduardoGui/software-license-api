@@ -51,9 +51,23 @@ public class RelatorioMensalLocacaoService : IRelatorioMensalLocacaoService
             query = query.Where(e => e.FornecedorNome != null && EF.Functions.ILike(e.FornecedorNome, $"%{filtro.FornecedorNome}%"));
         }
 
-        var equipamentos = await query.OrderBy(e => e.TipoEquipamento.Nome).ThenBy(e => e.Id).ToListAsync();
+        var equipamentos = await query.ToListAsync();
+        var equipamentoIds = equipamentos.Select(e => e.Id).ToList();
 
-        var itens = equipamentos.Select(e => CalcularItem(e, inicioMes, fimMes, diasNoMes)).ToList();
+        // Responsável atual = alocação em uso (DataFim null) - só existe uma por equipamento
+        // (regra já garantida em EquipamentoAlocacaoService), então não precisa desempatar.
+        var responsavelPorEquipamento = await _context.EquipamentoAlocacoes
+            .Where(a => equipamentoIds.Contains(a.EquipamentoId) && a.DataFim == null)
+            .Select(a => new { a.EquipamentoId, a.Usuario.Nome, a.Usuario.Email })
+            .ToDictionaryAsync(a => a.EquipamentoId, a => (a.Nome, a.Email));
+
+        var itens = equipamentos
+            .Select(e => CalcularItem(e, inicioMes, fimMes, diasNoMes, responsavelPorEquipamento.GetValueOrDefault(e.Id)))
+            .OrderBy(i => i.UsuarioResponsavelNome is null)
+            .ThenBy(i => i.UsuarioResponsavelNome, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(i => i.TipoEquipamentoNome)
+            .ThenBy(i => i.EquipamentoId)
+            .ToList();
 
         return new RelatorioMensalLocacaoDto
         {
@@ -69,7 +83,7 @@ public class RelatorioMensalLocacaoService : IRelatorioMensalLocacaoService
         using var workbook = new XLWorkbook();
         var planilha = workbook.Worksheets.Add("Espelho de Medicao");
 
-        string[] cabecalhos = ["Tipo", "Patrimônio", "Nº Série", "Fornecedor", "Valor mensal", "Dias ativos", "Dias no mês", "Valor no mês"];
+        string[] cabecalhos = ["Tipo", "Patrimônio", "Nº Série", "Fornecedor", "Usuário responsável", "E-mail", "Valor mensal", "Dias ativos", "Dias no mês", "Valor no mês"];
         for (var coluna = 0; coluna < cabecalhos.Length; coluna++)
         {
             planilha.Cell(1, coluna + 1).Value = cabecalhos[coluna];
@@ -83,17 +97,19 @@ public class RelatorioMensalLocacaoService : IRelatorioMensalLocacaoService
             planilha.Cell(linha, 2).Value = item.Patrimonio ?? "-";
             planilha.Cell(linha, 3).Value = item.NumeroSerie ?? "-";
             planilha.Cell(linha, 4).Value = item.FornecedorNome ?? "-";
-            planilha.Cell(linha, 5).Value = item.ValorMensal;
-            planilha.Cell(linha, 6).Value = item.DiasAtivos;
-            planilha.Cell(linha, 7).Value = item.DiasNoMes;
-            planilha.Cell(linha, 8).Value = item.ValorNoMes;
+            planilha.Cell(linha, 5).Value = item.UsuarioResponsavelNome ?? "-";
+            planilha.Cell(linha, 6).Value = item.UsuarioResponsavelEmail ?? "-";
+            planilha.Cell(linha, 7).Value = item.ValorMensal;
+            planilha.Cell(linha, 8).Value = item.DiasAtivos;
+            planilha.Cell(linha, 9).Value = item.DiasNoMes;
+            planilha.Cell(linha, 10).Value = item.ValorNoMes;
             linha++;
         }
 
-        planilha.Cell(linha, 7).Value = "Total";
-        planilha.Cell(linha, 7).Style.Font.Bold = true;
-        planilha.Cell(linha, 8).Value = relatorio.TotalGeral;
-        planilha.Cell(linha, 8).Style.Font.Bold = true;
+        planilha.Cell(linha, 9).Value = "Total";
+        planilha.Cell(linha, 9).Style.Font.Bold = true;
+        planilha.Cell(linha, 10).Value = relatorio.TotalGeral;
+        planilha.Cell(linha, 10).Style.Font.Bold = true;
 
         planilha.Columns().AdjustToContents();
 
@@ -102,7 +118,8 @@ public class RelatorioMensalLocacaoService : IRelatorioMensalLocacaoService
         return stream.ToArray();
     }
 
-    private static RelatorioMensalLocacaoItemDto CalcularItem(Equipamento equipamento, DateOnly inicioMes, DateOnly fimMes, int diasNoMes)
+    private static RelatorioMensalLocacaoItemDto CalcularItem(
+        Equipamento equipamento, DateOnly inicioMes, DateOnly fimMes, int diasNoMes, (string? Nome, string? Email) responsavel)
     {
         var inicioAtivo = equipamento.DataInicioContrato!.Value > inicioMes ? equipamento.DataInicioContrato.Value : inicioMes;
         var fimAtivo = equipamento.DataFimContrato is not null && equipamento.DataFimContrato.Value < fimMes
@@ -123,6 +140,8 @@ public class RelatorioMensalLocacaoService : IRelatorioMensalLocacaoService
             Patrimonio = equipamento.Patrimonio,
             NumeroSerie = equipamento.NumeroSerie,
             FornecedorNome = equipamento.FornecedorNome,
+            UsuarioResponsavelNome = responsavel.Nome,
+            UsuarioResponsavelEmail = responsavel.Email,
             ValorMensal = valorMensal,
             DiasAtivos = diasAtivos,
             DiasNoMes = diasNoMes,
