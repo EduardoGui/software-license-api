@@ -34,7 +34,9 @@ public class RelatorioMensalLocacaoService : IRelatorioMensalLocacaoService
 
         var query = _context.Equipamentos
             .Include(e => e.TipoEquipamento)
-            .Where(e => e.Origem == EquipamentoOrigem.Locado && e.ValorMensal != null && e.DataInicioContrato != null)
+            // Sem "e.ValorMensal != null" de propósito - um locado sem valor lançado é 0, não deve
+            // sumir do relatório (achado real: null e 0 eram tratados de forma diferente aqui).
+            .Where(e => e.Origem == EquipamentoOrigem.Locado && e.DataInicioContrato != null)
             .Where(e => e.DataInicioContrato <= fimMes)
             .Where(e => e.DataFimContrato == null || e.DataFimContrato >= inicioMes)
             .AsQueryable();
@@ -109,7 +111,7 @@ public class RelatorioMensalLocacaoService : IRelatorioMensalLocacaoService
 
         var diasAtivos = Math.Clamp(fimAtivo.DayNumber - inicioAtivo.DayNumber + 1, 0, diasNoMes);
 
-        var valorMensal = equipamento.ValorMensal!.Value;
+        var valorMensal = equipamento.ValorMensal ?? 0m;
         var valorNoMes = diasAtivos == diasNoMes
             ? valorMensal
             : Math.Round(valorMensal * diasAtivos / diasNoMes, 2, MidpointRounding.AwayFromZero);

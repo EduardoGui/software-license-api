@@ -168,7 +168,10 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
                 NotaFiscalItemId = item.Id,
                 Origem = origem,
                 FornecedorNome = nota.Fornecedor?.Nome,
-                ValorMensal = origem == EquipamentoOrigem.Locado ? item.ValorUnitario : null,
+                // Locado sempre grava um número, nunca null - equipamento sem valor de locação
+                // lançado (ex.: reposição/backup) é 0, não "vazio" (achado real: relatório mensal
+                // tratava null e 0 de forma diferente, escondendo equipamentos com valor null).
+                ValorMensal = origem == EquipamentoOrigem.Locado ? item.ValorUnitario ?? 0m : null,
                 DataInicioContrato = nota.DataEntrada,
                 Status = EquipamentoStatus.Disponivel,
                 DataCriacao = agora,

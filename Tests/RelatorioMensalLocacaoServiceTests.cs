@@ -102,6 +102,33 @@ public class RelatorioMensalLocacaoServiceTests
     }
 
     [Fact]
+    public async Task GerarAsync_DeveIncluirEquipamentoLocadoSemValorLancadoComoZero()
+    {
+        // Achado real: um equipamento locado sem valor de faturamento lançado (ValorMensal null)
+        // sumia do relatório, enquanto outro com ValorMensal = 0 explícito aparecia normalmente.
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        context.Equipamentos.Add(new Equipamento
+        {
+            TipoEquipamentoId = tipo.Id,
+            Origem = EquipamentoOrigem.Locado,
+            ValorMensal = null,
+            DataInicioContrato = new DateOnly(2026, 1, 1),
+            DataFimContrato = null,
+            Status = EquipamentoStatus.Disponivel,
+            DataCriacao = Agora,
+            DataAtualizacao = Agora,
+        });
+        context.SaveChanges();
+
+        var relatorio = await service.GerarAsync(new RelatorioMensalLocacaoFiltroDto { Ano = 2026, Mes = 8 });
+
+        var item = Assert.Single(relatorio.Itens);
+        Assert.Equal(0m, item.ValorMensal);
+        Assert.Equal(0m, item.ValorNoMes);
+    }
+
+    [Fact]
     public async Task GerarAsync_NaoDeveIncluirEquipamentoComContratoEncerradoAntesDoMes()
     {
         var (service, context) = CriarService();

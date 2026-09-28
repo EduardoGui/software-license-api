@@ -84,7 +84,8 @@ public class EquipamentoService : IEquipamentoService
         equipamento.NumeroSerie = dto.NumeroSerie;
         equipamento.Patrimonio = dto.Patrimonio;
         equipamento.FornecedorNome = dto.FornecedorNome;
-        equipamento.ValorMensal = equipamento.Origem == EquipamentoOrigem.Locado ? dto.ValorMensal : null;
+        // Locado sempre grava um número, nunca null - ver NotaFiscalEntradaService.AdicionarItemAsync.
+        equipamento.ValorMensal = equipamento.Origem == EquipamentoOrigem.Locado ? dto.ValorMensal ?? 0m : null;
         equipamento.DataFimContrato = dto.DataFimContrato;
         equipamento.Status = status;
         equipamento.Observacao = dto.Observacao;
