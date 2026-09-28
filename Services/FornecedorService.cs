@@ -89,7 +89,25 @@ public class FornecedorService : IFornecedorService
         await ValidarCnpjUnico(dto.Cnpj, idAtual: id);
         await ValidarCpfUnico(dto.Cpf, idAtual: id);
 
-        fornecedor.Nome = dto.Nome.Trim();
+        var nomeNovo = dto.Nome.Trim();
+
+        // Equipamento.FornecedorNome é uma cópia congelada do nome do fornecedor no momento em que
+        // o equipamento foi criado a partir de uma nota fiscal (nunca teve FornecedorId, só o texto) -
+        // sem isso, renomear o fornecedor deixava equipamentos antigos com o nome antigo pra sempre
+        // (achado real: "Brain" vs "BRAIN TECNOLOGIA COMÉRCIO E SERVIÇOS" no mesmo fornecedor).
+        if (nomeNovo != fornecedor.Nome)
+        {
+            var equipamentosDoFornecedor = await _context.Equipamentos
+                .Where(e => e.NotaFiscalItem != null && e.NotaFiscalItem.NotaFiscalEntrada.FornecedorId == id)
+                .ToListAsync();
+
+            foreach (var equipamento in equipamentosDoFornecedor)
+            {
+                equipamento.FornecedorNome = nomeNovo;
+            }
+        }
+
+        fornecedor.Nome = nomeNovo;
         fornecedor.Cnpj = string.IsNullOrWhiteSpace(dto.Cnpj) ? null : dto.Cnpj.Trim();
         fornecedor.Cpf = string.IsNullOrWhiteSpace(dto.Cpf) ? null : dto.Cpf.Trim();
         fornecedor.Contato = dto.Contato?.Trim();

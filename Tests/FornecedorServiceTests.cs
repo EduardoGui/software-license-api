@@ -128,6 +128,68 @@ public class FornecedorServiceTests
     }
 
     [Fact]
+    public async Task UpdateAsync_DeveCascatearNomeParaEquipamentosVinculadosPelaNotaFiscal()
+    {
+        // Achado real: "Brain" vs "BRAIN TECNOLOGIA COMÉRCIO E SERVIÇOS" no mesmo fornecedor -
+        // Equipamento.FornecedorNome era uma cópia congelada do nome no momento da criação.
+        var service = CriarService(out var context);
+        var fornecedor = new SoftwareLicense.Api.Entities.Fornecedor
+        {
+            Nome = "Brain",
+            Ativo = true,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Fornecedores.Add(fornecedor);
+        await context.SaveChangesAsync();
+
+        var tipo = new SoftwareLicense.Api.Entities.TipoEquipamento { Nome = "Notebook", Ativo = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        context.TiposEquipamento.Add(tipo);
+        await context.SaveChangesAsync();
+
+        var nota = new SoftwareLicense.Api.Entities.NotaFiscalEntrada
+        {
+            Numero = "123",
+            DataEntrada = new DateOnly(2026, 1, 1),
+            FornecedorId = fornecedor.Id,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.NotasFiscaisEntrada.Add(nota);
+        await context.SaveChangesAsync();
+
+        var item = new SoftwareLicense.Api.Entities.NotaFiscalItem
+        {
+            NotaFiscalEntradaId = nota.Id,
+            Destino = SoftwareLicense.Api.Services.NotaFiscalItemDestino.Equipamento,
+            TipoEquipamentoId = tipo.Id,
+            Quantidade = 1,
+            Origem = SoftwareLicense.Api.Services.EquipamentoOrigem.Locado,
+            DataCriacao = Agora.UtcDateTime,
+        };
+        context.NotasFiscaisItens.Add(item);
+        await context.SaveChangesAsync();
+
+        var equipamento = new SoftwareLicense.Api.Entities.Equipamento
+        {
+            TipoEquipamentoId = tipo.Id,
+            NotaFiscalItemId = item.Id,
+            Origem = SoftwareLicense.Api.Services.EquipamentoOrigem.Locado,
+            FornecedorNome = "Brain",
+            Status = SoftwareLicense.Api.Services.EquipamentoStatus.Disponivel,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Equipamentos.Add(equipamento);
+        await context.SaveChangesAsync();
+
+        await service.UpdateAsync(fornecedor.Id, new UpdateFornecedorDto { Nome = "BRAIN TECNOLOGIA COMÉRCIO E SERVIÇOS", Ativo = true });
+
+        var equipamentoAtualizado = await context.Equipamentos.FindAsync(equipamento.Id);
+        Assert.Equal("BRAIN TECNOLOGIA COMÉRCIO E SERVIÇOS", equipamentoAtualizado!.FornecedorNome);
+    }
+
+    [Fact]
     public async Task UpdateAsync_DeveRejeitarCnpjJaUsadoPorOutroFornecedor()
     {
         var service = CriarService(out _);
