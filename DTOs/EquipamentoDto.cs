@@ -14,6 +14,9 @@ public class EquipamentoDto
     public string? Patrimonio { get; set; }
     public string Origem { get; set; } = string.Empty;
     public string? FornecedorNome { get; set; }
+    // Data da nota fiscal de entrada - existe pra Locado e Comprado (diferente de
+    // DataInicioContrato, que só faz sentido conceitualmente pra locação).
+    public DateOnly? DataChegada { get; set; }
     public decimal? ValorMensal { get; set; }
     public DateOnly? DataInicioContrato { get; set; }
     public DateOnly? DataFimContrato { get; set; }

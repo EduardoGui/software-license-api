@@ -44,6 +44,16 @@ public class EquipamentoService : IEquipamentoService
             query = query.Where(e => e.NotaFiscalItem != null && e.NotaFiscalItem.NotaFiscalEntradaId == filtro.NotaFiscalEntradaId);
         }
 
+        if (filtro.DataChegadaInicio is not null)
+        {
+            query = query.Where(e => e.NotaFiscalItem != null && e.NotaFiscalItem.NotaFiscalEntrada.DataEntrada >= filtro.DataChegadaInicio);
+        }
+
+        if (filtro.DataChegadaFim is not null)
+        {
+            query = query.Where(e => e.NotaFiscalItem != null && e.NotaFiscalItem.NotaFiscalEntrada.DataEntrada <= filtro.DataChegadaFim);
+        }
+
         var equipamentos = await query.OrderBy(e => e.TipoEquipamento.Nome).ThenBy(e => e.Id).ToListAsync();
         var alocacaoAtivaPorEquipamento = await BuscarAlocacoesAtivasAsync(equipamentos.Select(e => e.Id));
 
@@ -128,9 +138,9 @@ public class EquipamentoService : IEquipamentoService
         return ParaDto(equipamento, alocacaoAtivaAtual: null);
     }
 
-    public async Task<InventarioDto> GetInventarioAsync()
+    public async Task<InventarioDto> GetInventarioAsync(EquipamentoFiltroDto filtro)
     {
-        var equipamentos = await GetAllAsync(new EquipamentoFiltroDto());
+        var equipamentos = await GetAllAsync(filtro);
 
         var grupos = equipamentos
             .GroupBy(e => new { e.TipoEquipamentoId, e.TipoEquipamentoNome })
@@ -280,6 +290,7 @@ public class EquipamentoService : IEquipamentoService
             Patrimonio = e.Patrimonio,
             Origem = e.Origem,
             FornecedorNome = e.FornecedorNome,
+            DataChegada = e.NotaFiscalItem?.NotaFiscalEntrada.DataEntrada,
             ValorMensal = e.ValorMensal,
             DataInicioContrato = e.DataInicioContrato,
             DataFimContrato = e.DataFimContrato,

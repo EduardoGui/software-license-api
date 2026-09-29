@@ -7,4 +7,6 @@ public class EquipamentoFiltroDto
     public string? Status { get; set; }
     public int? UsuarioId { get; set; }
     public int? NotaFiscalEntradaId { get; set; }
+    public DateOnly? DataChegadaInicio { get; set; }
+    public DateOnly? DataChegadaFim { get; set; }
 }

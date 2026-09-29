@@ -273,7 +273,7 @@ public class EquipamentoServiceTests
         await service.BaixarAsync(notebookBaixado.Id, numeroNotaSaida: null);
         CriarEquipamento(context, monitor);
 
-        var inventario = await service.GetInventarioAsync();
+        var inventario = await service.GetInventarioAsync(new EquipamentoFiltroDto());
 
         Assert.Equal(3, inventario.TotalGeral);
         Assert.Equal(2, inventario.Grupos.Count);
@@ -286,6 +286,37 @@ public class EquipamentoServiceTests
         var grupoMonitor = inventario.Grupos.Single(g => g.TipoEquipamentoNome == "Monitor");
         Assert.Single(grupoMonitor.Itens);
         Assert.Equal(1, grupoMonitor.TotalDisponivel);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_DeveFiltrarPorPeriodoDeChegadaEExporDataChegada()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context, "Notebook");
+
+        var notaJaneiro = new NotaFiscalEntrada { Numero = "1", DataEntrada = new DateOnly(2026, 1, 15), DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        var notaJulho = new NotaFiscalEntrada { Numero = "2", DataEntrada = new DateOnly(2026, 7, 10), DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        context.NotasFiscaisEntrada.AddRange(notaJaneiro, notaJulho);
+        context.SaveChanges();
+
+        var itemJaneiro = new NotaFiscalItem { NotaFiscalEntradaId = notaJaneiro.Id, Destino = NotaFiscalItemDestino.Equipamento, TipoEquipamentoId = tipo.Id, Quantidade = 1, Origem = "Comprado", DataCriacao = Agora.UtcDateTime };
+        var itemJulho = new NotaFiscalItem { NotaFiscalEntradaId = notaJulho.Id, Destino = NotaFiscalItemDestino.Equipamento, TipoEquipamentoId = tipo.Id, Quantidade = 1, Origem = "Comprado", DataCriacao = Agora.UtcDateTime };
+        context.NotasFiscaisItens.AddRange(itemJaneiro, itemJulho);
+        context.SaveChanges();
+
+        context.Equipamentos.AddRange(
+            new Equipamento { TipoEquipamentoId = tipo.Id, NotaFiscalItemId = itemJaneiro.Id, Origem = "Comprado", Status = EquipamentoStatus.Disponivel, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime },
+            new Equipamento { TipoEquipamentoId = tipo.Id, NotaFiscalItemId = itemJulho.Id, Origem = "Comprado", Status = EquipamentoStatus.Disponivel, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime });
+        context.SaveChanges();
+
+        var todos = await service.GetAllAsync(new EquipamentoFiltroDto());
+        Assert.Equal(2, todos.Count);
+        Assert.Contains(todos, e => e.DataChegada == new DateOnly(2026, 1, 15));
+        Assert.Contains(todos, e => e.DataChegada == new DateOnly(2026, 7, 10));
+
+        var soPrimeiroSemestre = await service.GetAllAsync(new EquipamentoFiltroDto { DataChegadaInicio = new DateOnly(2026, 1, 1), DataChegadaFim = new DateOnly(2026, 6, 30) });
+        var item = Assert.Single(soPrimeiroSemestre);
+        Assert.Equal(new DateOnly(2026, 1, 15), item.DataChegada);
     }
 
     [Fact]

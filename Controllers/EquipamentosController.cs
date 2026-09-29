@@ -48,9 +48,9 @@ public class EquipamentosController : ControllerBase
     }
 
     [HttpGet("inventario")]
-    public async Task<ActionResult<InventarioDto>> Inventario()
+    public async Task<ActionResult<InventarioDto>> Inventario([FromQuery] EquipamentoFiltroDto filtro)
     {
-        var inventario = await _equipamentoService.GetInventarioAsync();
+        var inventario = await _equipamentoService.GetInventarioAsync(filtro);
         return Ok(inventario);
     }
 

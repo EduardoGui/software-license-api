@@ -8,7 +8,7 @@ public interface IEquipamentoService
     Task<EquipamentoDto> GetByIdAsync(int id);
     Task<EquipamentoDto> UpdateAsync(int id, UpdateEquipamentoDto dto);
     Task<EquipamentoDto> BaixarAsync(int id, string? numeroNotaSaida);
-    Task<InventarioDto> GetInventarioAsync();
+    Task<InventarioDto> GetInventarioAsync(EquipamentoFiltroDto filtro);
     Task<List<AnexoDto>> ListarAnexosAsync(int equipamentoId);
     Task<AnexoDto> AdicionarAnexoAsync(int equipamentoId, AdicionarAnexoDto dto);
     Task<AnexoArquivoDto> ObterAnexoAsync(int equipamentoId, int anexoId);
