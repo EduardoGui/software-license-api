@@ -19,7 +19,7 @@ public class LocaisController : ControllerBase
     // Leitura liberada para Colaborador também: é dado de referência usado no formulário de
     // Reembolso de Despesa (seleção do local/obra).
     [HttpGet]
-    [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo},{Roles.Colaborador}")]
     public async Task<ActionResult<List<LocalDto>>> GetAll([FromQuery] LocalFiltroDto filtro)
     {
         var locais = await _localService.GetAllAsync(filtro);
@@ -27,7 +27,7 @@ public class LocaisController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
-    [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo},{Roles.Colaborador}")]
     public async Task<ActionResult<LocalDto>> GetById(int id)
     {
         var local = await _localService.GetByIdAsync(id);
@@ -35,7 +35,7 @@ public class LocaisController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = Roles.Administrador)]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
     public async Task<ActionResult<LocalDto>> Create(CreateLocalDto dto)
     {
         var local = await _localService.CreateAsync(dto);
@@ -43,7 +43,7 @@ public class LocaisController : ControllerBase
     }
 
     [HttpPut("{id:int}")]
-    [Authorize(Roles = Roles.Administrador)]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
     public async Task<ActionResult<LocalDto>> Update(int id, UpdateLocalDto dto)
     {
         var local = await _localService.UpdateAsync(id, dto);

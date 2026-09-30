@@ -17,8 +17,12 @@ public class UsuariosController : ControllerBase
         _usuarioService = usuarioService;
     }
 
+    // Listagem/detalhe liberados pra Administrativo também - a maioria das telas de DP/Patrimônio
+    // precisa selecionar um colaborador (reembolso, alocação, férias etc). Criar/editar/desativar
+    // Usuário e seus dependentes continuam só Administrador - gestão de colaborador em si fica
+    // fora do escopo do Administrativo.
     [HttpGet]
-    [Authorize(Roles = Roles.Administrador)]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
     public async Task<ActionResult<List<UsuarioDto>>> GetAll([FromQuery] UsuarioFiltroDto filtro)
     {
         var usuarios = await _usuarioService.GetAllAsync(filtro);
@@ -26,10 +30,10 @@ public class UsuariosController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
-    [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo},{Roles.Colaborador}")]
     public async Task<ActionResult<UsuarioDto>> GetById(int id)
     {
-        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(id))
+        if (!User.EhAdminOuAdministrativo() && !User.TemUsuarioId(id))
         {
             return Forbid();
         }
@@ -107,14 +111,14 @@ public class UsuariosController : ControllerBase
         return Ok(usuario);
     }
 
-    // Listar/baixar: Administrador ou o próprio colaborador (mobile só visualiza, ver "Meus dados").
-    // Incluir/excluir: só Administrador - upload de anexo (ex.: Termo de Responsabilidade assinado)
-    // é feito só pela web admin.
+    // Listar/baixar: Administrador, Administrativo ou o próprio colaborador (mobile só visualiza,
+    // ver "Meus dados"). Incluir/excluir: Administrador ou Administrativo (Termo de
+    // Responsabilidade é assunto de DP) - upload é feito só pela web admin.
     [HttpGet("{id:int}/anexos")]
-    [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo},{Roles.Colaborador}")]
     public async Task<ActionResult<List<AnexoDto>>> ListarAnexos(int id)
     {
-        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(id))
+        if (!User.EhAdminOuAdministrativo() && !User.TemUsuarioId(id))
         {
             return Forbid();
         }
@@ -124,7 +128,7 @@ public class UsuariosController : ControllerBase
     }
 
     [HttpPost("{id:int}/anexos")]
-    [Authorize(Roles = Roles.Administrador)]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
     public async Task<ActionResult<AnexoDto>> AdicionarAnexo(int id, IFormFile arquivo)
     {
         if (arquivo is null || arquivo.Length == 0)
@@ -146,10 +150,10 @@ public class UsuariosController : ControllerBase
     }
 
     [HttpGet("{id:int}/anexos/{anexoId:int}")]
-    [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo},{Roles.Colaborador}")]
     public async Task<IActionResult> BaixarAnexo(int id, int anexoId)
     {
-        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(id))
+        if (!User.EhAdminOuAdministrativo() && !User.TemUsuarioId(id))
         {
             return Forbid();
         }
@@ -159,7 +163,7 @@ public class UsuariosController : ControllerBase
     }
 
     [HttpDelete("{id:int}/anexos/{anexoId:int}")]
-    [Authorize(Roles = Roles.Administrador)]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
     public async Task<IActionResult> ExcluirAnexo(int id, int anexoId)
     {
         await _usuarioService.ExcluirAnexoAsync(id, anexoId);

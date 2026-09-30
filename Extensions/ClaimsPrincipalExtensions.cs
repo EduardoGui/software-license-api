@@ -19,4 +19,10 @@ public static class ClaimsPrincipalExtensions
         var valor = principal.FindFirstValue("usuarioId");
         return int.TryParse(valor, out var id) ? id : null;
     }
+
+    // Administrativo tem o mesmo nível de operação de um Administrador nas telas liberadas pra
+    // ele (DP, Patrimônio, Locais/Empresas PJ/Notas Fiscais) - usado nos checks internos desses
+    // controllers no lugar de checar só Roles.Administrador.
+    public static bool EhAdminOuAdministrativo(this ClaimsPrincipal principal) =>
+        principal.IsInRole(Services.Roles.Administrador) || principal.IsInRole(Services.Roles.Administrativo);
 }

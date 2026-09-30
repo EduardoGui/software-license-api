@@ -19,7 +19,7 @@ public class TiposDespesaController : ControllerBase
     // Leitura liberada para Colaborador também: é dado de referência usado no formulário de
     // Reembolso de Despesa (seleção do tipo de cada item).
     [HttpGet]
-    [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo},{Roles.Colaborador}")]
     public async Task<ActionResult<List<TipoDespesaDto>>> GetAll([FromQuery] TipoDespesaFiltroDto filtro)
     {
         var tipos = await _tipoDespesaService.GetAllAsync(filtro);
@@ -27,7 +27,7 @@ public class TiposDespesaController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
-    [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo},{Roles.Colaborador}")]
     public async Task<ActionResult<TipoDespesaDto>> GetById(int id)
     {
         var tipo = await _tipoDespesaService.GetByIdAsync(id);
@@ -35,7 +35,7 @@ public class TiposDespesaController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = Roles.Administrador)]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
     public async Task<ActionResult<TipoDespesaDto>> Create(CreateTipoDespesaDto dto)
     {
         var tipo = await _tipoDespesaService.CreateAsync(dto);
@@ -43,7 +43,7 @@ public class TiposDespesaController : ControllerBase
     }
 
     [HttpPut("{id:int}")]
-    [Authorize(Roles = Roles.Administrador)]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
     public async Task<ActionResult<TipoDespesaDto>> Update(int id, UpdateTipoDespesaDto dto)
     {
         var tipo = await _tipoDespesaService.UpdateAsync(id, dto);

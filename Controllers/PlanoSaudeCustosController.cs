@@ -7,7 +7,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/plano-saude-custos")]
-[Authorize(Roles = Roles.Administrador)]
+[Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
 public class PlanoSaudeCustosController : ControllerBase
 {
     private readonly IPlanoSaudeCustoService _planoSaudeCustoService;

@@ -8,7 +8,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/programacoes-ferias")]
-[Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
+[Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo},{Roles.Colaborador}")]
 public class ProgramacoesFeriasController : ControllerBase
 {
     private readonly IProgramacaoFeriasService _programacaoFeriasService;
@@ -21,7 +21,7 @@ public class ProgramacoesFeriasController : ControllerBase
     }
 
     [HttpGet("pendentes-aprovacao")]
-    [Authorize(Roles = Roles.Administrador)]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
     public async Task<ActionResult<List<ProgramacaoFeriasDto>>> GetPendentesAprovacao()
     {
         var pendentes = await _programacaoFeriasService.GetPendentesAprovacaoAsync();
@@ -34,7 +34,7 @@ public class ProgramacoesFeriasController : ControllerBase
     [Route("/api/usuarios/{usuarioId:int}/programacoes-ferias")]
     public async Task<ActionResult<List<ProgramacaoFeriasDto>>> GetByUsuario(int usuarioId)
     {
-        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(usuarioId))
+        if (!User.EhAdminOuAdministrativo() && !User.TemUsuarioId(usuarioId))
         {
             return Forbid();
         }
@@ -45,7 +45,7 @@ public class ProgramacoesFeriasController : ControllerBase
 
     [HttpGet]
     [Route("/api/periodos-ferias/{periodoFeriasId:int}/programacoes")]
-    [Authorize(Roles = Roles.Administrador)]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
     public async Task<ActionResult<List<ProgramacaoFeriasDto>>> GetByPeriodo(int periodoFeriasId)
     {
         var programacoes = await _programacaoFeriasService.GetByPeriodoAsync(periodoFeriasId);
@@ -58,7 +58,7 @@ public class ProgramacoesFeriasController : ControllerBase
     [Route("/api/periodos-ferias/{periodoFeriasId:int}/programacoes")]
     public async Task<ActionResult<ProgramacaoFeriasDto>> Create(int periodoFeriasId, CreateProgramacaoFeriasDto dto)
     {
-        if (!User.IsInRole(Roles.Administrador))
+        if (!User.EhAdminOuAdministrativo())
         {
             var periodo = await _periodoFeriasService.GetByIdAsync(periodoFeriasId);
             if (!User.TemUsuarioId(periodo.UsuarioId))
@@ -72,7 +72,7 @@ public class ProgramacoesFeriasController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
-    [Authorize(Roles = Roles.Administrador)]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
     public async Task<ActionResult<ProgramacaoFeriasDto>> GetById(int id)
     {
         var programacao = await _programacaoFeriasService.GetByIdAsync(id);
@@ -80,7 +80,7 @@ public class ProgramacoesFeriasController : ControllerBase
     }
 
     [HttpPut("{id:int}")]
-    [Authorize(Roles = Roles.Administrador)]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
     public async Task<ActionResult<ProgramacaoFeriasDto>> Update(int id, CreateProgramacaoFeriasDto dto)
     {
         var programacao = await _programacaoFeriasService.UpdateAsync(id, dto, User.ObterUsuarioId());
@@ -92,7 +92,7 @@ public class ProgramacoesFeriasController : ControllerBase
     [HttpPatch("{id:int}/solicitar")]
     public async Task<ActionResult<ProgramacaoFeriasDto>> Solicitar(int id)
     {
-        if (!User.IsInRole(Roles.Administrador))
+        if (!User.EhAdminOuAdministrativo())
         {
             var atual = await _programacaoFeriasService.GetByIdAsync(id);
             if (!User.TemUsuarioId(atual.UsuarioId))
@@ -106,7 +106,7 @@ public class ProgramacoesFeriasController : ControllerBase
     }
 
     [HttpPatch("{id:int}/aprovar")]
-    [Authorize(Roles = Roles.Administrador)]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
     public async Task<ActionResult<ProgramacaoFeriasDto>> Aprovar(int id)
     {
         var programacao = await _programacaoFeriasService.AprovarAsync(id, User.ObterUsuarioId());
@@ -114,7 +114,7 @@ public class ProgramacoesFeriasController : ControllerBase
     }
 
     [HttpPatch("{id:int}/reprovar")]
-    [Authorize(Roles = Roles.Administrador)]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
     public async Task<ActionResult<ProgramacaoFeriasDto>> Reprovar(int id, DecisaoProgramacaoFeriasDto dto)
     {
         var programacao = await _programacaoFeriasService.ReprovarAsync(id, dto, User.ObterUsuarioId());
@@ -122,7 +122,7 @@ public class ProgramacoesFeriasController : ControllerBase
     }
 
     [HttpPatch("{id:int}/devolver")]
-    [Authorize(Roles = Roles.Administrador)]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
     public async Task<ActionResult<ProgramacaoFeriasDto>> Devolver(int id, DecisaoProgramacaoFeriasDto dto)
     {
         var programacao = await _programacaoFeriasService.DevolverAsync(id, dto, User.ObterUsuarioId());
@@ -134,7 +134,7 @@ public class ProgramacoesFeriasController : ControllerBase
     [HttpPatch("{id:int}/cancelar")]
     public async Task<ActionResult<ProgramacaoFeriasDto>> Cancelar(int id)
     {
-        if (!User.IsInRole(Roles.Administrador))
+        if (!User.EhAdminOuAdministrativo())
         {
             var atual = await _programacaoFeriasService.GetByIdAsync(id);
             if (!User.TemUsuarioId(atual.UsuarioId))

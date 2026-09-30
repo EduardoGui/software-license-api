@@ -8,7 +8,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/recessos-corporativos")]
-[Authorize(Roles = Roles.Administrador)]
+[Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
 public class RecessosCorporativosController : ControllerBase
 {
     private readonly IRecessoCorporativoService _recessoCorporativoService;

@@ -7,7 +7,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/patrimonio-itens")]
-[Authorize(Roles = Roles.Administrador)]
+[Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
 public class PatrimonioItensController : ControllerBase
 {
     private readonly IPatrimonioItemService _patrimonioItemService;

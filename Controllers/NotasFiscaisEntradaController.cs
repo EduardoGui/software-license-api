@@ -7,7 +7,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/notas-fiscais-entrada")]
-[Authorize(Roles = Roles.Administrador)]
+[Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
 public class NotasFiscaisEntradaController : ControllerBase
 {
     private readonly INotaFiscalEntradaService _notaFiscalEntradaService;

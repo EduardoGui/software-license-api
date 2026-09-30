@@ -208,7 +208,7 @@ static async Task SeedAdminAsync(WebApplication app)
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-    foreach (var papel in new[] { Roles.Administrador, Roles.Colaborador })
+    foreach (var papel in new[] { Roles.Administrador, Roles.Colaborador, Roles.Administrativo })
     {
         if (!await roleManager.RoleExistsAsync(papel))
         {

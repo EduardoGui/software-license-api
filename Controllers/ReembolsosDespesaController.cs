@@ -8,7 +8,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/reembolsos-despesa")]
-[Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
+[Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo},{Roles.Colaborador}")]
 public class ReembolsosDespesaController : ControllerBase
 {
     private readonly IReembolsoDespesaService _reembolsoDespesaService;
@@ -21,7 +21,7 @@ public class ReembolsosDespesaController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<List<ReembolsoDespesaDto>>> GetAll([FromQuery] ReembolsoDespesaFiltroDto filtro)
     {
-        if (!User.IsInRole(Roles.Administrador) && (filtro.UsuarioId is null || !User.TemUsuarioId(filtro.UsuarioId.Value)))
+        if (!User.EhAdminOuAdministrativo() && (filtro.UsuarioId is null || !User.TemUsuarioId(filtro.UsuarioId.Value)))
         {
             return Forbid();
         }
@@ -60,7 +60,7 @@ public class ReembolsosDespesaController : ControllerBase
     public async Task<ActionResult<ReembolsoDespesaDto>> Update(int id, UpdateReembolsoDespesaDto dto)
     {
         var existente = await _reembolsoDespesaService.GetByIdAsync(id);
-        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(existente.UsuarioId))
+        if (!User.EhAdminOuAdministrativo() && !User.TemUsuarioId(existente.UsuarioId))
         {
             return Forbid();
         }
@@ -73,7 +73,7 @@ public class ReembolsosDespesaController : ControllerBase
     public async Task<IActionResult> Excluir(int id)
     {
         var existente = await _reembolsoDespesaService.GetByIdAsync(id);
-        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(existente.UsuarioId))
+        if (!User.EhAdminOuAdministrativo() && !User.TemUsuarioId(existente.UsuarioId))
         {
             return Forbid();
         }
@@ -86,7 +86,7 @@ public class ReembolsosDespesaController : ControllerBase
     public async Task<ActionResult<ReembolsoDespesaDto>> Enviar(int id)
     {
         var existente = await _reembolsoDespesaService.GetByIdAsync(id);
-        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(existente.UsuarioId))
+        if (!User.EhAdminOuAdministrativo() && !User.TemUsuarioId(existente.UsuarioId))
         {
             return Forbid();
         }
@@ -177,7 +177,7 @@ public class ReembolsosDespesaController : ControllerBase
     public async Task<ActionResult<AnexoDto>> AdicionarAnexoItem(int id, int itemId, IFormFile arquivo)
     {
         var existente = await _reembolsoDespesaService.GetByIdAsync(id);
-        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(existente.UsuarioId))
+        if (!User.EhAdminOuAdministrativo() && !User.TemUsuarioId(existente.UsuarioId))
         {
             return Forbid();
         }
@@ -217,7 +217,7 @@ public class ReembolsosDespesaController : ControllerBase
     public async Task<IActionResult> ExcluirAnexoItem(int id, int itemId, int anexoId)
     {
         var existente = await _reembolsoDespesaService.GetByIdAsync(id);
-        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(existente.UsuarioId))
+        if (!User.EhAdminOuAdministrativo() && !User.TemUsuarioId(existente.UsuarioId))
         {
             return Forbid();
         }
@@ -228,7 +228,7 @@ public class ReembolsosDespesaController : ControllerBase
 
     private async Task<bool> PodeVisualizarAsync(ReembolsoDespesaDto reembolso)
     {
-        if (User.IsInRole(Roles.Administrador) || User.TemUsuarioId(reembolso.UsuarioId))
+        if (User.EhAdminOuAdministrativo() || User.TemUsuarioId(reembolso.UsuarioId))
         {
             return true;
         }

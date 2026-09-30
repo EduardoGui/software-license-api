@@ -7,7 +7,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/politicas-ferias")]
-[Authorize(Roles = Roles.Administrador)]
+[Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
 public class PoliticasFeriasController : ControllerBase
 {
     private readonly IPoliticaFeriasService _politicaFeriasService;

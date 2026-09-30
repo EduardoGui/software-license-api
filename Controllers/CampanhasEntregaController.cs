@@ -7,7 +7,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/campanhas-entrega")]
-[Authorize(Roles = Roles.Administrador)]
+[Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
 public class CampanhasEntregaController : ControllerBase
 {
     private readonly ICampanhaEntregaService _campanhaEntregaService;

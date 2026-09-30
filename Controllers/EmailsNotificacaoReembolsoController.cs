@@ -7,7 +7,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/emails-notificacao-reembolso")]
-[Authorize(Roles = Roles.Administrador)]
+[Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
 public class EmailsNotificacaoReembolsoController : ControllerBase
 {
     private readonly IEmailNotificacaoReembolsoService _emailNotificacaoReembolsoService;
