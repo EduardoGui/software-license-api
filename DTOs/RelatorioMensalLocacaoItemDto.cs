@@ -7,6 +7,7 @@ public class RelatorioMensalLocacaoItemDto
     public string? Patrimonio { get; set; }
     public string? NumeroSerie { get; set; }
     public string? FornecedorNome { get; set; }
+    public DateOnly? DataChegada { get; set; }
     public string? UsuarioResponsavelNome { get; set; }
     public string? UsuarioResponsavelEmail { get; set; }
     public decimal ValorMensal { get; set; }

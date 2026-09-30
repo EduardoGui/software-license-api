@@ -102,6 +102,39 @@ public class RelatorioMensalLocacaoServiceTests
     }
 
     [Fact]
+    public async Task GerarAsync_DeveTrazerDataDeChegadaDaNotaFiscal()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+
+        var nota = new NotaFiscalEntrada { Numero = "1", DataEntrada = new DateOnly(2026, 2, 13), DataCriacao = Agora, DataAtualizacao = Agora };
+        context.NotasFiscaisEntrada.Add(nota);
+        context.SaveChanges();
+
+        var item = new NotaFiscalItem { NotaFiscalEntradaId = nota.Id, Destino = NotaFiscalItemDestino.Equipamento, TipoEquipamentoId = tipo.Id, Quantidade = 1, Origem = EquipamentoOrigem.Locado, DataCriacao = Agora };
+        context.NotasFiscaisItens.Add(item);
+        context.SaveChanges();
+
+        context.Equipamentos.Add(new Equipamento
+        {
+            TipoEquipamentoId = tipo.Id,
+            NotaFiscalItemId = item.Id,
+            Origem = EquipamentoOrigem.Locado,
+            ValorMensal = 100m,
+            DataInicioContrato = new DateOnly(2026, 1, 1),
+            Status = EquipamentoStatus.Disponivel,
+            DataCriacao = Agora,
+            DataAtualizacao = Agora,
+        });
+        context.SaveChanges();
+
+        var relatorio = await service.GerarAsync(new RelatorioMensalLocacaoFiltroDto { Ano = 2026, Mes = 8 });
+
+        var itemRelatorio = Assert.Single(relatorio.Itens);
+        Assert.Equal(new DateOnly(2026, 2, 13), itemRelatorio.DataChegada);
+    }
+
+    [Fact]
     public async Task GerarAsync_DeveTrazerUsuarioResponsavelEOrdenarPorEle()
     {
         var (service, context) = CriarService();

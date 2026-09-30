@@ -34,6 +34,8 @@ public class RelatorioMensalLocacaoService : IRelatorioMensalLocacaoService
 
         var query = _context.Equipamentos
             .Include(e => e.TipoEquipamento)
+            .Include(e => e.NotaFiscalItem)
+            .ThenInclude(i => i!.NotaFiscalEntrada)
             // Sem "e.ValorMensal != null" de propósito - um locado sem valor lançado é 0, não deve
             // sumir do relatório (achado real: null e 0 eram tratados de forma diferente aqui).
             .Where(e => e.Origem == EquipamentoOrigem.Locado && e.DataInicioContrato != null)
@@ -83,7 +85,7 @@ public class RelatorioMensalLocacaoService : IRelatorioMensalLocacaoService
         using var workbook = new XLWorkbook();
         var planilha = workbook.Worksheets.Add("Espelho de Medicao");
 
-        string[] cabecalhos = ["Tipo", "Patrimônio", "Nº Série", "Fornecedor", "Usuário responsável", "E-mail", "Valor mensal", "Dias ativos", "Dias no mês", "Valor no mês"];
+        string[] cabecalhos = ["Tipo", "Patrimônio", "Nº Série", "Data de Chegada", "Fornecedor", "Usuário responsável", "E-mail", "Valor mensal", "Dias ativos", "Dias no mês", "Valor no mês"];
         for (var coluna = 0; coluna < cabecalhos.Length; coluna++)
         {
             planilha.Cell(1, coluna + 1).Value = cabecalhos[coluna];
@@ -96,20 +98,21 @@ public class RelatorioMensalLocacaoService : IRelatorioMensalLocacaoService
             planilha.Cell(linha, 1).Value = item.TipoEquipamentoNome;
             planilha.Cell(linha, 2).Value = item.Patrimonio ?? "-";
             planilha.Cell(linha, 3).Value = item.NumeroSerie ?? "-";
-            planilha.Cell(linha, 4).Value = item.FornecedorNome ?? "-";
-            planilha.Cell(linha, 5).Value = item.UsuarioResponsavelNome ?? "-";
-            planilha.Cell(linha, 6).Value = item.UsuarioResponsavelEmail ?? "-";
-            planilha.Cell(linha, 7).Value = item.ValorMensal;
-            planilha.Cell(linha, 8).Value = item.DiasAtivos;
-            planilha.Cell(linha, 9).Value = item.DiasNoMes;
-            planilha.Cell(linha, 10).Value = item.ValorNoMes;
+            planilha.Cell(linha, 4).Value = item.DataChegada.HasValue ? item.DataChegada.Value.ToString("dd/MM/yyyy") : "-";
+            planilha.Cell(linha, 5).Value = item.FornecedorNome ?? "-";
+            planilha.Cell(linha, 6).Value = item.UsuarioResponsavelNome ?? "-";
+            planilha.Cell(linha, 7).Value = item.UsuarioResponsavelEmail ?? "-";
+            planilha.Cell(linha, 8).Value = item.ValorMensal;
+            planilha.Cell(linha, 9).Value = item.DiasAtivos;
+            planilha.Cell(linha, 10).Value = item.DiasNoMes;
+            planilha.Cell(linha, 11).Value = item.ValorNoMes;
             linha++;
         }
 
-        planilha.Cell(linha, 9).Value = "Total";
-        planilha.Cell(linha, 9).Style.Font.Bold = true;
-        planilha.Cell(linha, 10).Value = relatorio.TotalGeral;
+        planilha.Cell(linha, 10).Value = "Total";
         planilha.Cell(linha, 10).Style.Font.Bold = true;
+        planilha.Cell(linha, 11).Value = relatorio.TotalGeral;
+        planilha.Cell(linha, 11).Style.Font.Bold = true;
 
         planilha.Columns().AdjustToContents();
 
@@ -140,6 +143,7 @@ public class RelatorioMensalLocacaoService : IRelatorioMensalLocacaoService
             Patrimonio = equipamento.Patrimonio,
             NumeroSerie = equipamento.NumeroSerie,
             FornecedorNome = equipamento.FornecedorNome,
+            DataChegada = equipamento.NotaFiscalItem?.NotaFiscalEntrada.DataEntrada,
             UsuarioResponsavelNome = responsavel.Nome,
             UsuarioResponsavelEmail = responsavel.Email,
             ValorMensal = valorMensal,
