@@ -106,4 +106,63 @@ public class UsuariosController : ControllerBase
         var usuario = await _usuarioService.RemoverDependenteAsync(id, dependenteId);
         return Ok(usuario);
     }
+
+    // Listar/baixar: Administrador ou o próprio colaborador (mobile só visualiza, ver "Meus dados").
+    // Incluir/excluir: só Administrador - upload de anexo (ex.: Termo de Responsabilidade assinado)
+    // é feito só pela web admin.
+    [HttpGet("{id:int}/anexos")]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
+    public async Task<ActionResult<List<AnexoDto>>> ListarAnexos(int id)
+    {
+        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(id))
+        {
+            return Forbid();
+        }
+
+        var anexos = await _usuarioService.ListarAnexosAsync(id);
+        return Ok(anexos);
+    }
+
+    [HttpPost("{id:int}/anexos")]
+    [Authorize(Roles = Roles.Administrador)]
+    public async Task<ActionResult<AnexoDto>> AdicionarAnexo(int id, IFormFile arquivo)
+    {
+        if (arquivo is null || arquivo.Length == 0)
+        {
+            return BadRequest(new { message = "Nenhum arquivo enviado." });
+        }
+
+        using var stream = new MemoryStream();
+        await arquivo.CopyToAsync(stream);
+
+        var anexo = await _usuarioService.AdicionarAnexoAsync(id, new AdicionarAnexoDto
+        {
+            NomeArquivo = arquivo.FileName,
+            TipoConteudo = arquivo.ContentType,
+            Conteudo = stream.ToArray(),
+        });
+
+        return Ok(anexo);
+    }
+
+    [HttpGet("{id:int}/anexos/{anexoId:int}")]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
+    public async Task<IActionResult> BaixarAnexo(int id, int anexoId)
+    {
+        if (!User.IsInRole(Roles.Administrador) && !User.TemUsuarioId(id))
+        {
+            return Forbid();
+        }
+
+        var arquivo = await _usuarioService.ObterAnexoAsync(id, anexoId);
+        return File(arquivo.Conteudo, arquivo.TipoConteudo, arquivo.NomeArquivo);
+    }
+
+    [HttpDelete("{id:int}/anexos/{anexoId:int}")]
+    [Authorize(Roles = Roles.Administrador)]
+    public async Task<IActionResult> ExcluirAnexo(int id, int anexoId)
+    {
+        await _usuarioService.ExcluirAnexoAsync(id, anexoId);
+        return NoContent();
+    }
 }

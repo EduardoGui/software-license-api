@@ -14,4 +14,9 @@ public interface IUsuarioService
     Task<UsuarioDto> AdicionarDependenteAsync(int usuarioId, CreateDependenteDto dto);
     Task<UsuarioDto> AtualizarDependenteAsync(int usuarioId, int dependenteId, UpdateDependenteDto dto);
     Task<UsuarioDto> RemoverDependenteAsync(int usuarioId, int dependenteId);
+
+    Task<List<AnexoDto>> ListarAnexosAsync(int usuarioId);
+    Task<AnexoDto> AdicionarAnexoAsync(int usuarioId, AdicionarAnexoDto dto);
+    Task<AnexoArquivoDto> ObterAnexoAsync(int usuarioId, int anexoId);
+    Task ExcluirAnexoAsync(int usuarioId, int anexoId);
 }

@@ -465,6 +465,101 @@ public class UsuarioServiceTests
         await Assert.ThrowsAsync<NotFoundException>(() => service.RemoverDependenteAsync(usuarioB.Id, dependenteId));
     }
 
+    private static Usuario CriarUsuarioDireto(AppDbContext context, string nome = "Colaborador Teste")
+    {
+        var usuario = new Usuario
+        {
+            Nome = nome,
+            Email = $"{Guid.NewGuid():N}@empresa.com",
+            DataInicio = DateOnly.FromDateTime(Agora.Date),
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Usuarios.Add(usuario);
+        context.SaveChanges();
+        return usuario;
+    }
+
+    [Fact]
+    public async Task AdicionarAnexoAsync_DeveSalvarAnexoValido()
+    {
+        var service = CriarService(out var context);
+        var usuario = CriarUsuarioDireto(context);
+
+        var anexo = await service.AdicionarAnexoAsync(usuario.Id, new AdicionarAnexoDto
+        {
+            NomeArquivo = "termo-responsabilidade.pdf",
+            TipoConteudo = "application/pdf",
+            Conteudo = [1, 2, 3],
+        });
+
+        Assert.Equal("termo-responsabilidade.pdf", anexo.NomeArquivo);
+        Assert.Equal(3, anexo.Tamanho);
+
+        var lista = await service.ListarAnexosAsync(usuario.Id);
+        Assert.Single(lista);
+    }
+
+    [Fact]
+    public async Task AdicionarAnexoAsync_DeveRejeitarTipoNaoPermitido()
+    {
+        var service = CriarService(out var context);
+        var usuario = CriarUsuarioDireto(context);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.AdicionarAnexoAsync(usuario.Id, new AdicionarAnexoDto
+            {
+                NomeArquivo = "virus.exe",
+                TipoConteudo = "application/x-msdownload",
+                Conteudo = [1, 2, 3],
+            }));
+    }
+
+    [Fact]
+    public async Task AdicionarAnexoAsync_DeveLancarNotFoundParaUsuarioInexistente()
+    {
+        var service = CriarService(out _);
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            service.AdicionarAnexoAsync(999, new AdicionarAnexoDto { NomeArquivo = "a.pdf", TipoConteudo = "application/pdf", Conteudo = [1] }));
+    }
+
+    [Fact]
+    public async Task ExcluirAnexoAsync_DeveRemoverAnexo()
+    {
+        var service = CriarService(out var context);
+        var usuario = CriarUsuarioDireto(context);
+        var anexo = await service.AdicionarAnexoAsync(usuario.Id, new AdicionarAnexoDto
+        {
+            NomeArquivo = "doc.pdf",
+            TipoConteudo = "application/pdf",
+            Conteudo = [1, 2, 3],
+        });
+
+        await service.ExcluirAnexoAsync(usuario.Id, anexo.Id);
+
+        var lista = await service.ListarAnexosAsync(usuario.Id);
+        Assert.Empty(lista);
+    }
+
+    [Fact]
+    public async Task ObterAnexoAsync_DeveRetornarConteudoDoArquivo()
+    {
+        var service = CriarService(out var context);
+        var usuario = CriarUsuarioDireto(context);
+        var anexo = await service.AdicionarAnexoAsync(usuario.Id, new AdicionarAnexoDto
+        {
+            NomeArquivo = "doc.pdf",
+            TipoConteudo = "application/pdf",
+            Conteudo = [9, 9, 9],
+        });
+
+        var arquivo = await service.ObterAnexoAsync(usuario.Id, anexo.Id);
+
+        Assert.Equal("doc.pdf", arquivo.NomeArquivo);
+        Assert.Equal([9, 9, 9], arquivo.Conteudo);
+    }
+
     private static async Task<EmpresaPj> CriarEmpresaPjAsync(AppDbContext context)
     {
         var empresa = new EmpresaPj

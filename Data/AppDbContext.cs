@@ -37,6 +37,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Equipamento> Equipamentos => Set<Equipamento>();
     public DbSet<EquipamentoAlocacao> EquipamentoAlocacoes => Set<EquipamentoAlocacao>();
     public DbSet<EquipamentoAnexo> EquipamentoAnexos => Set<EquipamentoAnexo>();
+    public DbSet<UsuarioAnexo> UsuarioAnexos => Set<UsuarioAnexo>();
     public DbSet<NotaFiscalEntradaAnexo> NotaFiscalEntradaAnexos => Set<NotaFiscalEntradaAnexo>();
     public DbSet<TipoPatrimonio> TiposPatrimonio => Set<TipoPatrimonio>();
     public DbSet<PatrimonioItem> PatrimonioItens => Set<PatrimonioItem>();
@@ -648,6 +649,14 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
             entity.HasIndex(a => a.EquipamentoId);
             entity.HasOne(a => a.Equipamento).WithMany().HasForeignKey(a => a.EquipamentoId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<UsuarioAnexo>(entity =>
+        {
+            entity.Property(a => a.NomeArquivo).IsRequired().HasMaxLength(255);
+            entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
+            entity.HasIndex(a => a.UsuarioId);
+            entity.HasOne(a => a.Usuario).WithMany().HasForeignKey(a => a.UsuarioId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<NotaFiscalEntradaAnexo>(entity =>

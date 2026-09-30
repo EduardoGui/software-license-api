@@ -419,6 +419,80 @@ public class UsuarioService : IUsuarioService
         }
     }
 
+    public async Task<List<AnexoDto>> ListarAnexosAsync(int usuarioId)
+    {
+        await BuscarOuFalhar(usuarioId);
+
+        return await _context.UsuarioAnexos
+            .Where(a => a.UsuarioId == usuarioId)
+            .OrderByDescending(a => a.DataUpload)
+            .Select(a => new AnexoDto
+            {
+                Id = a.Id,
+                NomeArquivo = a.NomeArquivo,
+                TipoConteudo = a.TipoConteudo,
+                Tamanho = a.Tamanho,
+                DataUpload = a.DataUpload,
+            })
+            .ToListAsync();
+    }
+
+    public async Task<AnexoDto> AdicionarAnexoAsync(int usuarioId, AdicionarAnexoDto dto)
+    {
+        await BuscarOuFalhar(usuarioId);
+        AnexoValidator.Validar(dto.TipoConteudo, dto.Conteudo.Length);
+
+        var anexo = new UsuarioAnexo
+        {
+            UsuarioId = usuarioId,
+            NomeArquivo = dto.NomeArquivo,
+            TipoConteudo = dto.TipoConteudo,
+            Tamanho = dto.Conteudo.Length,
+            Conteudo = dto.Conteudo,
+            DataUpload = _timeProvider.GetUtcNow().UtcDateTime,
+        };
+
+        _context.UsuarioAnexos.Add(anexo);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Anexo {AnexoId} adicionado ao usuário {UsuarioId}", anexo.Id, usuarioId);
+
+        return new AnexoDto
+        {
+            Id = anexo.Id,
+            NomeArquivo = anexo.NomeArquivo,
+            TipoConteudo = anexo.TipoConteudo,
+            Tamanho = anexo.Tamanho,
+            DataUpload = anexo.DataUpload,
+        };
+    }
+
+    public async Task<AnexoArquivoDto> ObterAnexoAsync(int usuarioId, int anexoId)
+    {
+        var anexo = await _context.UsuarioAnexos
+            .FirstOrDefaultAsync(a => a.Id == anexoId && a.UsuarioId == usuarioId)
+            ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
+
+        return new AnexoArquivoDto
+        {
+            NomeArquivo = anexo.NomeArquivo,
+            TipoConteudo = anexo.TipoConteudo,
+            Conteudo = anexo.Conteudo,
+        };
+    }
+
+    public async Task ExcluirAnexoAsync(int usuarioId, int anexoId)
+    {
+        var anexo = await _context.UsuarioAnexos
+            .FirstOrDefaultAsync(a => a.Id == anexoId && a.UsuarioId == usuarioId)
+            ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
+
+        _context.UsuarioAnexos.Remove(anexo);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Anexo {AnexoId} excluído do usuário {UsuarioId}", anexoId, usuarioId);
+    }
+
     private Task<int> ContarEmUsoAsync(int usuarioId) =>
         _context.UsuarioLicencas.CountAsync(m => m.UsuarioId == usuarioId && m.DataFim == null);
 
