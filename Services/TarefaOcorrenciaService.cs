@@ -80,9 +80,102 @@ public class TarefaOcorrenciaService : ITarefaOcorrenciaService
         }
     }
 
+    // Lembrete de "iniciar medição", gerado a partir da configuração de medição de cada contrato
+    // (ContratoMedicaoConfig.DiaFimPeriodo/DiasAntecedenciaAlerta) — mesmo gatilho que antes só
+    // alimentava um alerta calculado no Dashboard (ver histórico em DashboardService), agora
+    // materializado como uma TarefaOcorrencia de verdade (ContratoId preenchido marca a origem).
+    // Sob demanda, igual a GarantirOcorrenciasDoMesAsync: roda sempre que a agenda é consultada.
+    public async Task GarantirOcorrenciasDeMedicaoAsync()
+    {
+        var hoje = DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
+
+        var configs = await _context.ContratoMedicaoConfigs
+            .Where(c => c.ExigeBm && c.DiasAntecedenciaAlerta != null && c.DiaFimPeriodo != null)
+            .ToListAsync();
+
+        if (configs.Count == 0)
+        {
+            return;
+        }
+
+        var contratoIds = configs.Select(c => c.ContratoId).ToList();
+        var contratos = await _context.Contratos
+            .Include(c => c.Fornecedor)
+            .Where(c => contratoIds.Contains(c.Id) && c.Status == ContratoStatus.Ativo)
+            .ToDictionaryAsync(c => c.Id);
+
+        var periodosComBm = (await _context.MedicaoBms
+                .Where(m => contratoIds.Contains(m.ContratoId))
+                .Select(m => new { m.ContratoId, m.PeriodoFim })
+                .ToListAsync())
+            .Select(m => (m.ContratoId, m.PeriodoFim))
+            .ToHashSet();
+
+        var ocorrenciasExistentes = (await _context.TarefaOcorrencias
+                .Where(o => o.ContratoId != null && contratoIds.Contains(o.ContratoId.Value))
+                .Select(o => new { o.ContratoId, o.MesReferencia })
+                .ToListAsync())
+            .Select(o => (o.ContratoId!.Value, o.MesReferencia))
+            .ToHashSet();
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        var novasOcorrencias = new List<TarefaOcorrencia>();
+
+        foreach (var config in configs)
+        {
+            if (!contratos.TryGetValue(config.ContratoId, out var contrato))
+            {
+                continue;
+            }
+
+            var periodoFimAtual = PeriodoMedicaoHelper.FimDoPeriodoCorrente(hoje, config.DiaFimPeriodo!.Value);
+            var diasParaVencerPeriodo = periodoFimAtual.DayNumber - hoje.DayNumber;
+
+            if (diasParaVencerPeriodo > config.DiasAntecedenciaAlerta!.Value)
+            {
+                continue;
+            }
+
+            if (periodosComBm.Contains((contrato.Id, periodoFimAtual)))
+            {
+                continue;
+            }
+
+            var mesReferencia = new DateOnly(periodoFimAtual.Year, periodoFimAtual.Month, 1);
+            if (ocorrenciasExistentes.Contains((contrato.Id, mesReferencia)))
+            {
+                continue;
+            }
+
+            var dataPrevista = periodoFimAtual.AddDays(-config.DiasAntecedenciaAlerta.Value);
+
+            novasOcorrencias.Add(new TarefaOcorrencia
+            {
+                ContratoId = contrato.Id,
+                Titulo = $"Iniciar medição — {contrato.Fornecedor.Nome}",
+                MesReferencia = mesReferencia,
+                DataPrevistaOriginal = dataPrevista,
+                DataPrevistaAtual = dataPrevista,
+                Status = TarefaOcorrenciaStatus.Pendente,
+                Observacao = $"Contrato {contrato.Numero} • período até {periodoFimAtual:dd/MM/yyyy}",
+                DataCriacao = agora,
+                DataAtualizacao = agora,
+            });
+        }
+
+        if (novasOcorrencias.Count > 0)
+        {
+            _context.TarefaOcorrencias.AddRange(novasOcorrencias);
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("{Quantidade} lembrete(s) de medição gerado(s)", novasOcorrencias.Count);
+        }
+    }
+
     public async Task<List<TarefaOcorrenciaDto>> ObterAgendaAsync()
     {
         await GarantirOcorrenciasDoMesAsync();
+        await GarantirOcorrenciasDeMedicaoAsync();
 
         var hoje = DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
 
@@ -197,6 +290,7 @@ public class TarefaOcorrenciaService : ITarefaOcorrenciaService
     {
         Id = o.Id,
         TarefaRecorrenteId = o.TarefaRecorrenteId,
+        ContratoId = o.ContratoId,
         Titulo = o.Titulo,
         DataPrevistaOriginal = o.DataPrevistaOriginal,
         DataPrevistaAtual = o.DataPrevistaAtual,

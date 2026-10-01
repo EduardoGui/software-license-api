@@ -369,6 +369,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(o => o.Observacao).HasMaxLength(500);
             entity.HasIndex(o => new { o.TarefaRecorrenteId, o.MesReferencia }).IsUnique();
             entity.HasOne(o => o.TarefaRecorrente).WithMany(t => t.Ocorrencias).HasForeignKey(o => o.TarefaRecorrenteId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(o => new { o.ContratoId, o.MesReferencia }).IsUnique();
+            entity.HasOne(o => o.Contrato).WithMany().HasForeignKey(o => o.ContratoId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Fornecedor>(entity =>

@@ -41,6 +41,137 @@ public class TarefaOcorrenciaServiceTests
         return tarefa;
     }
 
+    private static Contrato CriarContratoComMedicao(
+        AppDbContext context,
+        string numero,
+        int? diaFimPeriodo,
+        int? diasAntecedenciaAlerta,
+        bool exigeBm = true,
+        string status = "Ativo",
+        string fornecedorNome = "Fornecedor Teste")
+    {
+        var fornecedor = new Fornecedor { Nome = fornecedorNome, Ativo = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        context.Fornecedores.Add(fornecedor);
+        context.SaveChanges();
+
+        var contrato = new Contrato
+        {
+            Numero = numero,
+            FornecedorId = fornecedor.Id,
+            Objeto = "Teste",
+            DataAssinatura = Hoje.AddYears(-1),
+            DataInicioVigencia = Hoje.AddYears(-1),
+            DataFimVigenciaOriginal = Hoje.AddYears(1),
+            ValorOriginal = 1000m,
+            Status = status,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.Contratos.Add(contrato);
+        context.SaveChanges();
+
+        context.ContratoMedicaoConfigs.Add(new ContratoMedicaoConfig
+        {
+            ContratoId = contrato.Id,
+            TipoMedicao = "QuantidadeXPrecoUnitario",
+            DiaInicioPeriodo = 1,
+            DiaFimPeriodo = diaFimPeriodo,
+            ExigeBm = exigeBm,
+            DiasAntecedenciaAlerta = diasAntecedenciaAlerta,
+        });
+        context.SaveChanges();
+
+        return contrato;
+    }
+
+    [Fact]
+    public async Task GarantirOcorrenciasDeMedicaoAsync_DeveGerarLembreteQuandoDentroDoPrazo()
+    {
+        var (service, context) = CriarService();
+        // Hoje = 04/09/2026. Período fecha dia 10 — faltam 6 dias, dentro da janela de 7.
+        var contrato = CriarContratoComMedicao(context, "CT-001", diaFimPeriodo: 10, diasAntecedenciaAlerta: 7, fornecedorNome: "Brain Tecnologia");
+
+        var agenda = await service.ObterAgendaAsync();
+
+        var tarefa = Assert.Single(agenda.Where(a => a.ContratoId == contrato.Id));
+        Assert.Contains("Brain Tecnologia", tarefa.Titulo);
+        Assert.Equal(new DateOnly(2026, 9, 3), tarefa.DataPrevistaAtual);
+        Assert.Equal(new DateOnly(2026, 9, 3), tarefa.DataPrevistaOriginal);
+        Assert.Equal(TarefaOcorrenciaStatus.Pendente, tarefa.Status);
+        Assert.Contains("CT-001", tarefa.Observacao);
+    }
+
+    [Fact]
+    public async Task GarantirOcorrenciasDeMedicaoAsync_NaoDeveGerarQuandoPeriodoAindaEstaLonge()
+    {
+        var (service, context) = CriarService();
+        var contrato = CriarContratoComMedicao(context, "CT-002", diaFimPeriodo: 30, diasAntecedenciaAlerta: 3);
+
+        var agenda = await service.ObterAgendaAsync();
+
+        Assert.Empty(agenda.Where(a => a.ContratoId == contrato.Id));
+    }
+
+    [Fact]
+    public async Task GarantirOcorrenciasDeMedicaoAsync_DeveRolarParaOMesSeguinteQuandoPeriodoAtualJaPassou()
+    {
+        var (service, context) = CriarService();
+        // Dia de fechamento (1) já passou este mês (hoje é 4) — o período corrente é o de outubro.
+        var contrato = CriarContratoComMedicao(context, "CT-003", diaFimPeriodo: 1, diasAntecedenciaAlerta: 30);
+
+        var agenda = await service.ObterAgendaAsync();
+
+        var tarefa = Assert.Single(agenda.Where(a => a.ContratoId == contrato.Id));
+        Assert.Equal(new DateOnly(2026, 9, 1), tarefa.DataPrevistaAtual);
+    }
+
+    [Fact]
+    public async Task GarantirOcorrenciasDeMedicaoAsync_NaoDeveGerarQuandoJaExisteBmParaOPeriodo()
+    {
+        var (service, context) = CriarService();
+        var contrato = CriarContratoComMedicao(context, "CT-004", diaFimPeriodo: 10, diasAntecedenciaAlerta: 7);
+        context.MedicaoBms.Add(new MedicaoBm
+        {
+            ContratoId = contrato.Id,
+            Numero = 1,
+            PeriodoInicio = new DateOnly(2026, 9, 1),
+            PeriodoFim = new DateOnly(2026, 9, 10),
+            Status = MedicaoBmStatus.Rascunho,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        });
+        await context.SaveChangesAsync();
+
+        var agenda = await service.ObterAgendaAsync();
+
+        Assert.Empty(agenda.Where(a => a.ContratoId == contrato.Id));
+    }
+
+    [Fact]
+    public async Task GarantirOcorrenciasDeMedicaoAsync_NaoDeveGerarParaContratoNaoAtivoOuQueNaoExigeBm()
+    {
+        var (service, context) = CriarService();
+        var contratoEncerrado = CriarContratoComMedicao(context, "CT-005", diaFimPeriodo: 10, diasAntecedenciaAlerta: 7, status: "Encerrado");
+        var contratoSemExigencia = CriarContratoComMedicao(context, "CT-006", diaFimPeriodo: 10, diasAntecedenciaAlerta: 7, exigeBm: false);
+
+        var agenda = await service.ObterAgendaAsync();
+
+        Assert.Empty(agenda.Where(a => a.ContratoId == contratoEncerrado.Id || a.ContratoId == contratoSemExigencia.Id));
+    }
+
+    [Fact]
+    public async Task GarantirOcorrenciasDeMedicaoAsync_DeveSerIdempotente_NaoDuplicaAoConsultarDeNovo()
+    {
+        var (service, context) = CriarService();
+        var contrato = CriarContratoComMedicao(context, "CT-007", diaFimPeriodo: 10, diasAntecedenciaAlerta: 7);
+
+        await service.ObterAgendaAsync();
+        var agenda = await service.ObterAgendaAsync();
+
+        Assert.Single(agenda.Where(a => a.ContratoId == contrato.Id));
+        Assert.Equal(1, await context.TarefaOcorrencias.CountAsync(o => o.ContratoId == contrato.Id));
+    }
+
     [Fact]
     public async Task ObterAgendaAsync_DeveGerarOcorrenciaDoMesAtualParaTarefaAtiva()
     {

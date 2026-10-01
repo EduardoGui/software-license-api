@@ -8,6 +8,11 @@ public class TarefaOcorrencia
     public int? TarefaRecorrenteId { get; set; }
     public TarefaRecorrente? TarefaRecorrente { get; set; }
 
+    // Preenchido quando a ocorrência nasce da configuração de medição de um contrato (lembrete de
+    // "iniciar medição") — ver TarefaOcorrenciaService.GarantirOcorrenciasDeMedicaoAsync.
+    public int? ContratoId { get; set; }
+    public Contrato? Contrato { get; set; }
+
     // Copiado da TarefaRecorrente no momento da geração (ou definido direto, numa tarefa única) —
     // não lido ao vivo do pai, pra não "renomear" ocorrências pendentes se o título da regra mudar depois.
     public string Titulo { get; set; } = string.Empty;

@@ -323,50 +323,39 @@ public class DashboardServiceTests
         return contrato;
     }
 
+    // A lógica detalhada de geração do lembrete de medição (datas, idempotência, ciclo de vida do
+    // BM) é coberta em TarefaOcorrenciaServiceTests/ContratoServiceTests — aqui só confirma que o
+    // Dashboard enxerga essa tarefa real (via ObterAgendaAsync) como qualquer outra, sem duplicar
+    // num "alerta" à parte.
     [Fact]
-    public async Task ObterAsync_DeveAlertarMedicaoQuandoPeriodoAtualEstaDentroDoPrazo()
+    public async Task ObterAsync_DeveIncluirLembreteDeMedicaoComoTarefaQuandoDentroDoPrazo()
     {
         var (service, context) = CriarService();
-        var fornecedor = CriarFornecedor(context);
-        // Hoje = 12/08/2026. Período fecha dia 15 (ainda este mês) — faltam 3 dias.
-        CriarContratoComMedicao(context, fornecedor, "CT-001", diaFimPeriodo: 15, diasAntecedenciaAlerta: 5);
+        var fornecedor = CriarFornecedor(context, "Fornecedor CT-001");
+        // Hoje = 12/08/2026. Período fecha dia 15 (ainda este mês) — dentro da janela de 5 dias de antecedência.
+        var contrato = CriarContratoComMedicao(context, fornecedor, "CT-001", diaFimPeriodo: 15, diasAntecedenciaAlerta: 5);
 
         var dashboard = await service.ObterAsync();
 
-        var alerta = Assert.Single(dashboard.Pendencias.Where(p => p.Origem == "Medição"));
-        Assert.Equal("CT-001", alerta.Titulo);
-        Assert.Equal(new DateOnly(2026, 8, 15), alerta.Data);
-        Assert.Equal(3, alerta.DiasParaVencer);
+        var tarefa = Assert.Single(dashboard.Pendencias.Where(p => p.ContratoId == contrato.Id));
+        Assert.Equal("Tarefa", tarefa.Origem);
+        Assert.Contains(fornecedor.Nome, tarefa.Titulo);
     }
 
     [Fact]
-    public async Task ObterAsync_NaoDeveAlertarQuandoPeriodoAindaEstaLonge()
+    public async Task ObterAsync_NaoDeveIncluirLembreteQuandoPeriodoAindaEstaLonge()
     {
         var (service, context) = CriarService();
         var fornecedor = CriarFornecedor(context);
-        CriarContratoComMedicao(context, fornecedor, "CT-002", diaFimPeriodo: 28, diasAntecedenciaAlerta: 5);
+        var contrato = CriarContratoComMedicao(context, fornecedor, "CT-002", diaFimPeriodo: 28, diasAntecedenciaAlerta: 5);
 
         var dashboard = await service.ObterAsync();
 
-        Assert.Empty(dashboard.Pendencias.Where(p => p.Origem == "Medição"));
+        Assert.Empty(dashboard.Pendencias.Where(p => p.ContratoId == contrato.Id));
     }
 
     [Fact]
-    public async Task ObterAsync_DeveRolarParaOMesSeguinteQuandoPeriodoAtualJaPassou()
-    {
-        var (service, context) = CriarService();
-        var fornecedor = CriarFornecedor(context);
-        // Dia de fechamento (5) já passou este mês (hoje é 12) — o período corrente é o de setembro.
-        CriarContratoComMedicao(context, fornecedor, "CT-003", diaFimPeriodo: 5, diasAntecedenciaAlerta: 30);
-
-        var dashboard = await service.ObterAsync();
-
-        var alerta = Assert.Single(dashboard.Pendencias.Where(p => p.Origem == "Medição"));
-        Assert.Equal(new DateOnly(2026, 9, 5), alerta.Data);
-    }
-
-    [Fact]
-    public async Task ObterAsync_NaoDeveAlertarQuandoJaExisteBmParaOPeriodo()
+    public async Task ObterAsync_NaoDeveIncluirLembreteQuandoJaExisteBmParaOPeriodo()
     {
         var (service, context) = CriarService();
         var fornecedor = CriarFornecedor(context);
@@ -385,19 +374,19 @@ public class DashboardServiceTests
 
         var dashboard = await service.ObterAsync();
 
-        Assert.Empty(dashboard.Pendencias.Where(p => p.Origem == "Medição"));
+        Assert.Empty(dashboard.Pendencias.Where(p => p.ContratoId == contrato.Id));
     }
 
     [Fact]
-    public async Task ObterAsync_NaoDeveAlertarContratoQueNaoExigeBm()
+    public async Task ObterAsync_NaoDeveIncluirLembreteDeContratoQueNaoExigeBm()
     {
         var (service, context) = CriarService();
         var fornecedor = CriarFornecedor(context);
-        CriarContratoComMedicao(context, fornecedor, "CT-005", diaFimPeriodo: 15, diasAntecedenciaAlerta: 5, exigeBm: false);
+        var contrato = CriarContratoComMedicao(context, fornecedor, "CT-005", diaFimPeriodo: 15, diasAntecedenciaAlerta: 5, exigeBm: false);
 
         var dashboard = await service.ObterAsync();
 
-        Assert.Empty(dashboard.Pendencias.Where(p => p.Origem == "Medição"));
+        Assert.Empty(dashboard.Pendencias.Where(p => p.ContratoId == contrato.Id));
     }
 
     [Fact]

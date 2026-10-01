@@ -665,6 +665,18 @@ public class ContratoService : IContratoService
             DataCriacao = agora,
             DataAtualizacao = agora,
         });
+
+        // O BM foi iniciado — o lembrete de "iniciar medição" (se existir pra esse período) já cumpriu o papel dele.
+        var mesReferenciaMedicao = new DateOnly(medicao.PeriodoFim.Year, medicao.PeriodoFim.Month, 1);
+        var tarefaMedicao = await _context.TarefaOcorrencias
+            .FirstOrDefaultAsync(t => t.ContratoId == contratoId && t.MesReferencia == mesReferenciaMedicao && t.Status == TarefaOcorrenciaStatus.Pendente);
+        if (tarefaMedicao is not null)
+        {
+            tarefaMedicao.Status = TarefaOcorrenciaStatus.Concluida;
+            tarefaMedicao.DataConclusao = agora;
+            tarefaMedicao.DataAtualizacao = agora;
+        }
+
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("BM {MedicaoId} (nº {Numero}) criado para o contrato {ContratoId}", medicao.Id, medicao.Numero, contratoId);
@@ -772,9 +784,28 @@ public class ContratoService : IContratoService
         _context.MedicaoBmItens.RemoveRange(medicao.Itens);
         _context.MedicaoBms.Remove(medicao);
 
+        await ReabrirTarefaMedicaoAsync(contratoId, medicao.PeriodoFim, _timeProvider.GetUtcNow().UtcDateTime);
+
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("BM {MedicaoId} do contrato {ContratoId} excluído", medicaoId, contratoId);
+    }
+
+    // O período ainda precisa de medição (BM reprovado ou excluído) — se o lembrete de "iniciar
+    // medição" já tinha sido concluído (por ter sido criado este BM), reabre pra não ficar "resolvido"
+    // indevidamente. Não recria a tarefa se ela nunca existiu (ex.: medição fora da janela de alerta).
+    private async Task ReabrirTarefaMedicaoAsync(int contratoId, DateOnly periodoFim, DateTime agora)
+    {
+        var mesReferenciaMedicao = new DateOnly(periodoFim.Year, periodoFim.Month, 1);
+        var tarefaMedicao = await _context.TarefaOcorrencias
+            .FirstOrDefaultAsync(t => t.ContratoId == contratoId && t.MesReferencia == mesReferenciaMedicao && t.Status == TarefaOcorrenciaStatus.Concluida);
+
+        if (tarefaMedicao is not null)
+        {
+            tarefaMedicao.Status = TarefaOcorrenciaStatus.Pendente;
+            tarefaMedicao.DataConclusao = null;
+            tarefaMedicao.DataAtualizacao = agora;
+        }
     }
 
     // Prioridade: AjusteManual sempre sobrepuja (equivale ao método ValorManual, mas serve como
@@ -932,6 +963,8 @@ public class ContratoService : IContratoService
             obrigacao.Cancelada = true;
             obrigacao.DataAtualizacao = agora;
         }
+
+        await ReabrirTarefaMedicaoAsync(contratoId, medicao.PeriodoFim, agora);
 
         await _context.SaveChangesAsync();
 

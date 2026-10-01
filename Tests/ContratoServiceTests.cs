@@ -886,6 +886,71 @@ public class ContratoServiceTests
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.ExcluirMedicaoBmAsync(contrato.Id, bm.Id));
     }
 
+    private static TarefaOcorrencia CriarTarefaDeMedicaoPendente(AppDbContext context, int contratoId, DateOnly mesReferencia)
+    {
+        var tarefa = new TarefaOcorrencia
+        {
+            ContratoId = contratoId,
+            Titulo = "Iniciar medição — Fornecedor Teste",
+            MesReferencia = mesReferencia,
+            DataPrevistaOriginal = mesReferencia,
+            DataPrevistaAtual = mesReferencia,
+            Status = TarefaOcorrenciaStatus.Pendente,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.TarefaOcorrencias.Add(tarefa);
+        context.SaveChanges();
+        return tarefa;
+    }
+
+    [Fact]
+    public async Task CriarMedicaoBmAsync_DeveConcluirLembreteDeMedicaoPendenteDoPeriodo()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var tarefa = CriarTarefaDeMedicaoPendente(context, contrato.Id, new DateOnly(2026, 1, 1));
+
+        await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+
+        var tarefaAtualizada = await context.TarefaOcorrencias.FindAsync(tarefa.Id);
+        Assert.Equal(TarefaOcorrenciaStatus.Concluida, tarefaAtualizada!.Status);
+        Assert.NotNull(tarefaAtualizada.DataConclusao);
+    }
+
+    [Fact]
+    public async Task ReprovarMedicaoBmAsync_DeveReabrirLembreteDeMedicaoQueFoiConcluido()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var tarefa = CriarTarefaDeMedicaoPendente(context, contrato.Id, new DateOnly(2026, 1, 1));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+
+        await service.ReprovarMedicaoBmAsync(contrato.Id, bm.Id, 7, new ReprovarMedicaoBmDto());
+
+        var tarefaAtualizada = await context.TarefaOcorrencias.FindAsync(tarefa.Id);
+        Assert.Equal(TarefaOcorrenciaStatus.Pendente, tarefaAtualizada!.Status);
+        Assert.Null(tarefaAtualizada.DataConclusao);
+    }
+
+    [Fact]
+    public async Task ExcluirMedicaoBmAsync_DeveReabrirLembreteDeMedicaoQueFoiConcluido()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var tarefa = CriarTarefaDeMedicaoPendente(context, contrato.Id, new DateOnly(2026, 1, 1));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+
+        await service.ExcluirMedicaoBmAsync(contrato.Id, bm.Id);
+
+        var tarefaAtualizada = await context.TarefaOcorrencias.FindAsync(tarefa.Id);
+        Assert.Equal(TarefaOcorrenciaStatus.Pendente, tarefaAtualizada!.Status);
+        Assert.Null(tarefaAtualizada.DataConclusao);
+    }
+
     [Fact]
     public async Task AtualizarMedicaoBmAsync_DeveSalvarNumeroReferencia()
     {
