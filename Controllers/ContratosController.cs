@@ -179,6 +179,13 @@ public class ContratosController : ControllerBase
         return NoContent();
     }
 
+    [HttpPut("{id:int}/medicoes/{medicaoId:int}/itens/{itemId:int}/rateio-ua")]
+    public async Task<ActionResult<MedicaoBmItemDto>> DefinirRateioUaMedicao(int id, int medicaoId, int itemId, DefinirRateioUaDto dto)
+    {
+        var item = await _contratoService.DefinirRateioUaAsync(id, medicaoId, itemId, dto);
+        return Ok(item);
+    }
+
     [HttpPatch("{id:int}/medicoes/{medicaoId:int}/aprovar")]
     public async Task<ActionResult<MedicaoBmDto>> AprovarMedicao(int id, int medicaoId)
     {

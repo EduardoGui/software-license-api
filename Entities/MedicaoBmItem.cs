@@ -34,4 +34,8 @@ public class MedicaoBmItem
     public decimal? PercentualProRata { get; set; }
     public decimal? AjusteManual { get; set; }
     public string? JustificativaAjuste { get; set; }
+
+    // Nulo = rateio de UA ainda não definido (bloqueia aprovação do BM se QuantidadeMedidaNestaBm > 0).
+    public string? MetodoRateioUa { get; set; }
+    public List<MedicaoBmItemRateioUa> RateiosUa { get; set; } = [];
 }

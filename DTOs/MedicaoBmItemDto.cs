@@ -23,4 +23,6 @@ public class MedicaoBmItemDto
     public decimal? PercentualProRata { get; set; }
     public decimal? AjusteManual { get; set; }
     public string? JustificativaAjuste { get; set; }
+    public string? MetodoRateioUa { get; set; }
+    public List<MedicaoBmItemRateioUaDto> RateioUa { get; set; } = [];
 }

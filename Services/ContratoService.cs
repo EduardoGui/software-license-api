@@ -533,7 +533,7 @@ public class ContratoService : IContratoService
         await BuscarOuFalhar(contratoId);
 
         var medicoes = await _context.MedicaoBms
-            .Include(m => m.Itens)
+            .Include(m => m.Itens).ThenInclude(i => i.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
             .Include(m => m.Acertos)
             .Include(m => m.Impostos)
             .Include(m => m.Aprovador)
@@ -762,6 +762,60 @@ public class ContratoService : IContratoService
         return ParaMedicaoBmDto(medicao);
     }
 
+    public async Task<MedicaoBmItemDto> DefinirRateioUaAsync(int contratoId, int medicaoId, int itemId, DefinirRateioUaDto dto)
+    {
+        var medicao = await BuscarMedicaoOuFalhar(contratoId, medicaoId);
+
+        if (medicao.Status != MedicaoBmStatus.Rascunho)
+        {
+            throw new BusinessRuleException("Só é possível definir o rateio de UA enquanto o BM estiver em Rascunho.");
+        }
+
+        var item = medicao.Itens.FirstOrDefault(i => i.Id == itemId)
+            ?? throw new BusinessRuleException($"Item {itemId} não pertence a este BM.");
+
+        var idsUa = dto.Itens.Select(i => i.UnidadeOrcamentariaId).ToList();
+        if (idsUa.Distinct().Count() != idsUa.Count)
+        {
+            throw new BusinessRuleException("Não é possível repetir a mesma UA no rateio do item.");
+        }
+
+        var unidadesExistentes = await _context.UnidadesOrcamentarias.Where(u => idsUa.Contains(u.Id)).CountAsync();
+        if (unidadesExistentes != idsUa.Count)
+        {
+            throw new BusinessRuleException("Uma ou mais UAs informadas não existem.");
+        }
+
+        var somaQuantidade = dto.Itens.Sum(i => i.Quantidade);
+        if (somaQuantidade != item.QuantidadeMedidaNestaBm)
+        {
+            throw new BusinessRuleException(
+                $"A soma do rateio ({somaQuantidade}) precisa ser igual à quantidade medida do item ({item.QuantidadeMedidaNestaBm}).");
+        }
+
+        _context.MedicaoBmItemRateiosUa.RemoveRange(item.RateiosUa);
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        item.MetodoRateioUa = MetodoRateioUa.Quantidade;
+        item.RateiosUa = dto.Itens.Select(i => new MedicaoBmItemRateioUa
+        {
+            UnidadeOrcamentariaId = i.UnidadeOrcamentariaId,
+            Quantidade = i.Quantidade,
+            DataCriacao = agora,
+        }).ToList();
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Rateio de UA do item {ItemId} do BM {MedicaoId} do contrato {ContratoId} definido", itemId, medicaoId, contratoId);
+
+        // Recarrega com o nome/código das UAs recém-vinculadas (o item em memória não tem a navegação populada
+        // pras linhas que acabaram de ser criadas, já que foram atribuídas direto, sem passar pelo change tracker com Include).
+        var itemAtualizado = await _context.MedicaoBmItens
+            .Include(i => i.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
+            .FirstAsync(i => i.Id == itemId);
+
+        return ParaMedicaoBmItemDto(itemAtualizado);
+    }
+
     public async Task ExcluirMedicaoBmAsync(int contratoId, int medicaoId)
     {
         var medicao = await BuscarMedicaoOuFalhar(contratoId, medicaoId);
@@ -898,6 +952,13 @@ public class ContratoService : IContratoService
         if (medicao.Status != MedicaoBmStatus.Rascunho)
         {
             throw new BusinessRuleException("Só é possível aprovar um BM em Rascunho.");
+        }
+
+        var itensSemRateioUa = medicao.Itens.Where(i => i.QuantidadeMedidaNestaBm > 0 && i.RateiosUa.Count == 0).ToList();
+        if (itensSemRateioUa.Count > 0)
+        {
+            throw new BusinessRuleException(
+                $"Defina o rateio de UA antes de aprovar. Item(ns) pendente(s): {string.Join(", ", itensSemRateioUa.Select(i => i.DescricaoNoMomento))}");
         }
 
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
@@ -1153,7 +1214,7 @@ public class ContratoService : IContratoService
     private async Task<MedicaoBm> BuscarMedicaoOuFalhar(int contratoId, int medicaoId)
     {
         var medicao = await _context.MedicaoBms
-            .Include(m => m.Itens)
+            .Include(m => m.Itens).ThenInclude(i => i.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
             .Include(m => m.Acertos)
             .Include(m => m.Impostos)
             .Include(m => m.Aprovador)
@@ -1393,5 +1454,13 @@ public class ContratoService : IContratoService
         PercentualProRata = i.PercentualProRata,
         AjusteManual = i.AjusteManual,
         JustificativaAjuste = i.JustificativaAjuste,
+        MetodoRateioUa = i.MetodoRateioUa,
+        RateioUa = i.RateiosUa.Select(r => new MedicaoBmItemRateioUaDto
+        {
+            UnidadeOrcamentariaId = r.UnidadeOrcamentariaId,
+            UnidadeOrcamentariaCodigo = r.UnidadeOrcamentaria.Codigo,
+            UnidadeOrcamentariaDescricao = r.UnidadeOrcamentaria.Descricao,
+            Quantidade = r.Quantidade,
+        }).ToList(),
     };
 }

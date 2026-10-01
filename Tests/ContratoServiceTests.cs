@@ -284,6 +284,11 @@ public class ContratoServiceTests
         {
             Itens = [new UpdateMedicaoBmItemDto { ItemId = bm.Itens[0].Id, QuantidadeMedidaNestaBm = 10m }],
         });
+        var ua = CriarUnidadeOrcamentaria(context, "HP.TESTE.001");
+        await service.DefinirRateioUaAsync(contrato.Id, bm.Id, bm.Itens[0].Id, new DefinirRateioUaDto
+        {
+            Itens = [new ItemRateioUaInputDto { UnidadeOrcamentariaId = ua.Id, Quantidade = 10m }],
+        });
         await service.AprovarMedicaoBmAsync(contrato.Id, bm.Id, 1);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.AtualizarItemAsync(contrato.Id, itemId, new UpdateContratoItemDto
@@ -755,6 +760,11 @@ public class ContratoServiceTests
         {
             Itens = [new UpdateMedicaoBmItemDto { ItemId = bm1.Itens[0].Id, QuantidadeMedidaNestaBm = 1m }],
         });
+        var ua = CriarUnidadeOrcamentaria(context, "HP.TESTE.001");
+        await service.DefinirRateioUaAsync(contrato.Id, bm1.Id, bm1.Itens[0].Id, new DefinirRateioUaDto
+        {
+            Itens = [new ItemRateioUaInputDto { UnidadeOrcamentariaId = ua.Id, Quantidade = 1m }],
+        });
         await service.AprovarMedicaoBmAsync(contrato.Id, bm1.Id, 1);
 
         var bm2 = await service.CriarMedicaoBmAsync(contrato.Id, new CreateMedicaoBmDto
@@ -969,6 +979,221 @@ public class ContratoServiceTests
         Assert.Equal(bm.Numero, atualizado.Numero);
     }
 
+    private static UnidadeOrcamentaria CriarUnidadeOrcamentaria(AppDbContext context, string codigo)
+    {
+        var setor = context.Setores.FirstOrDefault() ?? new Setor { Nome = "GERÊNCIA ADMINISTRATIVA", Ativo = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        if (setor.Id == 0)
+        {
+            context.Setores.Add(setor);
+            context.SaveChanges();
+        }
+
+        var ua = new UnidadeOrcamentaria
+        {
+            SetorId = setor.Id,
+            Codigo = codigo,
+            Descricao = $"Descrição {codigo}",
+            Ativa = true,
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.UnidadesOrcamentarias.Add(ua);
+        context.SaveChanges();
+        return ua;
+    }
+
+    [Fact]
+    public async Task DefinirRateioUaAsync_DeveSalvarRateioValido()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        await service.AtualizarMedicaoBmAsync(contrato.Id, bm.Id, new UpdateMedicaoBmDto
+        {
+            Itens = [new UpdateMedicaoBmItemDto { ItemId = bm.Itens[0].Id, QuantidadeMedidaNestaBm = 12m }],
+        });
+        var uaA = CriarUnidadeOrcamentaria(context, "HP.ADM.2001");
+        var uaB = CriarUnidadeOrcamentaria(context, "HP.ADM.2002");
+
+        var item = await service.DefinirRateioUaAsync(contrato.Id, bm.Id, bm.Itens[0].Id, new DefinirRateioUaDto
+        {
+            Itens =
+            [
+                new ItemRateioUaInputDto { UnidadeOrcamentariaId = uaA.Id, Quantidade = 7m },
+                new ItemRateioUaInputDto { UnidadeOrcamentariaId = uaB.Id, Quantidade = 5m },
+            ],
+        });
+
+        Assert.Equal(2, item.RateioUa.Count);
+        Assert.Equal(MetodoRateioUa.Quantidade, item.MetodoRateioUa);
+        Assert.Contains(item.RateioUa, r => r.UnidadeOrcamentariaId == uaA.Id && r.Quantidade == 7m);
+        Assert.Contains(item.RateioUa, r => r.UnidadeOrcamentariaId == uaB.Id && r.Quantidade == 5m);
+    }
+
+    [Fact]
+    public async Task DefinirRateioUaAsync_DeveRejeitarSomaDiferenteDaQuantidadeMedida()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        await service.AtualizarMedicaoBmAsync(contrato.Id, bm.Id, new UpdateMedicaoBmDto
+        {
+            Itens = [new UpdateMedicaoBmItemDto { ItemId = bm.Itens[0].Id, QuantidadeMedidaNestaBm = 12m }],
+        });
+        var ua = CriarUnidadeOrcamentaria(context, "HP.ADM.2001");
+
+        var erro = await Assert.ThrowsAsync<BusinessRuleException>(() => service.DefinirRateioUaAsync(contrato.Id, bm.Id, bm.Itens[0].Id, new DefinirRateioUaDto
+        {
+            Itens = [new ItemRateioUaInputDto { UnidadeOrcamentariaId = ua.Id, Quantidade = 5m }],
+        }));
+        Assert.Contains("precisa ser igual", erro.Message);
+    }
+
+    [Fact]
+    public async Task DefinirRateioUaAsync_DeveRejeitarUaDuplicada()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        await service.AtualizarMedicaoBmAsync(contrato.Id, bm.Id, new UpdateMedicaoBmDto
+        {
+            Itens = [new UpdateMedicaoBmItemDto { ItemId = bm.Itens[0].Id, QuantidadeMedidaNestaBm = 12m }],
+        });
+        var ua = CriarUnidadeOrcamentaria(context, "HP.ADM.2001");
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.DefinirRateioUaAsync(contrato.Id, bm.Id, bm.Itens[0].Id, new DefinirRateioUaDto
+        {
+            Itens =
+            [
+                new ItemRateioUaInputDto { UnidadeOrcamentariaId = ua.Id, Quantidade = 6m },
+                new ItemRateioUaInputDto { UnidadeOrcamentariaId = ua.Id, Quantidade = 6m },
+            ],
+        }));
+    }
+
+    [Fact]
+    public async Task DefinirRateioUaAsync_DeveRejeitarUaInexistente()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        await service.AtualizarMedicaoBmAsync(contrato.Id, bm.Id, new UpdateMedicaoBmDto
+        {
+            Itens = [new UpdateMedicaoBmItemDto { ItemId = bm.Itens[0].Id, QuantidadeMedidaNestaBm = 12m }],
+        });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.DefinirRateioUaAsync(contrato.Id, bm.Id, bm.Itens[0].Id, new DefinirRateioUaDto
+        {
+            Itens = [new ItemRateioUaInputDto { UnidadeOrcamentariaId = 999, Quantidade = 12m }],
+        }));
+    }
+
+    [Fact]
+    public async Task DefinirRateioUaAsync_DeveRejeitarForaDeRascunho()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        await service.AtualizarMedicaoBmAsync(contrato.Id, bm.Id, new UpdateMedicaoBmDto
+        {
+            Itens = [new UpdateMedicaoBmItemDto { ItemId = bm.Itens[0].Id, QuantidadeMedidaNestaBm = 0m }],
+        });
+        var ua = CriarUnidadeOrcamentaria(context, "HP.ADM.2001");
+        await service.DefinirRateioUaAsync(contrato.Id, bm.Id, bm.Itens[0].Id, new DefinirRateioUaDto
+        {
+            Itens = [new ItemRateioUaInputDto { UnidadeOrcamentariaId = ua.Id, Quantidade = 0m }],
+        });
+        await service.AprovarMedicaoBmAsync(contrato.Id, bm.Id, 7);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.DefinirRateioUaAsync(contrato.Id, bm.Id, bm.Itens[0].Id, new DefinirRateioUaDto
+        {
+            Itens = [new ItemRateioUaInputDto { UnidadeOrcamentariaId = ua.Id, Quantidade = 0m }],
+        }));
+    }
+
+    [Fact]
+    public async Task DefinirRateioUaAsync_DeveSubstituirRateioAnterior()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        await service.AtualizarMedicaoBmAsync(contrato.Id, bm.Id, new UpdateMedicaoBmDto
+        {
+            Itens = [new UpdateMedicaoBmItemDto { ItemId = bm.Itens[0].Id, QuantidadeMedidaNestaBm = 12m }],
+        });
+        var uaA = CriarUnidadeOrcamentaria(context, "HP.ADM.2001");
+        var uaB = CriarUnidadeOrcamentaria(context, "HP.ADM.2002");
+        await service.DefinirRateioUaAsync(contrato.Id, bm.Id, bm.Itens[0].Id, new DefinirRateioUaDto
+        {
+            Itens = [new ItemRateioUaInputDto { UnidadeOrcamentariaId = uaA.Id, Quantidade = 12m }],
+        });
+
+        var item = await service.DefinirRateioUaAsync(contrato.Id, bm.Id, bm.Itens[0].Id, new DefinirRateioUaDto
+        {
+            Itens = [new ItemRateioUaInputDto { UnidadeOrcamentariaId = uaB.Id, Quantidade = 12m }],
+        });
+
+        Assert.Single(item.RateioUa);
+        Assert.Equal(uaB.Id, item.RateioUa[0].UnidadeOrcamentariaId);
+    }
+
+    [Fact]
+    public async Task AprovarMedicaoBmAsync_DeveRejeitarItemMedidoSemRateioUa()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        await service.AtualizarMedicaoBmAsync(contrato.Id, bm.Id, new UpdateMedicaoBmDto
+        {
+            Itens = [new UpdateMedicaoBmItemDto { ItemId = bm.Itens[0].Id, QuantidadeMedidaNestaBm = 12m }],
+        });
+
+        var erro = await Assert.ThrowsAsync<BusinessRuleException>(() => service.AprovarMedicaoBmAsync(contrato.Id, bm.Id, 7));
+        Assert.Contains("rateio de UA", erro.Message);
+    }
+
+    [Fact]
+    public async Task AprovarMedicaoBmAsync_DevePermitirQuandoTodoItemMedidoTemRateioUa()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+        await service.AtualizarMedicaoBmAsync(contrato.Id, bm.Id, new UpdateMedicaoBmDto
+        {
+            Itens = [new UpdateMedicaoBmItemDto { ItemId = bm.Itens[0].Id, QuantidadeMedidaNestaBm = 12m }],
+        });
+        var ua = CriarUnidadeOrcamentaria(context, "HP.ADM.2001");
+        await service.DefinirRateioUaAsync(contrato.Id, bm.Id, bm.Itens[0].Id, new DefinirRateioUaDto
+        {
+            Itens = [new ItemRateioUaInputDto { UnidadeOrcamentariaId = ua.Id, Quantidade = 12m }],
+        });
+
+        var aprovado = await service.AprovarMedicaoBmAsync(contrato.Id, bm.Id, 7);
+
+        Assert.Equal(MedicaoBmStatus.Aprovado, aprovado.Status);
+    }
+
+    [Fact]
+    public async Task AprovarMedicaoBmAsync_DevePermitirQuandoQuantidadeMedidaEhZero()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, CriarMedicaoBmDtoValido());
+
+        var aprovado = await service.AprovarMedicaoBmAsync(contrato.Id, bm.Id, 7);
+
+        Assert.Equal(MedicaoBmStatus.Aprovado, aprovado.Status);
+    }
+
     [Fact]
     public async Task ListarMedicoesAsync_DeveRetornarEmOrdemDeNumero()
     {
@@ -1178,6 +1403,11 @@ public class ContratoServiceTests
         {
             Itens = [new UpdateMedicaoBmItemDto { ItemId = bm1.Itens[0].Id, QuantidadeMedidaNestaBm = 1.333m }],
         });
+        var ua = CriarUnidadeOrcamentaria(context, "HP.TESTE.001");
+        await service.DefinirRateioUaAsync(contrato.Id, bm1.Id, bm1.Itens[0].Id, new DefinirRateioUaDto
+        {
+            Itens = [new ItemRateioUaInputDto { UnidadeOrcamentariaId = ua.Id, Quantidade = 1.333m }],
+        });
         await service.AprovarMedicaoBmAsync(contrato.Id, bm1.Id, 1);
 
         var valorMedidoBm1 = atualizado1.Itens[0].ValorTotalItem;
@@ -1205,6 +1435,11 @@ public class ContratoServiceTests
         await service.AtualizarMedicaoBmAsync(contrato.Id, bm1.Id, new UpdateMedicaoBmDto
         {
             Itens = [new UpdateMedicaoBmItemDto { ItemId = bm1.Itens[0].Id, QuantidadeMedidaNestaBm = 3m }],
+        });
+        var ua = CriarUnidadeOrcamentaria(context, "HP.TESTE.001");
+        await service.DefinirRateioUaAsync(contrato.Id, bm1.Id, bm1.Itens[0].Id, new DefinirRateioUaDto
+        {
+            Itens = [new ItemRateioUaInputDto { UnidadeOrcamentariaId = ua.Id, Quantidade = 3m }],
         });
         await service.AprovarMedicaoBmAsync(contrato.Id, bm1.Id, 1);
         // Saldo valor depois do BM1: 165000 - (3 × 13750) = 123750.
@@ -1320,6 +1555,11 @@ public class ContratoServiceTests
         await service.AtualizarMedicaoBmAsync(contrato.Id, bm.Id, new UpdateMedicaoBmDto
         {
             Itens = [new UpdateMedicaoBmItemDto { ItemId = bm.Itens[0].Id, QuantidadeMedidaNestaBm = 5m }],
+        });
+        var ua = CriarUnidadeOrcamentaria(context, "HP.TESTE.001");
+        await service.DefinirRateioUaAsync(contrato.Id, bm.Id, bm.Itens[0].Id, new DefinirRateioUaDto
+        {
+            Itens = [new ItemRateioUaInputDto { UnidadeOrcamentariaId = ua.Id, Quantidade = 5m }],
         });
         await service.AprovarMedicaoBmAsync(contrato.Id, bm.Id, 1);
 
