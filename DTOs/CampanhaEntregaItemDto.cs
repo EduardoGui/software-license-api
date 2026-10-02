@@ -9,7 +9,6 @@ public class CampanhaEntregaItemDto
     public DateOnly? Validade { get; set; }
 
     public int? QuantidadeDisponivel { get; set; }
-    public bool VaiParaTodos { get; set; }
 
     // Quantidade já atribuída em entregas não canceladas (reservada, inclusive pendente).
     public int QuantidadeEntregue { get; set; }

@@ -2,19 +2,27 @@ using System.ComponentModel.DataAnnotations;
 
 namespace SoftwareLicense.Api.DTOs;
 
-public class EscolhaItemEntregaDto
+// Uma linha de item de entrega. Campanha "Item a item": sempre CampanhaEntregaItemId (item do catálogo).
+// Campanha "Kit": texto livre (Descricao/Tamanho/Validade) ou, opcionalmente, CampanhaEntregaItemId.
+public class ItemEntregaInputDto
 {
-    [Required(ErrorMessage = "Item da campanha é obrigatório.")]
-    public int CampanhaEntregaItemId { get; set; }
+    public int? CampanhaEntregaItemId { get; set; }
+
+    [MaxLength(200)]
+    public string? Descricao { get; set; }
+
+    [MaxLength(30)]
+    public string? Tamanho { get; set; }
 
     [Range(1, int.MaxValue, ErrorMessage = "Quantidade deve ser maior que zero.")]
     public int Quantidade { get; set; }
+
+    public DateOnly? Validade { get; set; }
 }
 
 public class UpdateEntregaItensDto
 {
-    // Lista vazia é permitida: entrega "sob escolha" ainda sem itens escolhidos, ou colaborador
-    // que desistiu de tudo (o e-mail só sai se houver ao menos um item).
-    [Required(ErrorMessage = "Itens é obrigatório.")]
-    public List<EscolhaItemEntregaDto> Itens { get; set; } = [];
+    [Required(ErrorMessage = "Ao menos um item é obrigatório.")]
+    [MinLength(1, ErrorMessage = "Ao menos um item é obrigatório.")]
+    public List<ItemEntregaInputDto> Itens { get; set; } = [];
 }

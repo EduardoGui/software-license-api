@@ -21,6 +21,4 @@ public class CampanhaEntregaItemInputDto
 
     [Range(0, int.MaxValue, ErrorMessage = "Quantidade disponível não pode ser negativa.")]
     public int? QuantidadeDisponivel { get; set; }
-
-    public bool VaiParaTodos { get; set; } = true;
 }

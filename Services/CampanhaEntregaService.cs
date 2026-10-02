@@ -59,11 +59,17 @@ public class CampanhaEntregaService : ICampanhaEntregaService
 
     public async Task<CampanhaEntregaDto> CreateAsync(CreateCampanhaEntregaDto dto)
     {
+        if (!CampanhaEntregaTipo.Validos.Contains(dto.Tipo))
+        {
+            throw new BusinessRuleException("Tipo de campanha inválido. Use Kit ou ItemAItem.");
+        }
+
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var campanha = new CampanhaEntrega
         {
             Nome = dto.Nome.Trim(),
             Descricao = dto.Descricao?.Trim(),
+            Tipo = dto.Tipo,
             Status = CampanhaEntregaStatus.Rascunho,
             DataCriacao = agora,
             DataAtualizacao = agora,
@@ -264,7 +270,28 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         var usuario = await _context.Usuarios.FindAsync(dto.UsuarioId)
             ?? throw new NotFoundException($"Colaborador {dto.UsuarioId} não encontrado.");
 
-        ValidarEstoque(campanha, PedidoDosItensPadrao(campanha, dto.QuantidadeKits, 1));
+        List<EntregaItem> itens;
+        var quantidadeKits = dto.QuantidadeKits;
+        if (campanha.Tipo == CampanhaEntregaTipo.ItemAItem)
+        {
+            if (dto.Itens is null || dto.Itens.Count == 0)
+            {
+                throw new BusinessRuleException("Escolha ao menos um item para o colaborador.");
+            }
+
+            quantidadeKits = 1;
+            itens = ResolverItensDaEntrega(campanha, dto.Itens, null);
+        }
+        else
+        {
+            if (dto.Itens is { Count: > 0 })
+            {
+                throw new BusinessRuleException("Campanha do tipo Kit não recebe itens escolhidos — os itens do kit são copiados da campanha.");
+            }
+
+            ValidarEstoque(campanha, PedidoDosItensPadrao(campanha, quantidadeKits, 1));
+            itens = CopiarItensDaCampanha(campanha, quantidadeKits);
+        }
 
         // Um colaborador pode ter mais de uma entrega na mesma campanha (ex.: diretor/gerente que já
         // recebeu a dele e agora precisa de mais kits em nome dele pra repassar a clientes) - cada
@@ -276,11 +303,11 @@ public class CampanhaEntregaService : ICampanhaEntregaService
             UsuarioId = usuario.Id,
             EmailDestino = usuario.Email,
             Status = EntregaStatus.Pendente,
-            QuantidadeKits = dto.QuantidadeKits,
+            QuantidadeKits = quantidadeKits,
             Observacao = string.IsNullOrWhiteSpace(dto.Observacao) ? null : dto.Observacao.Trim(),
             DataCriacao = agora,
             DataAtualizacao = agora,
-            Itens = CopiarItensDaCampanha(campanha, dto.QuantidadeKits),
+            Itens = itens,
         };
 
         _context.Entregas.Add(entrega);
@@ -297,6 +324,11 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         var campanha = await BuscarCampanhaOuFalhar(campanhaId);
         ValidarCampanhaAberta(campanha);
         ValidarCampanhaTemItens(campanha);
+
+        if (campanha.Tipo == CampanhaEntregaTipo.ItemAItem)
+        {
+            throw new BusinessRuleException("Nesta campanha (item a item) adicione um colaborador por vez, escolhendo os itens dele.");
+        }
 
         var idsJaNaCampanha = await _context.Entregas
             .Where(e => e.CampanhaEntregaId == campanhaId)
@@ -398,7 +430,6 @@ public class CampanhaEntregaService : ICampanhaEntregaService
                 existente.Quantidade = input.Quantidade;
                 existente.Validade = input.Validade;
                 existente.QuantidadeDisponivel = input.QuantidadeDisponivel;
-                existente.VaiParaTodos = input.VaiParaTodos;
             }
             else
             {
@@ -409,13 +440,23 @@ public class CampanhaEntregaService : ICampanhaEntregaService
                     Quantidade = input.Quantidade,
                     Validade = input.Validade,
                     QuantidadeDisponivel = input.QuantidadeDisponivel,
-                    VaiParaTodos = input.VaiParaTodos,
                     DataCriacao = agora,
                 });
             }
         }
 
         campanha.DataAtualizacao = agora;
+
+        // Kit: quem já foi adicionado mas ainda está Pendente e sem itens (ex.: adicionado antes de a lista da
+        // campanha existir) passa a receber a lista atual. Quem já tem itens próprios não é mexido.
+        if (campanha.Tipo == CampanhaEntregaTipo.Kit)
+        {
+            foreach (var entrega in campanha.Entregas.Where(e => e.Status == EntregaStatus.Pendente && e.Itens.Count == 0))
+            {
+                entrega.Itens = CopiarItensDaCampanha(campanha);
+                entrega.DataAtualizacao = agora;
+            }
+        }
 
         await _context.SaveChangesAsync();
 
@@ -434,34 +475,11 @@ public class CampanhaEntregaService : ICampanhaEntregaService
             throw new BusinessRuleException("Só é possível editar os itens enquanto a entrega estiver Pendente (antes do e-mail ser enviado).");
         }
 
-        var idsEscolhidos = dto.Itens.Select(i => i.CampanhaEntregaItemId).ToList();
-        if (idsEscolhidos.Distinct().Count() != idsEscolhidos.Count)
-        {
-            throw new BusinessRuleException("Não repita o mesmo item na entrega — ajuste a quantidade da linha existente.");
-        }
-
-        if (idsEscolhidos.Any(id => campanha.Itens.All(i => i.Id != id)))
-        {
-            throw new BusinessRuleException("Um dos itens escolhidos não pertence a esta campanha.");
-        }
-
-        ValidarEstoque(campanha, dto.Itens.ToDictionary(i => i.CampanhaEntregaItemId, i => i.Quantidade), entregaId);
-
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        var novosItens = ResolverItensDaEntrega(campanha, dto.Itens, entregaId);
+
         _context.EntregaItens.RemoveRange(entrega.Itens);
-        entrega.Itens = dto.Itens.Select(escolha =>
-        {
-            var item = campanha.Itens.First(i => i.Id == escolha.CampanhaEntregaItemId);
-            return new EntregaItem
-            {
-                CampanhaEntregaItemId = item.Id,
-                Descricao = item.Descricao,
-                Tamanho = item.Tamanho,
-                Quantidade = escolha.Quantidade,
-                Validade = item.Validade,
-                DataCriacao = agora,
-            };
-        }).ToList();
+        entrega.Itens = novosItens;
         entrega.DataAtualizacao = agora;
 
         await _context.SaveChangesAsync();
@@ -796,9 +814,8 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         }
     }
 
-    // Só os itens "vai pra todos" entram sozinhos; os "sob escolha" (ex.: camisas) o admin escolhe por colaborador.
+    // Kit: todos os itens do catálogo entram em cada entrega (× quantidade de kits).
     private static List<EntregaItem> CopiarItensDaCampanha(CampanhaEntrega campanha, int quantidadeKits = 1) => campanha.Itens
-        .Where(i => i.VaiParaTodos)
         .Select(i => new EntregaItem
         {
             CampanhaEntregaItem = i,
@@ -810,11 +827,79 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         }).ToList();
 
     private static Dictionary<int, int> PedidoDosItensPadrao(CampanhaEntrega campanha, int quantidadeKits, int quantidadeEntregas) => campanha.Itens
-        .Where(i => i.VaiParaTodos)
         .ToDictionary(i => i.Id, i => i.Quantidade * quantidadeKits * quantidadeEntregas);
 
     private static string Rotulo(CampanhaEntregaItem item) =>
         string.IsNullOrWhiteSpace(item.Tamanho) ? item.Descricao : $"{item.Descricao} ({item.Tamanho})";
+
+    // Monta os EntregaItem de uma entrega a partir das linhas informadas, validando pelo tipo da campanha e pelo estoque.
+    // Item a item: só itens do catálogo (sem repetir). Kit: texto livre — se casar (descrição + tamanho) com um item do
+    // catálogo, liga o vínculo pra o saldo continuar valendo — ou item do catálogo.
+    private static List<EntregaItem> ResolverItensDaEntrega(CampanhaEntrega campanha, IReadOnlyList<ItemEntregaInputDto> linhas, int? ignorarEntregaId)
+    {
+        var itens = new List<EntregaItem>();
+        var pedido = new Dictionary<int, int>();
+        var idsUsados = new HashSet<int>();
+        var agora = DateTime.UtcNow;
+
+        foreach (var linha in linhas)
+        {
+            CampanhaEntregaItem? catalogo;
+            string descricao;
+            string? tamanho;
+            DateOnly? validade;
+
+            if (linha.CampanhaEntregaItemId.HasValue)
+            {
+                catalogo = campanha.Itens.FirstOrDefault(i => i.Id == linha.CampanhaEntregaItemId.Value)
+                    ?? throw new BusinessRuleException("Um dos itens escolhidos não pertence a esta campanha.");
+                descricao = catalogo.Descricao;
+                tamanho = catalogo.Tamanho;
+                validade = catalogo.Validade;
+            }
+            else if (campanha.Tipo == CampanhaEntregaTipo.ItemAItem)
+            {
+                throw new BusinessRuleException("Nesta campanha (item a item) escolha os itens do catálogo da campanha.");
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(linha.Descricao))
+                {
+                    throw new BusinessRuleException("A descrição do item é obrigatória.");
+                }
+
+                descricao = linha.Descricao.Trim();
+                tamanho = string.IsNullOrWhiteSpace(linha.Tamanho) ? null : linha.Tamanho.Trim();
+                validade = linha.Validade;
+                catalogo = campanha.Itens.FirstOrDefault(i =>
+                    string.Equals(i.Descricao, descricao, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(i.Tamanho ?? string.Empty, tamanho ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (catalogo is not null)
+            {
+                if (campanha.Tipo == CampanhaEntregaTipo.ItemAItem && !idsUsados.Add(catalogo.Id))
+                {
+                    throw new BusinessRuleException("Não repita o mesmo item — ajuste a quantidade da linha existente.");
+                }
+
+                pedido[catalogo.Id] = pedido.GetValueOrDefault(catalogo.Id) + linha.Quantidade;
+            }
+
+            itens.Add(new EntregaItem
+            {
+                CampanhaEntregaItem = catalogo,
+                Descricao = descricao,
+                Tamanho = tamanho,
+                Quantidade = linha.Quantidade,
+                Validade = validade,
+                DataCriacao = agora,
+            });
+        }
+
+        ValidarEstoque(campanha, pedido, ignorarEntregaId);
+        return itens;
+    }
 
     // Bloqueia quando o pedido (por item do catálogo) passa do saldo: estoque - o que já está atribuído em
     // entregas não canceladas. ignorarEntregaId evita contar a própria entrega que está sendo reeditada.
@@ -889,6 +974,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
             Nome = c.Nome,
             Descricao = c.Descricao,
             Status = c.Status,
+            Tipo = c.Tipo,
             DataCriacao = c.DataCriacao,
             DataAtualizacao = c.DataAtualizacao,
             Itens = c.Itens.Select(i =>
@@ -905,7 +991,6 @@ public class CampanhaEntregaService : ICampanhaEntregaService
                     Quantidade = i.Quantidade,
                     Validade = i.Validade,
                     QuantidadeDisponivel = i.QuantidadeDisponivel,
-                    VaiParaTodos = i.VaiParaTodos,
                     QuantidadeEntregue = quantidadeEntregue,
                     SaldoDisponivel = i.QuantidadeDisponivel.HasValue ? i.QuantidadeDisponivel.Value - quantidadeEntregue : null,
                 };

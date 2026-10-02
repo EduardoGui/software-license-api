@@ -13,4 +13,7 @@ public class CreateEntregaDto
 
     [MaxLength(1000)]
     public string? Observacao { get; set; }
+
+    // Só para campanha "Item a item": itens escolhidos do catálogo para este colaborador.
+    public List<ItemEntregaInputDto>? Itens { get; set; }
 }

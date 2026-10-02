@@ -18,9 +18,5 @@ public class CampanhaEntregaItem
     // nunca decrementado diretamente, pra não correr risco de ficar dessincronizado.
     public int? QuantidadeDisponivel { get; set; }
 
-    // true = entra sozinho em toda Entrega nova (kit fixo, ex.: mochila); false = item "sob escolha"
-    // (ex.: camisas com tamanho/modelo), que só entra na Entrega se for escolhido pro colaborador.
-    public bool VaiParaTodos { get; set; } = true;
-
     public DateTime DataCriacao { get; set; }
 }

@@ -10,4 +10,8 @@ public class CreateCampanhaEntregaDto
 
     [MaxLength(1000)]
     public string? Descricao { get; set; }
+
+    // Kit (padrão) ou ItemAItem - não muda depois de criada.
+    [MaxLength(20)]
+    public string Tipo { get; set; } = "Kit";
 }

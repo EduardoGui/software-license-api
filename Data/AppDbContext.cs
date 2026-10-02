@@ -712,6 +712,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(c => c.Nome).IsRequired().HasMaxLength(200);
             entity.Property(c => c.Descricao).HasMaxLength(1000);
             entity.Property(c => c.Status).IsRequired().HasMaxLength(20);
+            entity.Property(c => c.Tipo).IsRequired().HasMaxLength(20);
         });
 
         modelBuilder.Entity<Entrega>(entity =>
