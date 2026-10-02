@@ -56,11 +56,24 @@ public class CampanhaEntregaServiceTests
         CampanhaEntregaService service, string nome, params (string Descricao, int Quantidade)[] itens)
     {
         var campanha = await service.CreateAsync(new CreateCampanhaEntregaDto { Nome = nome });
-        await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
+        return await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
         {
             Itens = itens.Select(i => new CampanhaEntregaItemInputDto { Descricao = i.Descricao, Quantidade = i.Quantidade }).ToList(),
         });
-        return campanha;
+    }
+
+    private static async Task<CampanhaEntregaDto> CriarCampanhaDeCamisasAsync(CampanhaEntregaService service)
+    {
+        var campanha = await service.CreateAsync(new CreateCampanhaEntregaDto { Nome = "Camisas" });
+        return await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
+        {
+            Itens =
+            [
+                new CampanhaEntregaItemInputDto { Descricao = "CAMISA POLO FEM", Tamanho = "P", Quantidade = 1, QuantidadeDisponivel = 14, VaiParaTodos = false },
+                new CampanhaEntregaItemInputDto { Descricao = "CAMISA POLO FEM", Tamanho = "GG", Quantidade = 1, QuantidadeDisponivel = 1, VaiParaTodos = false },
+                new CampanhaEntregaItemInputDto { Descricao = "CAMISA SOCIAL MASC", Tamanho = "5", Quantidade = 1, QuantidadeDisponivel = 3, VaiParaTodos = false },
+            ],
+        });
     }
 
     [Fact]
@@ -89,52 +102,219 @@ public class CampanhaEntregaServiceTests
     }
 
     [Fact]
-    public async Task AtualizarItensCampanhaAsync_DevePreencherEntregasPendentesSemItensMasNaoMexerEmQuemJaTemItens()
+    public async Task AtualizarItensCampanhaAsync_DevePreservarIdsAoEditarItemExistente()
+    {
+        var service = CriarService(out _);
+        var campanha = await CriarCampanhaComItensAsync(service, "Kit", ("Mochila", 1));
+        var idOriginal = campanha.Itens[0].Id;
+
+        var atualizada = await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
+        {
+            Itens = [new CampanhaEntregaItemInputDto { Id = idOriginal, Descricao = "Mochila Hope", Quantidade = 1, QuantidadeDisponivel = 20 }],
+        });
+
+        Assert.Single(atualizada.Itens);
+        Assert.Equal(idOriginal, atualizada.Itens[0].Id);
+        Assert.Equal("Mochila Hope", atualizada.Itens[0].Descricao);
+        Assert.Equal(20, atualizada.Itens[0].QuantidadeDisponivel);
+    }
+
+    [Fact]
+    public async Task AtualizarItensCampanhaAsync_DeveRejeitarRemoverItemJaAtribuido()
     {
         var service = CriarService(out var context);
-        var campanha = await service.CreateAsync(new CreateCampanhaEntregaDto { Nome = "Kit Boas-vindas" });
+        var campanha = await CriarCampanhaComItensAsync(service, "Kit", ("Mochila", 1), ("Garrafa", 1));
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+        await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = joao.Id });
+        var mochila = campanha.Itens.Single(i => i.Descricao == "Mochila");
+
+        var erro = await Assert.ThrowsAsync<BusinessRuleException>(() => service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
+        {
+            Itens = [new CampanhaEntregaItemInputDto { Id = campanha.Itens.Single(i => i.Descricao == "Garrafa").Id, Descricao = "Garrafa", Quantidade = 1 }],
+        }));
+
+        Assert.Contains("Mochila", erro.Message);
+        Assert.NotEqual(0, mochila.Id);
+    }
+
+    [Fact]
+    public async Task AtualizarItensCampanhaAsync_DeveRejeitarEstoqueAbaixoDoJaAtribuido()
+    {
+        var service = CriarService(out var context);
+        var campanha = await CriarCampanhaDeCamisasAsync(service);
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+        var entrega = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = joao.Id });
+        var polo = campanha.Itens.Single(i => i.Descricao == "CAMISA POLO FEM" && i.Tamanho == "P");
+        await service.AtualizarItensEntregaAsync(campanha.Id, entrega.Id, new UpdateEntregaItensDto
+        {
+            Itens = [new EscolhaItemEntregaDto { CampanhaEntregaItemId = polo.Id, Quantidade = 5 }],
+        });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
+        {
+            Itens = campanha.Itens.Select(i => new CampanhaEntregaItemInputDto
+            {
+                Id = i.Id, Descricao = i.Descricao, Tamanho = i.Tamanho, Quantidade = i.Quantidade, VaiParaTodos = false,
+                QuantidadeDisponivel = i.Id == polo.Id ? 3 : i.QuantidadeDisponivel,
+            }).ToList(),
+        }));
+    }
+
+    [Fact]
+    public async Task AdicionarEntregaAsync_ItemSobEscolhaNaoDeveSerCopiadoAutomaticamente()
+    {
+        var service = CriarService(out var context);
+        var campanha = await CriarCampanhaDeCamisasAsync(service);
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+
+        var entrega = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = joao.Id });
+
+        Assert.Empty(entrega.Itens);
+    }
+
+    [Fact]
+    public async Task AdicionarEntregaAsync_DeveMisturarItemPadraoEItemSobEscolha()
+    {
+        var service = CriarService(out var context);
+        var campanha = await service.CreateAsync(new CreateCampanhaEntregaDto { Nome = "Misto" });
+        var comItens = await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
+        {
+            Itens =
+            [
+                new CampanhaEntregaItemInputDto { Descricao = "Mochila", Quantidade = 1, VaiParaTodos = true },
+                new CampanhaEntregaItemInputDto { Descricao = "Camisa", Tamanho = "M", Quantidade = 1, VaiParaTodos = false },
+            ],
+        });
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+
+        var entrega = await service.AdicionarEntregaAsync(comItens.Id, new CreateEntregaDto { UsuarioId = joao.Id });
+
+        var item = Assert.Single(entrega.Itens);
+        Assert.Equal("Mochila", item.Descricao);
+        Assert.NotNull(item.CampanhaEntregaItemId);
+    }
+
+    [Fact]
+    public async Task AtualizarItensEntregaAsync_DeveGravarVinculoESnapshotDoCatalogo()
+    {
+        var service = CriarService(out var context);
+        var campanha = await CriarCampanhaDeCamisasAsync(service);
+        var eduardo = await CriarUsuarioAsync(context, "Eduardo", "eduardo@hope.com");
+        var entrega = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = eduardo.Id });
+        var social = campanha.Itens.Single(i => i.Descricao == "CAMISA SOCIAL MASC");
+
+        var atualizada = await service.AtualizarItensEntregaAsync(campanha.Id, entrega.Id, new UpdateEntregaItensDto
+        {
+            Itens = [new EscolhaItemEntregaDto { CampanhaEntregaItemId = social.Id, Quantidade = 1 }],
+        });
+
+        var item = Assert.Single(atualizada.Itens);
+        Assert.Equal(social.Id, item.CampanhaEntregaItemId);
+        Assert.Equal("CAMISA SOCIAL MASC", item.Descricao);
+        Assert.Equal("5", item.Tamanho);
+
+        var campanhaAtual = await service.GetByIdAsync(campanha.Id);
+        var itemCatalogo = campanhaAtual.Itens.Single(i => i.Id == social.Id);
+        Assert.Equal(1, itemCatalogo.QuantidadeEntregue);
+        Assert.Equal(2, itemCatalogo.SaldoDisponivel);
+    }
+
+    [Fact]
+    public async Task AtualizarItensEntregaAsync_DeveBloquearQuandoEstoqueInsuficiente()
+    {
+        var service = CriarService(out var context);
+        var campanha = await CriarCampanhaDeCamisasAsync(service);
+        var clarita = await CriarUsuarioAsync(context, "Clarita", "clarita@hope.com");
+        var entrega = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = clarita.Id });
+        var poloGg = campanha.Itens.Single(i => i.Descricao == "CAMISA POLO FEM" && i.Tamanho == "GG");
+
+        var erro = await Assert.ThrowsAsync<BusinessRuleException>(() => service.AtualizarItensEntregaAsync(campanha.Id, entrega.Id, new UpdateEntregaItensDto
+        {
+            Itens = [new EscolhaItemEntregaDto { CampanhaEntregaItemId = poloGg.Id, Quantidade = 2 }],
+        }));
+
+        Assert.Contains("Estoque insuficiente", erro.Message);
+        Assert.Contains("GG", erro.Message);
+    }
+
+    [Fact]
+    public async Task AtualizarItensEntregaAsync_NaoDeveContarOsProprioItensAoReeditar()
+    {
+        var service = CriarService(out var context);
+        var campanha = await CriarCampanhaDeCamisasAsync(service);
+        var clarita = await CriarUsuarioAsync(context, "Clarita", "clarita@hope.com");
+        var entrega = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = clarita.Id });
+        var poloGg = campanha.Itens.Single(i => i.Descricao == "CAMISA POLO FEM" && i.Tamanho == "GG");
+        var payload = new UpdateEntregaItensDto { Itens = [new EscolhaItemEntregaDto { CampanhaEntregaItemId = poloGg.Id, Quantidade = 1 }] };
+
+        await service.AtualizarItensEntregaAsync(campanha.Id, entrega.Id, payload);
+        var reeditada = await service.AtualizarItensEntregaAsync(campanha.Id, entrega.Id, payload);
+
+        Assert.Single(reeditada.Itens);
+    }
+
+    [Fact]
+    public async Task AtualizarItensEntregaAsync_EntregaCanceladaDeveLiberarSaldo()
+    {
+        var service = CriarService(out var context);
+        var campanha = await CriarCampanhaDeCamisasAsync(service);
+        var clarita = await CriarUsuarioAsync(context, "Clarita", "clarita@hope.com");
+        var maria = await CriarUsuarioAsync(context, "Maria", "maria@hope.com");
+        var poloGg = campanha.Itens.Single(i => i.Descricao == "CAMISA POLO FEM" && i.Tamanho == "GG");
+        var entregaClarita = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = clarita.Id });
+        var entregaMaria = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = maria.Id });
+        var payload = new UpdateEntregaItensDto { Itens = [new EscolhaItemEntregaDto { CampanhaEntregaItemId = poloGg.Id, Quantidade = 1 }] };
+        await service.AtualizarItensEntregaAsync(campanha.Id, entregaClarita.Id, payload);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.AtualizarItensEntregaAsync(campanha.Id, entregaMaria.Id, payload));
+
+        await service.CancelarEntregaAsync(campanha.Id, entregaClarita.Id);
+        var resultado = await service.AtualizarItensEntregaAsync(campanha.Id, entregaMaria.Id, payload);
+
+        Assert.Single(resultado.Itens);
+    }
+
+    [Fact]
+    public async Task AtualizarItensEntregaAsync_DeveRejeitarItemRepetidoEItemDeOutraCampanha()
+    {
+        var service = CriarService(out var context);
+        var campanha = await CriarCampanhaDeCamisasAsync(service);
+        var outra = await CriarCampanhaComItensAsync(service, "Outra", ("Mochila", 1));
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+        var entrega = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = joao.Id });
+        var itemP = campanha.Itens.First();
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.AtualizarItensEntregaAsync(campanha.Id, entrega.Id, new UpdateEntregaItensDto
+        {
+            Itens =
+            [
+                new EscolhaItemEntregaDto { CampanhaEntregaItemId = itemP.Id, Quantidade = 1 },
+                new EscolhaItemEntregaDto { CampanhaEntregaItemId = itemP.Id, Quantidade = 1 },
+            ],
+        }));
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.AtualizarItensEntregaAsync(campanha.Id, entrega.Id, new UpdateEntregaItensDto
+        {
+            Itens = [new EscolhaItemEntregaDto { CampanhaEntregaItemId = outra.Itens[0].Id, Quantidade = 1 }],
+        }));
+    }
+
+    [Fact]
+    public async Task AdicionarEntregasLoteAsync_DeveBloquearQuandoItemPadraoNaoCobreTodosOsColaboradores()
+    {
+        var service = CriarService(out var context);
+        var campanha = await service.CreateAsync(new CreateCampanhaEntregaDto { Nome = "Kit" });
+        var comItens = await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
+        {
+            Itens = [new CampanhaEntregaItemInputDto { Descricao = "Mochila", Quantidade = 1, QuantidadeDisponivel = 1 }],
+        });
         var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
         var maria = await CriarUsuarioAsync(context, "Maria", "maria@hope.com");
 
-        // João é adicionado antes de a campanha ter itens (cenário real encontrado em produção) -
-        // fica Pendente sem nenhum EntregaItem.
-        var entregaJoao = new Entrega
-        {
-            CampanhaEntregaId = campanha.Id,
-            UsuarioId = joao.Id,
-            EmailDestino = joao.Email,
-            Status = EntregaStatus.Pendente,
-            DataCriacao = Agora.UtcDateTime,
-            DataAtualizacao = Agora.UtcDateTime,
-        };
-        context.Entregas.Add(entregaJoao);
+        var erro = await Assert.ThrowsAsync<BusinessRuleException>(() => service.AdicionarEntregasLoteAsync(comItens.Id, new CreateEntregaLoteDto { UsuarioIds = [joao.Id, maria.Id] }));
 
-        // Maria já tem item próprio (já foi personalizado manualmente) - não deve ser sobrescrita.
-        var entregaMaria = new Entrega
-        {
-            CampanhaEntregaId = campanha.Id,
-            UsuarioId = maria.Id,
-            EmailDestino = maria.Email,
-            Status = EntregaStatus.Pendente,
-            DataCriacao = Agora.UtcDateTime,
-            DataAtualizacao = Agora.UtcDateTime,
-            Itens = [new EntregaItem { Descricao = "Camisa P", Quantidade = 1, DataCriacao = Agora.UtcDateTime }],
-        };
-        context.Entregas.Add(entregaMaria);
-        await context.SaveChangesAsync();
-
-        await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
-        {
-            Itens = [new CampanhaEntregaItemInputDto { Descricao = "Mochila", Quantidade = 1 }],
-        });
-
-        var joaoAtualizado = await service.ObterEntregaAsync(campanha.Id, entregaJoao.Id);
-        var mariaAtualizada = await service.ObterEntregaAsync(campanha.Id, entregaMaria.Id);
-
-        Assert.Single(joaoAtualizado.Itens);
-        Assert.Equal("Mochila", joaoAtualizado.Itens[0].Descricao);
-        Assert.Single(mariaAtualizada.Itens);
-        Assert.Equal("Camisa P", mariaAtualizada.Itens[0].Descricao);
+        Assert.Contains("Estoque insuficiente", erro.Message);
+        Assert.Equal(0, await context.Entregas.CountAsync());
     }
 
     [Fact]
@@ -248,7 +428,7 @@ public class CampanhaEntregaServiceTests
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.AtualizarItensEntregaAsync(campanha.Id, entrega.Id, new UpdateEntregaItensDto
         {
-            Itens = [new CreateEntregaItemDto { Descricao = "Camisa G", Quantidade = 2 }],
+            Itens = [new EscolhaItemEntregaDto { CampanhaEntregaItemId = campanha.Itens[0].Id, Quantidade = 2 }],
         }));
     }
 

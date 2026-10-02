@@ -264,6 +264,8 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         var usuario = await _context.Usuarios.FindAsync(dto.UsuarioId)
             ?? throw new NotFoundException($"Colaborador {dto.UsuarioId} não encontrado.");
 
+        ValidarEstoque(campanha, PedidoDosItensPadrao(campanha, dto.QuantidadeKits, 1));
+
         // Um colaborador pode ter mais de uma entrega na mesma campanha (ex.: diretor/gerente que já
         // recebeu a dele e agora precisa de mais kits em nome dele pra repassar a clientes) - cada
         // chamada aqui sempre cria uma entrega nova, sem checar se ele já está na campanha.
@@ -308,6 +310,8 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         }
 
         var usuarios = await _context.Usuarios.Where(u => idsNovos.Contains(u.Id)).ToListAsync();
+        ValidarEstoque(campanha, PedidoDosItensPadrao(campanha, dto.QuantidadeKits, usuarios.Count));
+
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var novasEntregas = new List<Entrega>();
 
@@ -342,31 +346,76 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         var campanha = await BuscarCampanhaOuFalhar(campanhaId);
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
 
-        _context.CampanhaEntregaItens.RemoveRange(campanha.Itens);
-        campanha.Itens = dto.Itens.Select(i => new CampanhaEntregaItem
+        var chaves = dto.Itens.Select(i => (i.Descricao.Trim().ToUpperInvariant(), (i.Tamanho ?? string.Empty).Trim().ToUpperInvariant())).ToList();
+        if (chaves.Distinct().Count() != chaves.Count)
         {
-            Descricao = i.Descricao.Trim(),
-            Tamanho = string.IsNullOrWhiteSpace(i.Tamanho) ? null : i.Tamanho.Trim(),
-            Quantidade = i.Quantidade,
-            Validade = i.Validade,
-            QuantidadeDisponivel = i.QuantidadeDisponivel,
-            DataCriacao = agora,
-        }).ToList();
-        campanha.DataAtualizacao = agora;
-
-        // Backfill: quem já foi adicionado mas ainda está Pendente e sem itens (ex.: adicionado antes
-        // de a lista da campanha existir) passa a receber a lista atual automaticamente. Quem já tem
-        // itens próprios (inclusive já personalizados) não é mexido.
-        var entregasParaPreencher = await _context.Entregas
-            .Include(e => e.Itens)
-            .Where(e => e.CampanhaEntregaId == campanhaId && e.Status == EntregaStatus.Pendente)
-            .ToListAsync();
-
-        foreach (var entrega in entregasParaPreencher.Where(e => e.Itens.Count == 0))
-        {
-            entrega.Itens = CopiarItensDaCampanha(campanha);
-            entrega.DataAtualizacao = agora;
+            throw new BusinessRuleException("Há itens repetidos (mesma descrição e tamanho) na lista da campanha.");
         }
+
+        var idsRecebidos = dto.Itens.Where(i => i.Id.HasValue).Select(i => i.Id!.Value).ToHashSet();
+        if (idsRecebidos.Any(id => campanha.Itens.All(i => i.Id != id)))
+        {
+            throw new BusinessRuleException("Um dos itens informados não pertence a esta campanha.");
+        }
+
+        // Quanto de cada item do catálogo já está atribuído (entregas não canceladas) - é o que impede
+        // apagar um item em uso ou baixar o estoque abaixo do que já foi prometido.
+        var atribuidoPorItem = campanha.Entregas
+            .Where(e => e.Status != EntregaStatus.Cancelado)
+            .SelectMany(e => e.Itens)
+            .Where(ei => ei.CampanhaEntregaItemId.HasValue)
+            .GroupBy(ei => ei.CampanhaEntregaItemId!.Value)
+            .ToDictionary(g => g.Key, g => g.Sum(ei => ei.Quantidade));
+
+        foreach (var item in campanha.Itens.Where(i => !idsRecebidos.Contains(i.Id)).ToList())
+        {
+            if (atribuidoPorItem.ContainsKey(item.Id))
+            {
+                throw new BusinessRuleException(
+                    $"{Rotulo(item)} já está atribuído em entregas desta campanha — cancele essas entregas antes de remover o item.");
+            }
+
+            campanha.Itens.Remove(item);
+            _context.CampanhaEntregaItens.Remove(item);
+        }
+
+        foreach (var input in dto.Itens)
+        {
+            var tamanho = string.IsNullOrWhiteSpace(input.Tamanho) ? null : input.Tamanho.Trim();
+
+            if (input.Id.HasValue)
+            {
+                var existente = campanha.Itens.First(i => i.Id == input.Id.Value);
+                var atribuido = atribuidoPorItem.GetValueOrDefault(existente.Id);
+                if (input.QuantidadeDisponivel.HasValue && input.QuantidadeDisponivel.Value < atribuido)
+                {
+                    throw new BusinessRuleException(
+                        $"O estoque de {Rotulo(existente)} não pode ficar abaixo de {atribuido}, que já está atribuído em entregas.");
+                }
+
+                existente.Descricao = input.Descricao.Trim();
+                existente.Tamanho = tamanho;
+                existente.Quantidade = input.Quantidade;
+                existente.Validade = input.Validade;
+                existente.QuantidadeDisponivel = input.QuantidadeDisponivel;
+                existente.VaiParaTodos = input.VaiParaTodos;
+            }
+            else
+            {
+                campanha.Itens.Add(new CampanhaEntregaItem
+                {
+                    Descricao = input.Descricao.Trim(),
+                    Tamanho = tamanho,
+                    Quantidade = input.Quantidade,
+                    Validade = input.Validade,
+                    QuantidadeDisponivel = input.QuantidadeDisponivel,
+                    VaiParaTodos = input.VaiParaTodos,
+                    DataCriacao = agora,
+                });
+            }
+        }
+
+        campanha.DataAtualizacao = agora;
 
         await _context.SaveChangesAsync();
 
@@ -377,6 +426,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
 
     public async Task<EntregaDto> AtualizarItensEntregaAsync(int campanhaId, int entregaId, UpdateEntregaItensDto dto)
     {
+        var campanha = await BuscarCampanhaOuFalhar(campanhaId);
         var entrega = await BuscarEntregaOuFalhar(campanhaId, entregaId);
 
         if (entrega.Status != EntregaStatus.Pendente)
@@ -384,9 +434,35 @@ public class CampanhaEntregaService : ICampanhaEntregaService
             throw new BusinessRuleException("Só é possível editar os itens enquanto a entrega estiver Pendente (antes do e-mail ser enviado).");
         }
 
+        var idsEscolhidos = dto.Itens.Select(i => i.CampanhaEntregaItemId).ToList();
+        if (idsEscolhidos.Distinct().Count() != idsEscolhidos.Count)
+        {
+            throw new BusinessRuleException("Não repita o mesmo item na entrega — ajuste a quantidade da linha existente.");
+        }
+
+        if (idsEscolhidos.Any(id => campanha.Itens.All(i => i.Id != id)))
+        {
+            throw new BusinessRuleException("Um dos itens escolhidos não pertence a esta campanha.");
+        }
+
+        ValidarEstoque(campanha, dto.Itens.ToDictionary(i => i.CampanhaEntregaItemId, i => i.Quantidade), entregaId);
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
         _context.EntregaItens.RemoveRange(entrega.Itens);
-        entrega.Itens = dto.Itens.Select(CriarItem).ToList();
-        entrega.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+        entrega.Itens = dto.Itens.Select(escolha =>
+        {
+            var item = campanha.Itens.First(i => i.Id == escolha.CampanhaEntregaItemId);
+            return new EntregaItem
+            {
+                CampanhaEntregaItemId = item.Id,
+                Descricao = item.Descricao,
+                Tamanho = item.Tamanho,
+                Quantidade = escolha.Quantidade,
+                Validade = item.Validade,
+                DataCriacao = agora,
+            };
+        }).ToList();
+        entrega.DataAtualizacao = agora;
 
         await _context.SaveChangesAsync();
 
@@ -720,23 +796,51 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         }
     }
 
-    private static List<EntregaItem> CopiarItensDaCampanha(CampanhaEntrega campanha, int quantidadeKits = 1) => campanha.Itens.Select(i => new EntregaItem
-    {
-        Descricao = i.Descricao,
-        Tamanho = i.Tamanho,
-        Quantidade = i.Quantidade * quantidadeKits,
-        Validade = i.Validade,
-        DataCriacao = DateTime.UtcNow,
-    }).ToList();
+    // Só os itens "vai pra todos" entram sozinhos; os "sob escolha" (ex.: camisas) o admin escolhe por colaborador.
+    private static List<EntregaItem> CopiarItensDaCampanha(CampanhaEntrega campanha, int quantidadeKits = 1) => campanha.Itens
+        .Where(i => i.VaiParaTodos)
+        .Select(i => new EntregaItem
+        {
+            CampanhaEntregaItem = i,
+            Descricao = i.Descricao,
+            Tamanho = i.Tamanho,
+            Quantidade = i.Quantidade * quantidadeKits,
+            Validade = i.Validade,
+            DataCriacao = DateTime.UtcNow,
+        }).ToList();
 
-    private static EntregaItem CriarItem(CreateEntregaItemDto dto) => new()
+    private static Dictionary<int, int> PedidoDosItensPadrao(CampanhaEntrega campanha, int quantidadeKits, int quantidadeEntregas) => campanha.Itens
+        .Where(i => i.VaiParaTodos)
+        .ToDictionary(i => i.Id, i => i.Quantidade * quantidadeKits * quantidadeEntregas);
+
+    private static string Rotulo(CampanhaEntregaItem item) =>
+        string.IsNullOrWhiteSpace(item.Tamanho) ? item.Descricao : $"{item.Descricao} ({item.Tamanho})";
+
+    // Bloqueia quando o pedido (por item do catálogo) passa do saldo: estoque - o que já está atribuído em
+    // entregas não canceladas. ignorarEntregaId evita contar a própria entrega que está sendo reeditada.
+    private static void ValidarEstoque(CampanhaEntrega campanha, IReadOnlyDictionary<int, int> pedidoPorItem, int? ignorarEntregaId = null)
     {
-        Descricao = dto.Descricao.Trim(),
-        Tamanho = string.IsNullOrWhiteSpace(dto.Tamanho) ? null : dto.Tamanho.Trim(),
-        Quantidade = dto.Quantidade,
-        Validade = dto.Validade,
-        DataCriacao = DateTime.UtcNow,
-    };
+        foreach (var (itemId, quantidade) in pedidoPorItem)
+        {
+            var item = campanha.Itens.First(i => i.Id == itemId);
+            if (item.QuantidadeDisponivel is null)
+            {
+                continue;
+            }
+
+            var jaAtribuido = campanha.Entregas
+                .Where(e => e.Status != EntregaStatus.Cancelado && e.Id != ignorarEntregaId)
+                .SelectMany(e => e.Itens)
+                .Where(ei => ei.CampanhaEntregaItemId == itemId)
+                .Sum(ei => ei.Quantidade);
+
+            var saldo = item.QuantidadeDisponivel.Value - jaAtribuido;
+            if (quantidade > saldo)
+            {
+                throw new BusinessRuleException($"Estoque insuficiente de {Rotulo(item)}: saldo {Math.Max(saldo, 0)}, pedido {quantidade}.");
+            }
+        }
+    }
 
     private IQueryable<Entrega> MontarConsultaEntregas() => _context.Entregas
         .Include(e => e.Usuario).ThenInclude(u => u.Setor)
@@ -790,7 +894,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
             Itens = c.Itens.Select(i =>
             {
                 var quantidadeEntregue = itensEntreguesAtivos
-                    .Where(ei => ei.Descricao == i.Descricao && ei.Tamanho == i.Tamanho)
+                    .Where(ei => ei.CampanhaEntregaItemId == i.Id)
                     .Sum(ei => ei.Quantidade);
 
                 return new CampanhaEntregaItemDto
@@ -801,6 +905,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
                     Quantidade = i.Quantidade,
                     Validade = i.Validade,
                     QuantidadeDisponivel = i.QuantidadeDisponivel,
+                    VaiParaTodos = i.VaiParaTodos,
                     QuantidadeEntregue = quantidadeEntregue,
                     SaldoDisponivel = i.QuantidadeDisponivel.HasValue ? i.QuantidadeDisponivel.Value - quantidadeEntregue : null,
                 };
@@ -833,6 +938,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         Itens = e.Itens.Select(i => new EntregaItemDto
         {
             Id = i.Id,
+            CampanhaEntregaItemId = i.CampanhaEntregaItemId,
             Descricao = i.Descricao,
             Tamanho = i.Tamanho,
             Quantidade = i.Quantidade,

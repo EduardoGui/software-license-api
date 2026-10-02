@@ -742,7 +742,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(i => i.Descricao).IsRequired().HasMaxLength(200);
             entity.Property(i => i.Tamanho).HasMaxLength(30);
             entity.HasIndex(i => i.EntregaId);
+            entity.HasIndex(i => i.CampanhaEntregaItemId);
             entity.HasOne(i => i.Entrega).WithMany(e => e.Itens).HasForeignKey(i => i.EntregaId).OnDelete(DeleteBehavior.Cascade);
+            // SetNull (e não Restrict) porque excluir a campanha apaga catálogo e entregas na mesma cascata;
+            // fora disso o service já impede remover item do catálogo que tenha entrega ligada.
+            entity.HasOne(i => i.CampanhaEntregaItem).WithMany().HasForeignKey(i => i.CampanhaEntregaItemId).OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<CampanhaEntregaItem>(entity =>

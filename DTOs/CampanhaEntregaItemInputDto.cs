@@ -4,6 +4,9 @@ namespace SoftwareLicense.Api.DTOs;
 
 public class CampanhaEntregaItemInputDto
 {
+    // Preenchido ao editar um item já existente (preserva o vínculo com as entregas); nulo = item novo.
+    public int? Id { get; set; }
+
     [Required(ErrorMessage = "Descrição é obrigatória.")]
     [MaxLength(200)]
     public string Descricao { get; set; } = string.Empty;
@@ -18,4 +21,6 @@ public class CampanhaEntregaItemInputDto
 
     [Range(0, int.MaxValue, ErrorMessage = "Quantidade disponível não pode ser negativa.")]
     public int? QuantidadeDisponivel { get; set; }
+
+    public bool VaiParaTodos { get; set; } = true;
 }
