@@ -593,6 +593,38 @@ public class CampanhaEntregaServiceTests
     }
 
     [Fact]
+    public async Task ListarColaboradoresDisponiveisAsync_DeveIncluirQuemTeveEntregaCancelada()
+    {
+        var service = CriarService(out var context);
+        var campanha = await CriarCampanhaComItensAsync(service, "Uniformes", ("Camisa", 1));
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+        var maria = await CriarUsuarioAsync(context, "Maria", "maria@hope.com");
+        var entregaJoao = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = joao.Id });
+        await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = maria.Id });
+
+        await service.CancelarEntregaAsync(campanha.Id, entregaJoao.Id);
+        var disponiveis = await service.ListarColaboradoresDisponiveisAsync(campanha.Id, new ColaboradorDisponivelFiltroDto());
+
+        var unico = Assert.Single(disponiveis);
+        Assert.Equal(joao.Id, unico.Id);
+    }
+
+    [Fact]
+    public async Task AdicionarEntregasLoteAsync_DevePermitirReadicionarQuemTeveEntregaCancelada()
+    {
+        var service = CriarService(out var context);
+        var campanha = await CriarCampanhaComItensAsync(service, "Uniformes", ("Camisa", 1));
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+        var entrega = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = joao.Id });
+        await service.CancelarEntregaAsync(campanha.Id, entrega.Id);
+
+        var resultado = await service.AdicionarEntregasLoteAsync(campanha.Id, new CreateEntregaLoteDto { UsuarioIds = [joao.Id] });
+
+        Assert.Single(resultado);
+        Assert.Equal(2, await context.Entregas.CountAsync(e => e.UsuarioId == joao.Id));
+    }
+
+    [Fact]
     public async Task CancelarEntregaAsync_DeveRejeitarQuandoJaConfirmada()
     {
         var service = CriarService(out var context);

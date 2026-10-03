@@ -195,8 +195,9 @@ public class CampanhaEntregaService : ICampanhaEntregaService
 
         var hoje = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
 
+        // Entrega cancelada não conta: o colaborador volta a ser elegível pra campanha.
         var idsNaCampanha = _context.Entregas
-            .Where(e => e.CampanhaEntregaId == campanhaId)
+            .Where(e => e.CampanhaEntregaId == campanhaId && e.Status != EntregaStatus.Cancelado)
             .Select(e => e.UsuarioId);
 
         var query = _context.Usuarios
@@ -331,7 +332,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         }
 
         var idsJaNaCampanha = await _context.Entregas
-            .Where(e => e.CampanhaEntregaId == campanhaId)
+            .Where(e => e.CampanhaEntregaId == campanhaId && e.Status != EntregaStatus.Cancelado)
             .Select(e => e.UsuarioId)
             .ToListAsync();
 
