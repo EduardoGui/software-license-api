@@ -593,6 +593,27 @@ public class CampanhaEntregaServiceTests
     }
 
     [Fact]
+    public async Task ListarEntregasAsync_DeveOcultarCanceladasPorPadraoEMostrarFiltrandoPorStatus()
+    {
+        var service = CriarService(out var context);
+        var campanha = await CriarCampanhaComItensAsync(service, "Uniformes", ("Camisa", 1));
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+        var maria = await CriarUsuarioAsync(context, "Maria", "maria@hope.com");
+        var entregaJoao = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = joao.Id });
+        await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = maria.Id });
+        await service.CancelarEntregaAsync(campanha.Id, entregaJoao.Id);
+
+        var padrao = await service.ListarEntregasAsync(campanha.Id, new EntregaFiltroDto());
+        var canceladas = await service.ListarEntregasAsync(campanha.Id, new EntregaFiltroDto { Status = EntregaStatus.Cancelado });
+        var resumo = await service.ObterResumoAsync(campanha.Id);
+
+        Assert.Equal(maria.Id, Assert.Single(padrao).UsuarioId);
+        Assert.Equal(joao.Id, Assert.Single(canceladas).UsuarioId);
+        Assert.Equal(1, resumo.Total);
+        Assert.Equal(1, resumo.Cancelados);
+    }
+
+    [Fact]
     public async Task ListarColaboradoresDisponiveisAsync_DeveIncluirQuemTeveEntregaCancelada()
     {
         var service = CriarService(out var context);

@@ -180,7 +180,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
 
         return new CampanhaEntregaResumoDto
         {
-            Total = contagens.Sum(c => c.Quantidade),
+            Total = contagens.Where(c => c.Status != EntregaStatus.Cancelado).Sum(c => c.Quantidade),
             Pendentes = ContarPor(EntregaStatus.Pendente),
             EmailEnviado = ContarPor(EntregaStatus.EmailEnviado),
             Confirmados = ContarPor(EntregaStatus.Confirmado),
@@ -250,6 +250,11 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         if (!string.IsNullOrWhiteSpace(filtro.Status))
         {
             query = query.Where(e => e.Status == filtro.Status);
+        }
+        else
+        {
+            // Entrega cancelada não entra na lista por padrão (só aparece filtrando por status Cancelado).
+            query = query.Where(e => e.Status != EntregaStatus.Cancelado);
         }
 
         var entregas = await query.OrderBy(e => e.Usuario.Nome).ToListAsync();
