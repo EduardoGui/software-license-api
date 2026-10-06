@@ -190,7 +190,7 @@ public class BaseDadosEngenhariaServiceTests
         var resultado = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto());
 
         var linha = Assert.Single(resultado.Linhas);
-        Assert.Equal(1, linha.NumeroBm);
+        Assert.Equal(1, linha.NumeroDocumento);
         Assert.Equal("Rascunho", linha.Status);
         Assert.Null(linha.ItemDescricao);
         Assert.Null(linha.NfNumero);
@@ -267,8 +267,8 @@ public class BaseDadosEngenhariaServiceTests
         });
         var porStatus = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto { Status = MedicaoBmStatus.Aprovado });
 
-        Assert.Equal([2, 3], porPeriodo.Linhas.Select(l => l.NumeroBm).ToArray());
-        Assert.Equal([1, 2], porStatus.Linhas.Select(l => l.NumeroBm).ToArray());
+        Assert.Equal([2, 3], porPeriodo.Linhas.Select(l => l.NumeroDocumento).ToArray());
+        Assert.Equal([1, 2], porStatus.Linhas.Select(l => l.NumeroDocumento).ToArray());
     }
 
     [Fact]
@@ -282,6 +282,173 @@ public class BaseDadosEngenhariaServiceTests
             Ate = new DateOnly(2026, 8, 1),
         }));
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.GerarAsync(new BaseDadosEngenhariaFiltroDto { Status = "Xpto" }));
+    }
+
+    private static OrdemCompra CriarOrdem(
+        AppDbContext context, int numero, DateOnly data, string status = OrdemCompraStatus.Emitida)
+    {
+        var fornecedor = new Fornecedor { Nome = "Forn OC", Cnpj = "98.765.432/0001-10", DataCriacao = Agora, DataAtualizacao = Agora };
+        var local = new Local { Nome = "Obra " + numero, DataCriacao = Agora, DataAtualizacao = Agora };
+        var ordem = new OrdemCompra
+        {
+            Numero = numero,
+            Data = data,
+            Solicitante = "Eduardo",
+            Fornecedor = fornecedor,
+            Local = local,
+            CondicaoPagamento = "30 dias",
+            Status = status,
+            DataCriacao = Agora,
+            DataAtualizacao = Agora,
+        };
+        context.OrdensCompra.Add(ordem);
+        context.SaveChanges();
+        return ordem;
+    }
+
+    private static OrdemCompraItem CriarItemOrdem(AppDbContext context, OrdemCompra ordem, string descricao, decimal quantidade, decimal valorUnitario)
+    {
+        var item = new OrdemCompraItem
+        {
+            OrdemCompraId = ordem.Id,
+            Descricao = descricao,
+            Unidade = "un",
+            Quantidade = quantidade,
+            ValorUnitario = valorUnitario,
+            DataCriacao = Agora,
+            DataAtualizacao = Agora,
+        };
+        context.OrdemCompraItens.Add(item);
+        context.SaveChanges();
+        return item;
+    }
+
+    private static void RatearOrdem(AppDbContext context, OrdemCompraItem item, UnidadeOrcamentaria ua, decimal quantidade)
+    {
+        context.OrdemCompraItemRateiosUa.Add(new OrdemCompraItemRateioUa
+        {
+            OrdemCompraItemId = item.Id,
+            UnidadeOrcamentariaId = ua.Id,
+            Quantidade = quantidade,
+            DataCriacao = Agora,
+        });
+        context.SaveChanges();
+    }
+
+    private static void CriarNotaDaOrdem(AppDbContext context, OrdemCompra ordem, bool cancelada = false)
+    {
+        context.Obrigacoes.Add(new Obrigacao
+        {
+            TipoMovimento = "OC",
+            OrdemCompraId = ordem.Id,
+            FornecedorId = ordem.FornecedorId,
+            Competencia = new DateOnly(ordem.Data.Year, ordem.Data.Month, 1),
+            ValorPrevisto = 100m,
+            DataNf = new DateOnly(2026, 10, 3),
+            NumeroNf = "NF-OC-9",
+            ValorNota = 95m,
+            Cancelada = cancelada,
+            DataCriacao = Agora,
+            DataAtualizacao = Agora,
+        });
+        context.SaveChanges();
+    }
+
+    [Fact]
+    public async Task GerarAsync_OrdemCompraRateadaEmDuasUas_DeveGerarUmaLinhaPorUa()
+    {
+        var (service, context) = CriarService();
+        var ordem = CriarOrdem(context, 7, new DateOnly(2026, 10, 1));
+        var item = CriarItemOrdem(context, ordem, "Cimento", 10m, 25m);
+        RatearOrdem(context, item, CriarUa(context, "UA-01"), 4m);
+        RatearOrdem(context, item, CriarUa(context, "UA-02"), 6m);
+
+        var resultado = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto());
+
+        Assert.Equal(2, resultado.Linhas.Count);
+        Assert.All(resultado.Linhas, l =>
+        {
+            Assert.Equal(BaseDadosOrigem.OrdemCompra, l.Origem);
+            Assert.Equal(7, l.NumeroDocumento);
+            Assert.Null(l.ContratoNumero);
+            Assert.Null(l.PeriodoFim);
+            Assert.Null(l.ValorLiquidoBm);
+            Assert.Equal(250m, l.ValorTotalBm);
+            Assert.Equal("Forn OC", l.FornecedorNome);
+            Assert.Equal(new DateOnly(2026, 10, 1), l.PeriodoInicio);
+        });
+        Assert.Equal([100m, 150m], resultado.Linhas.Select(l => l.ValorUa).ToArray());
+    }
+
+    [Fact]
+    public async Task GerarAsync_OrdemCompraSemRateio_DeveAparecerComUaVazia()
+    {
+        var (service, context) = CriarService();
+        var ordem = CriarOrdem(context, 1, new DateOnly(2026, 10, 1));
+        CriarItemOrdem(context, ordem, "Cimento", 10m, 25m);
+
+        var resultado = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto());
+
+        var linha = Assert.Single(resultado.Linhas);
+        Assert.Equal("Cimento", linha.ItemDescricao);
+        Assert.Null(linha.CodigoUa);
+        Assert.Null(linha.ValorUa);
+    }
+
+    [Fact]
+    public async Task GerarAsync_OrdemCompra_DeveTrazerNotaDaObrigacaoEIgnorarCancelada()
+    {
+        var (service, context) = CriarService();
+        var comNota = CriarOrdem(context, 1, new DateOnly(2026, 10, 1));
+        CriarItemOrdem(context, comNota, "Cimento", 1m, 10m);
+        CriarNotaDaOrdem(context, comNota);
+        var cancelada = CriarOrdem(context, 2, new DateOnly(2026, 10, 2), OrdemCompraStatus.Cancelada);
+        CriarItemOrdem(context, cancelada, "Areia", 1m, 10m);
+        CriarNotaDaOrdem(context, cancelada, cancelada: true);
+        var semObrigacao = CriarOrdem(context, 3, new DateOnly(2026, 10, 3));
+        CriarItemOrdem(context, semObrigacao, "Brita", 1m, 10m);
+
+        var resultado = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto());
+
+        Assert.Equal(3, resultado.Linhas.Count);
+        Assert.Equal("NF-OC-9", resultado.Linhas[0].NfNumero);
+        Assert.Equal(95m, resultado.Linhas[0].NfValorTotal);
+        Assert.Null(resultado.Linhas[1].NfNumero);
+        Assert.Null(resultado.Linhas[2].NfNumero);
+    }
+
+    [Fact]
+    public async Task GerarAsync_DeveFiltrarOrdensPorDataOrigemEStatus()
+    {
+        var (service, context) = CriarService();
+        var contrato = CriarContrato(context);
+        CriarBm(context, contrato, 1, new DateOnly(2026, 9, 1));
+        CriarItemOrdem(context, CriarOrdem(context, 1, new DateOnly(2026, 8, 10)), "A", 1m, 1m);
+        CriarItemOrdem(context, CriarOrdem(context, 2, new DateOnly(2026, 9, 10), OrdemCompraStatus.Cancelada), "B", 1m, 1m);
+
+        var soOrdens = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto { Origem = BaseDadosOrigem.OrdemCompra });
+        var soMedicoes = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto { Origem = BaseDadosOrigem.Medicao });
+        var porData = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto
+        {
+            De = new DateOnly(2026, 9, 1),
+            Ate = new DateOnly(2026, 9, 30),
+            Origem = BaseDadosOrigem.OrdemCompra,
+        });
+        var porStatus = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto { Status = OrdemCompraStatus.Cancelada });
+
+        Assert.Equal(2, soOrdens.Linhas.Count);
+        Assert.All(soOrdens.Linhas, l => Assert.Equal(BaseDadosOrigem.OrdemCompra, l.Origem));
+        Assert.Equal(BaseDadosOrigem.Medicao, Assert.Single(soMedicoes.Linhas).Origem);
+        Assert.Equal(2, Assert.Single(porData.Linhas).NumeroDocumento);
+        Assert.Equal(BaseDadosOrigem.OrdemCompra, Assert.Single(porStatus.Linhas).Origem);
+    }
+
+    [Fact]
+    public async Task GerarAsync_DeveRejeitarOrigemInvalida()
+    {
+        var (service, _) = CriarService();
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.GerarAsync(new BaseDadosEngenhariaFiltroDto { Origem = "Xpto" }));
     }
 
     [Fact]
