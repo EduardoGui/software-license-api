@@ -112,6 +112,7 @@ builder.Services.AddScoped<IEquipamentoAlocacaoService, EquipamentoAlocacaoServi
 builder.Services.AddScoped<ITipoPatrimonioService, TipoPatrimonioService>();
 builder.Services.AddScoped<IPatrimonioItemService, PatrimonioItemService>();
 builder.Services.AddScoped<IRelatorioMensalLocacaoService, RelatorioMensalLocacaoService>();
+builder.Services.AddScoped<IBaseDadosEngenhariaService, BaseDadosEngenhariaService>();
 builder.Services.AddScoped<IRelatorioMensalCustoLicencasService, RelatorioMensalCustoLicencasService>();
 builder.Services.AddScoped<ISetorService, SetorService>();
 builder.Services.AddScoped<IUnidadeOrcamentariaService, UnidadeOrcamentariaService>();
