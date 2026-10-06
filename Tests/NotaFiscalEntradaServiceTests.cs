@@ -395,17 +395,22 @@ public class NotaFiscalEntradaServiceTests
     }
 
     [Fact]
-    public async Task AdicionarItemAsync_DeveExigirRateioDeUa()
+    public async Task AdicionarItemAsync_DevePermitirItemSemRateioDeUa()
     {
         var (service, context) = CriarService();
         var tipo = CriarTipo(context);
         var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-UA-1", DataEntrada = Hoje });
 
-        await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { TipoEquipamentoId = tipo.Id, Quantidade = 2, Origem = EquipamentoOrigem.Comprado }));
+        var item = await service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto
+        {
+            TipoEquipamentoId = tipo.Id,
+            Quantidade = 2,
+            Origem = EquipamentoOrigem.Comprado,
+        });
 
-        Assert.Equal(0, await context.NotasFiscaisItens.CountAsync());
-        Assert.Equal(0, await context.Equipamentos.CountAsync());
+        Assert.Empty(item.RateioUa);
+        Assert.Equal(1, await context.NotasFiscaisItens.CountAsync());
+        Assert.Equal(2, await context.Equipamentos.CountAsync());
     }
 
     [Fact]

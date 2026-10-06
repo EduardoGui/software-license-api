@@ -159,7 +159,7 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
             ValorUnitario = dto.ValorUnitario,
             Origem = origem,
             DataCriacao = agora,
-            RateiosUa = MontarRateios(dto.RateioUa, agora),
+            RateiosUa = MontarRateios(dto.RateioUa ?? [], agora),
         };
 
         _context.NotasFiscaisItens.Add(item);
@@ -233,7 +233,7 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
             ValorUnitario = dto.ValorUnitario,
             Origem = EquipamentoOrigem.Comprado,
             DataCriacao = agora,
-            RateiosUa = MontarRateios(dto.RateioUa, agora),
+            RateiosUa = MontarRateios(dto.RateioUa ?? [], agora),
         };
 
         _context.NotasFiscaisItens.Add(item);
@@ -294,12 +294,13 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
         return ParaItemDto(atualizado);
     }
 
-    // A UA é obrigatória ao adicionar o item; validada antes de qualquer gravação (o item gera unidades).
+    // A UA é opcional ao adicionar o item (pode ser definida depois); se informada, precisa fechar com a
+    // quantidade e é validada antes de qualquer gravação (o item gera unidades).
     private async Task ValidarRateioDoItemAsync(CreateNotaFiscalItemDto dto)
     {
         if (dto.RateioUa is null || dto.RateioUa.Count == 0)
         {
-            throw new BusinessRuleException("Defina a UA do item (rateio por quantidade).");
+            return;
         }
 
         await RateioUaValidador.ValidarPorQuantidadeAsync(_context, dto.RateioUa, dto.Quantidade, "quantidade do item");

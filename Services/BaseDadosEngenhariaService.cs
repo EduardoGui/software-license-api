@@ -13,13 +13,12 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
     [
         MedicaoBmStatus.Rascunho, MedicaoBmStatus.AguardandoAprovacao, MedicaoBmStatus.Aprovado, MedicaoBmStatus.Reprovado,
         OrdemCompraStatus.Emitida, OrdemCompraStatus.Assinada, OrdemCompraStatus.Cancelada,
-        StatusRegistrada, StatusPaga, StatusRecebida,
+        StatusRegistrada, StatusPaga,
     ];
 
-    // Despesa avulsa e NF de entrada não têm status próprio: derivam da obrigação / do recebimento.
+    // Despesa avulsa não tem status próprio: deriva da obrigação.
     private const string StatusRegistrada = "Registrada";
     private const string StatusPaga = "Paga";
-    private const string StatusRecebida = "Recebida";
 
     private readonly AppDbContext _context;
 
@@ -41,7 +40,7 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
         }
 
         string[] origensValidas =
-            [BaseDadosOrigem.Medicao, BaseDadosOrigem.OrdemCompra, BaseDadosOrigem.DespesaAvulsa, BaseDadosOrigem.NotaFiscalEntrada];
+            [BaseDadosOrigem.Medicao, BaseDadosOrigem.OrdemCompra, BaseDadosOrigem.DespesaAvulsa];
         if (!string.IsNullOrWhiteSpace(filtro.Origem) && !origensValidas.Contains(filtro.Origem))
         {
             throw new BusinessRuleException("Origem inválida.");
@@ -62,11 +61,6 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
         if (string.IsNullOrWhiteSpace(filtro.Origem) || filtro.Origem == BaseDadosOrigem.DespesaAvulsa)
         {
             linhas.AddRange(await GerarLinhasDespesasAvulsasAsync(filtro));
-        }
-
-        if (string.IsNullOrWhiteSpace(filtro.Origem) || filtro.Origem == BaseDadosOrigem.NotaFiscalEntrada)
-        {
-            linhas.AddRange(await GerarLinhasNotasEntradaAsync(filtro));
         }
 
         return new BaseDadosEngenhariaDto { Linhas = linhas };
@@ -226,12 +220,6 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
             .Select(r => new RateioLinha(r.UnidadeOrcamentaria.Codigo, r.Quantidade, null))
             .ToList();
 
-    private static List<RateioLinha> RateiosDoItem(IEnumerable<NotaFiscalItemRateioUa> rateios) =>
-        rateios.Where(r => r.Quantidade > 0)
-            .OrderBy(r => r.UnidadeOrcamentaria.Codigo)
-            .Select(r => new RateioLinha(r.UnidadeOrcamentaria.Codigo, r.Quantidade, null))
-            .ToList();
-
     private static List<RateioLinha> RateiosDaDespesa(IEnumerable<DespesaAvulsaRateioUa> rateios) =>
         rateios.Where(r => r.Valor > 0)
             .OrderBy(r => r.UnidadeOrcamentaria.Codigo)
@@ -335,72 +323,6 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
         return linhas;
     }
 
-    private async Task<List<BaseDadosEngenhariaLinhaDto>> GerarLinhasNotasEntradaAsync(BaseDadosEngenhariaFiltroDto filtro)
-    {
-        // Notas de entrada não têm status: só entram quando o filtro de status está vazio ou é "Recebida".
-        if (!string.IsNullOrWhiteSpace(filtro.Status) && filtro.Status != StatusRecebida)
-        {
-            return [];
-        }
-
-        var query = _context.NotasFiscaisEntrada.AsNoTracking().AsQueryable();
-
-        if (filtro.De is not null)
-        {
-            query = query.Where(n => n.DataEntrada >= filtro.De);
-        }
-
-        if (filtro.Ate is not null)
-        {
-            query = query.Where(n => n.DataEntrada <= filtro.Ate);
-        }
-
-        var notas = await query
-            .Include(n => n.Fornecedor)
-            .Include(n => n.Itens).ThenInclude(i => i.TipoEquipamento)
-            .Include(n => n.Itens).ThenInclude(i => i.TipoPatrimonio)
-            .Include(n => n.Itens).ThenInclude(i => i.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
-            .AsSplitQuery()
-            .OrderBy(n => n.DataEntrada).ThenBy(n => n.Id)
-            .ToListAsync();
-
-        var linhas = new List<BaseDadosEngenhariaLinhaDto>();
-        foreach (var nota in notas)
-        {
-            var valorTotal = nota.Itens.Sum(i => i.Quantidade * (i.ValorUnitario ?? 0m));
-
-            BaseDadosEngenhariaLinhaDto NovaLinha() => new()
-            {
-                Origem = BaseDadosOrigem.NotaFiscalEntrada,
-                DocumentoId = nota.Id,
-                NumeroDocumento = nota.Id,
-                NumeroReferencia = nota.Numero,
-                PeriodoInicio = nota.DataEntrada,
-                Status = StatusRecebida,
-                FornecedorNome = nota.Fornecedor?.Nome ?? string.Empty,
-                FornecedorDocumento = nota.Fornecedor is null ? null : DocumentoDoFornecedor(nota.Fornecedor),
-                ValorTotalBm = valorTotal,
-                // A própria nota de entrada é a NF.
-                NfDataEmissao = nota.DataEntrada,
-                NfNumero = nota.Numero,
-                NfValorTotal = valorTotal,
-            };
-
-            var itens = nota.Itens
-                .OrderBy(i => i.DataCriacao).ThenBy(i => i.Id)
-                .Select(i => new LinhaItem(
-                    i.Descricao ?? i.TipoEquipamento?.Nome ?? i.TipoPatrimonio?.Nome,
-                    "un",
-                    i.ValorUnitario,
-                    RateiosDoItem(i.RateiosUa)))
-                .ToList();
-
-            AdicionarLinhasDosItens(linhas, NovaLinha, itens);
-        }
-
-        return linhas;
-    }
-
     public byte[] GerarExcel(BaseDadosEngenhariaDto relatorio)
     {
         using var workbook = new XLWorkbook();
@@ -490,7 +412,6 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
     {
         BaseDadosOrigem.OrdemCompra => "Ordem de Compra",
         BaseDadosOrigem.DespesaAvulsa => "Despesa Avulsa",
-        BaseDadosOrigem.NotaFiscalEntrada => "NF de Entrada",
         _ => "Medição",
     };
 

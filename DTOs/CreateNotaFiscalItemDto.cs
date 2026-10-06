@@ -24,6 +24,6 @@ public class CreateNotaFiscalItemDto
 
     public string? Origem { get; set; }
 
-    // Rateio de UA por quantidade (obrigatório, soma == Quantidade).
+    // Rateio de UA por quantidade (opcional; se informado, soma == Quantidade).
     public List<ItemRateioUaInputDto> RateioUa { get; set; } = [];
 }

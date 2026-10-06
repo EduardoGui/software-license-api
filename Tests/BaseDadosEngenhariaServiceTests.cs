@@ -471,6 +471,7 @@ public class BaseDadosEngenhariaServiceTests
         var (service, _) = CriarService();
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.GerarAsync(new BaseDadosEngenhariaFiltroDto { Origem = "Xpto" }));
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.GerarAsync(new BaseDadosEngenhariaFiltroDto { Origem = "NotaFiscalEntrada" }));
     }
 
     [Fact]
@@ -591,91 +592,5 @@ public class BaseDadosEngenhariaServiceTests
             Ate = new DateOnly(2026, 9, 30),
         });
         Assert.Equal(paga.Id, Assert.Single(porData.Linhas).NumeroDocumento);
-    }
-
-    [Fact]
-    public async Task GerarAsync_NotaFiscalEntrada_DeveGerarLinhaPorUaComNfDaPropriaNota()
-    {
-        var (service, context) = CriarService();
-        var fornecedor = CriarFornecedorSimples(context, "Brain");
-        var tipo = new TipoEquipamento { Nome = "Notebook", Ativo = true, DataCriacao = Agora, DataAtualizacao = Agora };
-        var nota = new NotaFiscalEntrada
-        {
-            Numero = "NF-9001", DataEntrada = new DateOnly(2026, 10, 4), FornecedorId = fornecedor.Id, DataCriacao = Agora, DataAtualizacao = Agora,
-        };
-        var item = new NotaFiscalItem
-        {
-            NotaFiscalEntrada = nota,
-            Destino = NotaFiscalItemDestino.Equipamento,
-            TipoEquipamento = tipo,
-            Quantidade = 5,
-            ValorUnitario = 100m,
-            Origem = EquipamentoOrigem.Comprado,
-            DataCriacao = Agora,
-        };
-        var itemSemValor = new NotaFiscalItem
-        {
-            NotaFiscalEntrada = nota,
-            Destino = NotaFiscalItemDestino.Equipamento,
-            TipoEquipamento = tipo,
-            Descricao = "Mouse",
-            Quantidade = 2,
-            Origem = EquipamentoOrigem.Comprado,
-            DataCriacao = Agora.AddMinutes(1),
-        };
-        context.NotasFiscaisItens.AddRange(item, itemSemValor);
-        context.SaveChanges();
-        var ua1 = CriarUa(context, "UA-01");
-        var ua2 = CriarUa(context, "UA-02");
-        context.NotaFiscalItemRateiosUa.AddRange(
-            new NotaFiscalItemRateioUa { NotaFiscalItemId = item.Id, UnidadeOrcamentariaId = ua1.Id, Quantidade = 2, DataCriacao = Agora },
-            new NotaFiscalItemRateioUa { NotaFiscalItemId = item.Id, UnidadeOrcamentariaId = ua2.Id, Quantidade = 3, DataCriacao = Agora },
-            new NotaFiscalItemRateioUa { NotaFiscalItemId = itemSemValor.Id, UnidadeOrcamentariaId = ua1.Id, Quantidade = 2, DataCriacao = Agora });
-        context.SaveChanges();
-
-        var resultado = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto { Origem = BaseDadosOrigem.NotaFiscalEntrada });
-
-        Assert.Equal(3, resultado.Linhas.Count);
-        Assert.All(resultado.Linhas, l =>
-        {
-            Assert.Equal(BaseDadosOrigem.NotaFiscalEntrada, l.Origem);
-            Assert.Equal("NF-9001", l.NumeroReferencia);
-            Assert.Equal("NF-9001", l.NfNumero);
-            Assert.Equal(new DateOnly(2026, 10, 4), l.NfDataEmissao);
-            Assert.Equal(500m, l.ValorTotalBm);
-            Assert.Equal(500m, l.NfValorTotal);
-            Assert.Equal("Brain", l.FornecedorNome);
-            Assert.Equal("Recebida", l.Status);
-        });
-        Assert.Equal([200m, 300m, null], resultado.Linhas.Select(l => l.ValorUa).ToArray());
-        Assert.Equal("Notebook", resultado.Linhas[0].ItemDescricao);
-        Assert.Equal("Mouse", resultado.Linhas[2].ItemDescricao);
-        Assert.Equal(2m, resultado.Linhas[2].QuantidadeUa);
-
-        var statusIncompativel = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto
-        {
-            Origem = BaseDadosOrigem.NotaFiscalEntrada,
-            Status = "Emitida",
-        });
-        Assert.Empty(statusIncompativel.Linhas);
-    }
-
-    [Fact]
-    public async Task GerarAsync_NotaFiscalEntradaSemFornecedorNemItens_DeveAparecer()
-    {
-        var (service, context) = CriarService();
-        context.NotasFiscaisEntrada.Add(new NotaFiscalEntrada
-        {
-            Numero = "NF-VAZIA", DataEntrada = new DateOnly(2026, 10, 4), DataCriacao = Agora, DataAtualizacao = Agora,
-        });
-        context.SaveChanges();
-
-        var resultado = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto());
-
-        var linha = Assert.Single(resultado.Linhas);
-        Assert.Equal(BaseDadosOrigem.NotaFiscalEntrada, linha.Origem);
-        Assert.Equal(string.Empty, linha.FornecedorNome);
-        Assert.Null(linha.ItemDescricao);
-        Assert.Equal(0m, linha.ValorTotalBm);
     }
 }
