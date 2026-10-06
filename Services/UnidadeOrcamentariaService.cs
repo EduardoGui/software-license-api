@@ -40,19 +40,29 @@ public class UnidadeOrcamentariaService : IUnidadeOrcamentariaService
 
         var unidades = await query.OrderBy(u => u.Setor.Nome).ThenBy(u => u.Codigo).ToListAsync();
 
-        // Descrição: ignora maiúsculas/acentos e aceita * como curinga (ex.: *salário* ou sal*rio). A lista é pequena,
-        // então o filtro é feito em memória (o ILIKE do banco é sensível a acento).
+        // Descrição e Apropriação: ignoram maiúsculas/acentos e aceitam * como curinga (ex.: *salário* ou sal*rio).
+        // A lista é pequena, então o filtro é feito em memória (o ILIKE do banco é sensível a acento).
         if (!string.IsNullOrWhiteSpace(filtro.Descricao))
         {
-            unidades = unidades.Where(u => CorrespondeDescricao(u.Descricao, filtro.Descricao)).ToList();
+            unidades = unidades.Where(u => Corresponde(u.Descricao, filtro.Descricao)).ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(filtro.Apropriacao))
+        {
+            unidades = unidades.Where(u => Corresponde(u.Apropriacao, filtro.Apropriacao)).ToList();
         }
 
         return unidades.Select(ParaDto).ToList();
     }
 
-    private static bool CorrespondeDescricao(string descricao, string busca)
+    private static bool Corresponde(string? valor, string busca)
     {
-        var texto = Normalizar(descricao);
+        if (valor is null)
+        {
+            return false;
+        }
+
+        var texto = Normalizar(valor);
         var posicao = 0;
 
         foreach (var parte in busca.Split('*', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))

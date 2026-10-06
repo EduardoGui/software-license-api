@@ -126,4 +126,22 @@ public class UnidadeOrcamentariaServiceTests
         Assert.Equal("HP.RH.2001", Assert.Single(curingaNoMeio).Codigo);
         Assert.Equal("HP.RH.2002", Assert.Single(outraPalavra).Codigo);
     }
+    [Fact]
+    public async Task GetAllAsync_DeveBuscarPorApropriacaoIgnorandoAcentoECaixaEAceitandoCuringa()
+    {
+        var (service, context) = CriarService();
+        var setor = CriarSetor(context, "GERÊNCIA ADMINISTRATIVA");
+        foreach (var (codigo, apropriacao) in new[] { ("HP.RH.2001", "Salários e encargos da equipe"), ("HP.RH.2002", "Vale transporte"), ("HP.RH.2003", (string?)null) })
+        {
+            var dto = CriarDtoValido(setor.Id, codigo);
+            dto.Apropriacao = apropriacao;
+            await service.CreateAsync(dto);
+        }
+
+        var comAsteriscos = await service.GetAllAsync(new UnidadeOrcamentariaFiltroDto { Apropriacao = "*salario*" });
+        var curingaNoMeio = await service.GetAllAsync(new UnidadeOrcamentariaFiltroDto { Apropriacao = "vale*porte" });
+
+        Assert.Equal("HP.RH.2001", Assert.Single(comAsteriscos).Codigo);
+        Assert.Equal("HP.RH.2002", Assert.Single(curingaNoMeio).Codigo);
+    }
 }
