@@ -33,19 +33,46 @@ public class UnidadeOrcamentariaService : IUnidadeOrcamentariaService
             query = query.Where(u => EF.Functions.ILike(u.Codigo, $"%{filtro.Codigo}%"));
         }
 
-        if (!string.IsNullOrWhiteSpace(filtro.Descricao))
-        {
-            query = query.Where(u => EF.Functions.ILike(u.Descricao, $"%{filtro.Descricao}%"));
-        }
-
         if (filtro.Ativa is not null)
         {
             query = query.Where(u => u.Ativa == filtro.Ativa);
         }
 
         var unidades = await query.OrderBy(u => u.Setor.Nome).ThenBy(u => u.Codigo).ToListAsync();
+
+        // Descrição: ignora maiúsculas/acentos e aceita * como curinga (ex.: *salário* ou sal*rio). A lista é pequena,
+        // então o filtro é feito em memória (o ILIKE do banco é sensível a acento).
+        if (!string.IsNullOrWhiteSpace(filtro.Descricao))
+        {
+            unidades = unidades.Where(u => CorrespondeDescricao(u.Descricao, filtro.Descricao)).ToList();
+        }
+
         return unidades.Select(ParaDto).ToList();
     }
+
+    private static bool CorrespondeDescricao(string descricao, string busca)
+    {
+        var texto = Normalizar(descricao);
+        var posicao = 0;
+
+        foreach (var parte in busca.Split('*', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var indice = texto.IndexOf(Normalizar(parte), posicao, StringComparison.Ordinal);
+            if (indice < 0)
+            {
+                return false;
+            }
+
+            posicao = indice + parte.Length;
+        }
+
+        return true;
+    }
+
+    private static string Normalizar(string valor) => new string(valor
+        .Normalize(System.Text.NormalizationForm.FormD)
+        .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+        .ToArray()).ToUpperInvariant();
 
     public async Task<UnidadeOrcamentariaDto> GetByIdAsync(int id)
     {

@@ -104,4 +104,26 @@ public class UnidadeOrcamentariaServiceTests
         Assert.Single(resultado);
         Assert.Equal("HP.ENG.2001", resultado[0].Codigo);
     }
+    [Fact]
+    public async Task GetAllAsync_DeveBuscarDescricaoPorParteIgnorandoAcentoECaixaEAceitandoCuringa()
+    {
+        var (service, context) = CriarService();
+        var setor = CriarSetor(context, "GERÊNCIA ADMINISTRATIVA");
+        foreach (var (codigo, descricao) in new[] { ("HP.RH.2001", "SALÁRIOS E ENCARGOS"), ("HP.RH.2002", "VALE TRANSPORTE"), ("HP.RH.2003", "Salario mínimo") })
+        {
+            var dto = CriarDtoValido(setor.Id, codigo);
+            dto.Descricao = descricao;
+            await service.CreateAsync(dto);
+        }
+
+        var comAsteriscos = await service.GetAllAsync(new UnidadeOrcamentariaFiltroDto { Descricao = "*salário*" });
+        var semAcento = await service.GetAllAsync(new UnidadeOrcamentariaFiltroDto { Descricao = "SALARIO" });
+        var curingaNoMeio = await service.GetAllAsync(new UnidadeOrcamentariaFiltroDto { Descricao = "salários*encargos" });
+        var outraPalavra = await service.GetAllAsync(new UnidadeOrcamentariaFiltroDto { Descricao = "transporte" });
+
+        Assert.Equal(2, comAsteriscos.Count);
+        Assert.Equal(2, semAcento.Count);
+        Assert.Equal("HP.RH.2001", Assert.Single(curingaNoMeio).Codigo);
+        Assert.Equal("HP.RH.2002", Assert.Single(outraPalavra).Codigo);
+    }
 }
