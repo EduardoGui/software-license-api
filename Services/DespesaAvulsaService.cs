@@ -28,7 +28,10 @@ public class DespesaAvulsaService : IDespesaAvulsaService
 
     public async Task<List<DespesaAvulsaDto>> GetAllAsync(DespesaAvulsaFiltroDto filtro)
     {
-        var query = _context.DespesasAvulsas.Include(d => d.Fornecedor).AsQueryable();
+        var query = _context.DespesasAvulsas
+            .Include(d => d.Fornecedor)
+            .Include(d => d.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
+            .AsQueryable();
 
         if (filtro.FornecedorId is not null)
         {
@@ -129,6 +132,13 @@ public class DespesaAvulsaService : IDespesaAvulsaService
         despesa.NumeroNf = dto.NumeroNf?.Trim();
         despesa.DataEmissao = dto.DataEmissao;
         despesa.Vencimento = dto.Vencimento;
+        if (despesa.Valor != dto.Valor && despesa.RateiosUa.Count > 0)
+        {
+            // O rateio por valor deixa de fechar com o novo valor: volta a "UA pendente".
+            _context.DespesaAvulsaRateiosUa.RemoveRange(despesa.RateiosUa);
+            despesa.RateiosUa = [];
+        }
+
         despesa.Valor = dto.Valor;
         despesa.Recorrente = dto.Recorrente;
         despesa.Observacoes = dto.Observacoes?.Trim();
@@ -177,10 +187,34 @@ public class DespesaAvulsaService : IDespesaAvulsaService
             _context.Obrigacoes.Remove(obrigacao);
         }
 
+        _context.DespesaAvulsaRateiosUa.RemoveRange(despesa.RateiosUa);
         _context.DespesasAvulsas.Remove(despesa);
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Despesa avulsa {DespesaAvulsaId} excluída", id);
+    }
+
+    public async Task<DespesaAvulsaDto> DefinirRateioUaAsync(int id, DefinirRateioUaValorDto dto)
+    {
+        var despesa = await BuscarOuFalhar(id);
+
+        await RateioUaValidador.ValidarPorValorAsync(_context, dto.Itens, despesa.Valor);
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        _context.DespesaAvulsaRateiosUa.RemoveRange(despesa.RateiosUa);
+        despesa.RateiosUa = dto.Itens.Select(r => new DespesaAvulsaRateioUa
+        {
+            UnidadeOrcamentariaId = r.UnidadeOrcamentariaId,
+            Valor = r.Valor,
+            DataCriacao = agora,
+        }).ToList();
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Rateio de UA da despesa avulsa {DespesaAvulsaId} definido", id);
+
+        // Recarrega para trazer código/descrição das UAs recém-vinculadas.
+        return ParaDto(await BuscarOuFalhar(id));
     }
 
     public async Task<List<AnexoDto>> ListarAnexosAsync(int despesaAvulsaId)
@@ -267,7 +301,10 @@ public class DespesaAvulsaService : IDespesaAvulsaService
 
     private async Task<DespesaAvulsa> BuscarOuFalhar(int id)
     {
-        var despesa = await _context.DespesasAvulsas.Include(d => d.Fornecedor).FirstOrDefaultAsync(d => d.Id == id);
+        var despesa = await _context.DespesasAvulsas
+            .Include(d => d.Fornecedor)
+            .Include(d => d.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
+            .FirstOrDefaultAsync(d => d.Id == id);
         if (despesa is null)
         {
             throw new NotFoundException($"Despesa avulsa {id} não encontrada.");
@@ -291,5 +328,12 @@ public class DespesaAvulsaService : IDespesaAvulsaService
         Observacoes = d.Observacoes,
         DataCriacao = d.DataCriacao,
         DataAtualizacao = d.DataAtualizacao,
+        RateioUa = d.RateiosUa.Select(r => new DespesaAvulsaRateioUaDto
+        {
+            UnidadeOrcamentariaId = r.UnidadeOrcamentariaId,
+            UnidadeOrcamentariaCodigo = r.UnidadeOrcamentaria.Codigo,
+            UnidadeOrcamentariaDescricao = r.UnidadeOrcamentaria.Descricao,
+            Valor = r.Valor,
+        }).ToList(),
     };
 }

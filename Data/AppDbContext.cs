@@ -70,6 +70,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<OrdemCompra> OrdensCompra => Set<OrdemCompra>();
     public DbSet<OrdemCompraItem> OrdemCompraItens => Set<OrdemCompraItem>();
     public DbSet<OrdemCompraItemRateioUa> OrdemCompraItemRateiosUa => Set<OrdemCompraItemRateioUa>();
+    public DbSet<DespesaAvulsaRateioUa> DespesaAvulsaRateiosUa => Set<DespesaAvulsaRateioUa>();
+    public DbSet<NotaFiscalItemRateioUa> NotaFiscalItemRateiosUa => Set<NotaFiscalItemRateioUa>();
     public DbSet<OrdemCompraAnexo> OrdemCompraAnexos => Set<OrdemCompraAnexo>();
     public DbSet<DespesaAvulsa> DespesasAvulsas => Set<DespesaAvulsa>();
     public DbSet<DespesaAvulsaAnexo> DespesaAvulsaAnexos => Set<DespesaAvulsaAnexo>();
@@ -489,6 +491,22 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(a => a.TipoConteudo).IsRequired().HasMaxLength(100);
             entity.HasIndex(a => a.OrdemCompraId);
             entity.HasOne(a => a.OrdemCompra).WithMany().HasForeignKey(a => a.OrdemCompraId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<DespesaAvulsaRateioUa>(entity =>
+        {
+            entity.Property(r => r.Valor).HasPrecision(18, 2);
+            entity.HasIndex(r => new { r.DespesaAvulsaId, r.UnidadeOrcamentariaId }).IsUnique();
+            entity.HasOne(r => r.DespesaAvulsa).WithMany(d => d.RateiosUa).HasForeignKey(r => r.DespesaAvulsaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.UnidadeOrcamentaria).WithMany().HasForeignKey(r => r.UnidadeOrcamentariaId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<NotaFiscalItemRateioUa>(entity =>
+        {
+            entity.Property(r => r.Quantidade).HasPrecision(18, 6);
+            entity.HasIndex(r => new { r.NotaFiscalItemId, r.UnidadeOrcamentariaId }).IsUnique();
+            entity.HasOne(r => r.NotaFiscalItem).WithMany(i => i.RateiosUa).HasForeignKey(r => r.NotaFiscalItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.UnidadeOrcamentaria).WithMany().HasForeignKey(r => r.UnidadeOrcamentariaId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<DespesaAvulsa>(entity =>

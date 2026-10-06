@@ -18,6 +18,7 @@ public class NotaFiscalItem
     public string Origem { get; set; } = string.Empty;
     public DateTime DataCriacao { get; set; }
 
+    public List<NotaFiscalItemRateioUa> RateiosUa { get; set; } = [];
     public ICollection<Equipamento> Equipamentos { get; set; } = new List<Equipamento>();
     public ICollection<PatrimonioItem> PatrimonioItens { get; set; } = new List<PatrimonioItem>();
 }

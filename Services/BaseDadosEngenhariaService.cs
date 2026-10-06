@@ -13,7 +13,13 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
     [
         MedicaoBmStatus.Rascunho, MedicaoBmStatus.AguardandoAprovacao, MedicaoBmStatus.Aprovado, MedicaoBmStatus.Reprovado,
         OrdemCompraStatus.Emitida, OrdemCompraStatus.Assinada, OrdemCompraStatus.Cancelada,
+        StatusRegistrada, StatusPaga, StatusRecebida,
     ];
+
+    // Despesa avulsa e NF de entrada não têm status próprio: derivam da obrigação / do recebimento.
+    private const string StatusRegistrada = "Registrada";
+    private const string StatusPaga = "Paga";
+    private const string StatusRecebida = "Recebida";
 
     private readonly AppDbContext _context;
 
@@ -34,8 +40,9 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
             throw new BusinessRuleException("Status inválido.");
         }
 
-        if (!string.IsNullOrWhiteSpace(filtro.Origem)
-            && filtro.Origem != BaseDadosOrigem.Medicao && filtro.Origem != BaseDadosOrigem.OrdemCompra)
+        string[] origensValidas =
+            [BaseDadosOrigem.Medicao, BaseDadosOrigem.OrdemCompra, BaseDadosOrigem.DespesaAvulsa, BaseDadosOrigem.NotaFiscalEntrada];
+        if (!string.IsNullOrWhiteSpace(filtro.Origem) && !origensValidas.Contains(filtro.Origem))
         {
             throw new BusinessRuleException("Origem inválida.");
         }
@@ -50,6 +57,16 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
         if (string.IsNullOrWhiteSpace(filtro.Origem) || filtro.Origem == BaseDadosOrigem.OrdemCompra)
         {
             linhas.AddRange(await GerarLinhasOrdensCompraAsync(filtro));
+        }
+
+        if (string.IsNullOrWhiteSpace(filtro.Origem) || filtro.Origem == BaseDadosOrigem.DespesaAvulsa)
+        {
+            linhas.AddRange(await GerarLinhasDespesasAvulsasAsync(filtro));
+        }
+
+        if (string.IsNullOrWhiteSpace(filtro.Origem) || filtro.Origem == BaseDadosOrigem.NotaFiscalEntrada)
+        {
+            linhas.AddRange(await GerarLinhasNotasEntradaAsync(filtro));
         }
 
         return new BaseDadosEngenhariaDto { Linhas = linhas };
@@ -117,7 +134,7 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
             var itensMedidos = medicao.Itens
                 .Where(i => i.QuantidadeMedidaNestaBm > 0)
                 .OrderBy(i => i.Id)
-                .Select(i => (i.DescricaoNoMomento, i.UnidadeNoMomento, i.ValorUnitarioNoMomento, Rateios: RateiosDoItem(i.RateiosUa)))
+                .Select(i => new LinhaItem(i.DescricaoNoMomento, i.UnidadeNoMomento, i.ValorUnitarioNoMomento, RateiosDoItem(i.RateiosUa)))
                 .ToList();
 
             AdicionarLinhasDosItens(linhas, NovaLinha, itensMedidos);
@@ -181,7 +198,7 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
 
             var itens = ordem.Itens
                 .OrderBy(i => i.Id)
-                .Select(i => (i.Descricao, i.Unidade, i.ValorUnitario, Rateios: RateiosDoItem(i.RateiosUa)))
+                .Select(i => new LinhaItem(i.Descricao, i.Unidade, i.ValorUnitario, RateiosDoItem(i.RateiosUa)))
                 .ToList();
 
             AdicionarLinhasDosItens(linhas, NovaLinha, itens);
@@ -193,24 +210,38 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
     private static string? DocumentoDoFornecedor(Fornecedor fornecedor) =>
         !string.IsNullOrWhiteSpace(fornecedor.Cnpj) ? fornecedor.Cnpj : fornecedor.Cpf;
 
-    private static List<(string Codigo, decimal Quantidade)> RateiosDoItem(IEnumerable<MedicaoBmItemRateioUa> rateios) =>
+    private sealed record RateioLinha(string Codigo, decimal? Quantidade, decimal? Valor);
+
+    private sealed record LinhaItem(string? Descricao, string? Unidade, decimal? ValorUnitario, List<RateioLinha> Rateios);
+
+    private static List<RateioLinha> RateiosDoItem(IEnumerable<MedicaoBmItemRateioUa> rateios) =>
         rateios.Where(r => r.Quantidade > 0)
             .OrderBy(r => r.UnidadeOrcamentaria.Codigo)
-            .Select(r => (r.UnidadeOrcamentaria.Codigo, r.Quantidade))
+            .Select(r => new RateioLinha(r.UnidadeOrcamentaria.Codigo, r.Quantidade, null))
             .ToList();
 
-    private static List<(string Codigo, decimal Quantidade)> RateiosDoItem(IEnumerable<OrdemCompraItemRateioUa> rateios) =>
+    private static List<RateioLinha> RateiosDoItem(IEnumerable<OrdemCompraItemRateioUa> rateios) =>
         rateios.Where(r => r.Quantidade > 0)
             .OrderBy(r => r.UnidadeOrcamentaria.Codigo)
-            .Select(r => (r.UnidadeOrcamentaria.Codigo, r.Quantidade))
+            .Select(r => new RateioLinha(r.UnidadeOrcamentaria.Codigo, r.Quantidade, null))
+            .ToList();
+
+    private static List<RateioLinha> RateiosDoItem(IEnumerable<NotaFiscalItemRateioUa> rateios) =>
+        rateios.Where(r => r.Quantidade > 0)
+            .OrderBy(r => r.UnidadeOrcamentaria.Codigo)
+            .Select(r => new RateioLinha(r.UnidadeOrcamentaria.Codigo, r.Quantidade, null))
+            .ToList();
+
+    private static List<RateioLinha> RateiosDaDespesa(IEnumerable<DespesaAvulsaRateioUa> rateios) =>
+        rateios.Where(r => r.Valor > 0)
+            .OrderBy(r => r.UnidadeOrcamentaria.Codigo)
+            .Select(r => new RateioLinha(r.UnidadeOrcamentaria.Codigo, null, r.Valor))
             .ToList();
 
     // Documento sem itens (ou BM sem item medido) = 1 linha só com o cabeçalho; item sem rateio = linha com UA vazia;
-    // item rateado = 1 linha por UA com qtde x valor unitário.
+    // item rateado = 1 linha por UA (valor = valor rateado direto, ou qtde x valor unitário quando o rateio é por quantidade).
     private static void AdicionarLinhasDosItens(
-        List<BaseDadosEngenhariaLinhaDto> linhas,
-        Func<BaseDadosEngenhariaLinhaDto> novaLinha,
-        List<(string Descricao, string Unidade, decimal ValorUnitario, List<(string Codigo, decimal Quantidade)> Rateios)> itens)
+        List<BaseDadosEngenhariaLinhaDto> linhas, Func<BaseDadosEngenhariaLinhaDto> novaLinha, List<LinhaItem> itens)
     {
         if (itens.Count == 0)
         {
@@ -240,10 +271,134 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
                 var linha = LinhaDoItem();
                 linha.CodigoUa = rateio.Codigo;
                 linha.QuantidadeUa = rateio.Quantidade;
-                linha.ValorUa = Math.Round(rateio.Quantidade * item.ValorUnitario, 2, MidpointRounding.AwayFromZero);
+                linha.ValorUa = rateio.Valor
+                    ?? (rateio.Quantidade is not null && item.ValorUnitario is not null
+                        ? Math.Round(rateio.Quantidade.Value * item.ValorUnitario.Value, 2, MidpointRounding.AwayFromZero)
+                        : null);
                 linhas.Add(linha);
             }
         }
+    }
+
+    private async Task<List<BaseDadosEngenhariaLinhaDto>> GerarLinhasDespesasAvulsasAsync(BaseDadosEngenhariaFiltroDto filtro)
+    {
+        // Volume pequeno (dezenas de despesas): a data de referência tem fallbacks, então filtra em memória.
+        var despesas = await _context.DespesasAvulsas.AsNoTracking()
+            .Include(d => d.Fornecedor)
+            .Include(d => d.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
+            .ToListAsync();
+
+        var ids = despesas.Select(d => d.Id).ToList();
+        var obrigacoes = await _context.Obrigacoes.AsNoTracking()
+            .Where(o => o.DespesaAvulsaId != null && ids.Contains(o.DespesaAvulsaId.Value))
+            .ToDictionaryAsync(o => o.DespesaAvulsaId!.Value);
+
+        var linhas = new List<BaseDadosEngenhariaLinhaDto>();
+        foreach (var despesa in despesas
+                     .Select(d => (Despesa: d, Data: d.DataEmissao ?? d.Vencimento ?? DateOnly.FromDateTime(d.DataCriacao)))
+                     .OrderBy(x => x.Data).ThenBy(x => x.Despesa.Id))
+        {
+            var d = despesa.Despesa;
+            obrigacoes.TryGetValue(d.Id, out var obrigacao);
+
+            var status = obrigacao is null ? StatusRegistrada
+                : obrigacao.Cancelada ? OrdemCompraStatus.Cancelada
+                : obrigacao.Pago ? StatusPaga
+                : StatusRegistrada;
+
+            if (filtro.De is not null && despesa.Data < filtro.De) continue;
+            if (filtro.Ate is not null && despesa.Data > filtro.Ate) continue;
+            if (!string.IsNullOrWhiteSpace(filtro.Status) && filtro.Status != status) continue;
+
+            // NF: a da obrigação (editada em Controle de Obrigações) quando ativa; senão a própria despesa.
+            var usaObrigacao = obrigacao is not null && !obrigacao.Cancelada;
+
+            BaseDadosEngenhariaLinhaDto NovaLinha() => new()
+            {
+                Origem = BaseDadosOrigem.DespesaAvulsa,
+                DocumentoId = d.Id,
+                NumeroDocumento = d.Id,
+                NumeroReferencia = d.Categoria,
+                PeriodoInicio = despesa.Data,
+                Status = status,
+                FornecedorNome = d.Fornecedor.Nome,
+                FornecedorDocumento = DocumentoDoFornecedor(d.Fornecedor),
+                ValorTotalBm = d.Valor,
+                NfDataEmissao = usaObrigacao ? obrigacao!.DataNf : d.DataEmissao,
+                NfNumero = usaObrigacao ? obrigacao!.NumeroNf : d.NumeroNf,
+                NfValorTotal = usaObrigacao ? obrigacao!.ValorNota : d.Valor,
+            };
+
+            AdicionarLinhasDosItens(linhas, NovaLinha, [new LinhaItem(d.Descricao, null, null, RateiosDaDespesa(d.RateiosUa))]);
+        }
+
+        return linhas;
+    }
+
+    private async Task<List<BaseDadosEngenhariaLinhaDto>> GerarLinhasNotasEntradaAsync(BaseDadosEngenhariaFiltroDto filtro)
+    {
+        // Notas de entrada não têm status: só entram quando o filtro de status está vazio ou é "Recebida".
+        if (!string.IsNullOrWhiteSpace(filtro.Status) && filtro.Status != StatusRecebida)
+        {
+            return [];
+        }
+
+        var query = _context.NotasFiscaisEntrada.AsNoTracking().AsQueryable();
+
+        if (filtro.De is not null)
+        {
+            query = query.Where(n => n.DataEntrada >= filtro.De);
+        }
+
+        if (filtro.Ate is not null)
+        {
+            query = query.Where(n => n.DataEntrada <= filtro.Ate);
+        }
+
+        var notas = await query
+            .Include(n => n.Fornecedor)
+            .Include(n => n.Itens).ThenInclude(i => i.TipoEquipamento)
+            .Include(n => n.Itens).ThenInclude(i => i.TipoPatrimonio)
+            .Include(n => n.Itens).ThenInclude(i => i.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
+            .AsSplitQuery()
+            .OrderBy(n => n.DataEntrada).ThenBy(n => n.Id)
+            .ToListAsync();
+
+        var linhas = new List<BaseDadosEngenhariaLinhaDto>();
+        foreach (var nota in notas)
+        {
+            var valorTotal = nota.Itens.Sum(i => i.Quantidade * (i.ValorUnitario ?? 0m));
+
+            BaseDadosEngenhariaLinhaDto NovaLinha() => new()
+            {
+                Origem = BaseDadosOrigem.NotaFiscalEntrada,
+                DocumentoId = nota.Id,
+                NumeroDocumento = nota.Id,
+                NumeroReferencia = nota.Numero,
+                PeriodoInicio = nota.DataEntrada,
+                Status = StatusRecebida,
+                FornecedorNome = nota.Fornecedor?.Nome ?? string.Empty,
+                FornecedorDocumento = nota.Fornecedor is null ? null : DocumentoDoFornecedor(nota.Fornecedor),
+                ValorTotalBm = valorTotal,
+                // A própria nota de entrada é a NF.
+                NfDataEmissao = nota.DataEntrada,
+                NfNumero = nota.Numero,
+                NfValorTotal = valorTotal,
+            };
+
+            var itens = nota.Itens
+                .OrderBy(i => i.DataCriacao).ThenBy(i => i.Id)
+                .Select(i => new LinhaItem(
+                    i.Descricao ?? i.TipoEquipamento?.Nome ?? i.TipoPatrimonio?.Nome,
+                    "un",
+                    i.ValorUnitario,
+                    RateiosDoItem(i.RateiosUa)))
+                .ToList();
+
+            AdicionarLinhasDosItens(linhas, NovaLinha, itens);
+        }
+
+        return linhas;
     }
 
     public byte[] GerarExcel(BaseDadosEngenhariaDto relatorio)
@@ -331,7 +486,13 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
         celula.Style.NumberFormat.Format = "#,##0.######";
     }
 
-    private static string RotuloOrigem(string origem) => origem == BaseDadosOrigem.OrdemCompra ? "Ordem de Compra" : "Medição";
+    private static string RotuloOrigem(string origem) => origem switch
+    {
+        BaseDadosOrigem.OrdemCompra => "Ordem de Compra",
+        BaseDadosOrigem.DespesaAvulsa => "Despesa Avulsa",
+        BaseDadosOrigem.NotaFiscalEntrada => "NF de Entrada",
+        _ => "Medição",
+    };
 
     private static string RotuloStatus(string status) => status switch
     {

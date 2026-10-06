@@ -57,6 +57,25 @@ public class NotaFiscalEntradaServiceTests
         return fornecedor;
     }
 
+    private static int _contadorUa;
+
+    // Rateio válido de toda a quantidade em uma única UA (UA agora é obrigatória ao adicionar o item).
+    private static List<ItemRateioUaInputDto> Rateio(AppDbContext context, int quantidade)
+    {
+        var setor = new Setor { Nome = "Setor UA", DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        var ua = new UnidadeOrcamentaria
+        {
+            Setor = setor,
+            Codigo = "UA-" + Interlocked.Increment(ref _contadorUa),
+            Descricao = "UA de teste",
+            DataCriacao = Agora.UtcDateTime,
+            DataAtualizacao = Agora.UtcDateTime,
+        };
+        context.UnidadesOrcamentarias.Add(ua);
+        context.SaveChanges();
+        return [new ItemRateioUaInputDto { UnidadeOrcamentariaId = ua.Id, Quantidade = quantidade }];
+    }
+
     [Fact]
     public async Task AdicionarItemAsync_DeveGerarUmEquipamentoPorUnidadeDeQuantidade()
     {
@@ -68,6 +87,7 @@ public class NotaFiscalEntradaServiceTests
         {
             TipoEquipamentoId = tipo.Id,
             Quantidade = 5,
+            RateioUa = Rateio(context, 5),
             Origem = EquipamentoOrigem.Comprado,
         });
 
@@ -87,6 +107,7 @@ public class NotaFiscalEntradaServiceTests
         {
             TipoEquipamentoId = tipo.Id,
             Quantidade = 2,
+            RateioUa = Rateio(context, 2),
             ValorUnitario = 150m,
             Origem = EquipamentoOrigem.Locado,
         });
@@ -106,6 +127,7 @@ public class NotaFiscalEntradaServiceTests
         {
             TipoEquipamentoId = tipo.Id,
             Quantidade = 3,
+            RateioUa = Rateio(context, 3),
             ValorUnitario = 40m,
             Origem = EquipamentoOrigem.Comprado,
         });
@@ -122,7 +144,7 @@ public class NotaFiscalEntradaServiceTests
         var tipo = CriarTipo(context);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { TipoEquipamentoId = tipo.Id, Quantidade = 1, Origem = "Doado" }));
+            service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { TipoEquipamentoId = tipo.Id, Quantidade = 1, RateioUa = Rateio(context, 1), Origem = "Doado" }));
     }
 
     [Fact]
@@ -132,17 +154,17 @@ public class NotaFiscalEntradaServiceTests
         var tipo = CriarTipo(context);
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            service.AdicionarItemAsync(999, new CreateNotaFiscalItemDto { TipoEquipamentoId = tipo.Id, Quantidade = 1, Origem = EquipamentoOrigem.Comprado }));
+            service.AdicionarItemAsync(999, new CreateNotaFiscalItemDto { TipoEquipamentoId = tipo.Id, Quantidade = 1, RateioUa = Rateio(context, 1), Origem = EquipamentoOrigem.Comprado }));
     }
 
     [Fact]
     public async Task AdicionarItemAsync_DeveLancarNotFoundParaTipoEquipamentoInexistente()
     {
-        var (service, _) = CriarService();
+        var (service, context) = CriarService();
         var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-005", DataEntrada = Hoje });
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { TipoEquipamentoId = 999, Quantidade = 1, Origem = EquipamentoOrigem.Comprado }));
+            service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { TipoEquipamentoId = 999, Quantidade = 1, RateioUa = Rateio(context, 1), Origem = EquipamentoOrigem.Comprado }));
     }
 
     [Fact]
@@ -157,6 +179,7 @@ public class NotaFiscalEntradaServiceTests
             Destino = NotaFiscalItemDestino.Patrimonio,
             TipoPatrimonioId = tipo.Id,
             Quantidade = 4,
+            RateioUa = Rateio(context, 4),
         });
 
         var itens = await context.PatrimonioItens.Where(p => p.TipoPatrimonioId == tipo.Id).ToListAsync();
@@ -179,6 +202,7 @@ public class NotaFiscalEntradaServiceTests
             TipoPatrimonioId = tipo.Id,
             LocalId = local.Id,
             Quantidade = 2,
+            RateioUa = Rateio(context, 2),
         });
 
         Assert.Equal(local.Id, itemDto.LocalId);
@@ -189,11 +213,11 @@ public class NotaFiscalEntradaServiceTests
     [Fact]
     public async Task AdicionarItemAsync_ComDestinoPatrimonio_DeveExigirTipoPatrimonio()
     {
-        var (service, _) = CriarService();
+        var (service, context) = CriarService();
         var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-013", DataEntrada = Hoje });
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { Destino = NotaFiscalItemDestino.Patrimonio, Quantidade = 1 }));
+            service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { Destino = NotaFiscalItemDestino.Patrimonio, Quantidade = 1, RateioUa = Rateio(context, 1) }));
     }
 
     [Fact]
@@ -204,7 +228,7 @@ public class NotaFiscalEntradaServiceTests
         var tipo = CriarTipo(context);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { Destino = "Outro", TipoEquipamentoId = tipo.Id, Quantidade = 1, Origem = EquipamentoOrigem.Comprado }));
+            service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { Destino = "Outro", TipoEquipamentoId = tipo.Id, Quantidade = 1, RateioUa = Rateio(context, 1), Origem = EquipamentoOrigem.Comprado }));
     }
 
     [Fact]
@@ -218,6 +242,7 @@ public class NotaFiscalEntradaServiceTests
         {
             TipoEquipamentoId = tipo.Id,
             Quantidade = 1,
+            RateioUa = Rateio(context, 1),
             Origem = EquipamentoOrigem.Comprado,
         });
 
@@ -271,6 +296,7 @@ public class NotaFiscalEntradaServiceTests
         {
             TipoEquipamentoId = tipo.Id,
             Quantidade = 1,
+            RateioUa = Rateio(context, 1),
             Origem = EquipamentoOrigem.Comprado,
         });
 
@@ -284,7 +310,7 @@ public class NotaFiscalEntradaServiceTests
         var (service, context) = CriarService();
         var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-006", DataEntrada = Hoje });
         var tipo = CriarTipo(context);
-        await service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { TipoEquipamentoId = tipo.Id, Quantidade = 2, Origem = EquipamentoOrigem.Comprado });
+        await service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { TipoEquipamentoId = tipo.Id, Quantidade = 2, RateioUa = Rateio(context, 2), Origem = EquipamentoOrigem.Comprado });
 
         var detalhe = await service.GetByIdAsync(nota.Id);
 
@@ -299,8 +325,8 @@ public class NotaFiscalEntradaServiceTests
         var (service, context) = CriarService();
         var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-007", DataEntrada = Hoje });
         var tipo = CriarTipo(context);
-        await service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { TipoEquipamentoId = tipo.Id, Quantidade = 1, Origem = EquipamentoOrigem.Comprado });
-        await service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { TipoEquipamentoId = tipo.Id, Quantidade = 1, Origem = EquipamentoOrigem.Comprado });
+        await service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { TipoEquipamentoId = tipo.Id, Quantidade = 1, RateioUa = Rateio(context, 1), Origem = EquipamentoOrigem.Comprado });
+        await service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { TipoEquipamentoId = tipo.Id, Quantidade = 1, RateioUa = Rateio(context, 1), Origem = EquipamentoOrigem.Comprado });
 
         var lista = await service.GetAllAsync(new NotaFiscalEntradaFiltroDto());
 
@@ -366,5 +392,99 @@ public class NotaFiscalEntradaServiceTests
 
         var lista = await service.ListarAnexosAsync(nota.Id);
         Assert.Empty(lista);
+    }
+
+    [Fact]
+    public async Task AdicionarItemAsync_DeveExigirRateioDeUa()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-UA-1", DataEntrada = Hoje });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto { TipoEquipamentoId = tipo.Id, Quantidade = 2, Origem = EquipamentoOrigem.Comprado }));
+
+        Assert.Equal(0, await context.NotasFiscaisItens.CountAsync());
+        Assert.Equal(0, await context.Equipamentos.CountAsync());
+    }
+
+    [Fact]
+    public async Task AdicionarItemAsync_DeveRejeitarRateioComSomaDivergenteSemCriarNada()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-UA-2", DataEntrada = Hoje });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto
+            {
+                TipoEquipamentoId = tipo.Id,
+                Quantidade = 3,
+                Origem = EquipamentoOrigem.Comprado,
+                RateioUa = Rateio(context, 2),
+            }));
+
+        Assert.Equal(0, await context.NotasFiscaisItens.CountAsync());
+        Assert.Equal(0, await context.Equipamentos.CountAsync());
+    }
+
+    [Fact]
+    public async Task AdicionarItemAsync_DeveGravarRateioEmDuasUas()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-UA-3", DataEntrada = Hoje });
+        var uaA = Rateio(context, 1)[0].UnidadeOrcamentariaId;
+        var uaB = Rateio(context, 1)[0].UnidadeOrcamentariaId;
+
+        await service.AdicionarItemAsync(nota.Id, new CreateNotaFiscalItemDto
+        {
+            TipoEquipamentoId = tipo.Id,
+            Quantidade = 5,
+            Origem = EquipamentoOrigem.Comprado,
+            RateioUa =
+            [
+                new ItemRateioUaInputDto { UnidadeOrcamentariaId = uaA, Quantidade = 2 },
+                new ItemRateioUaInputDto { UnidadeOrcamentariaId = uaB, Quantidade = 3 },
+            ],
+        });
+
+        var detalhe = await service.GetByIdAsync(nota.Id);
+        var item = Assert.Single(detalhe.Itens);
+        Assert.Equal(2, item.RateioUa.Count);
+        Assert.Equal(5, item.RateioUa.Sum(r => r.Quantidade));
+        Assert.Equal(5, await context.Equipamentos.CountAsync());
+    }
+
+    [Fact]
+    public async Task DefinirRateioUaAsync_DeveRatearItemAntigoSemMexerNasUnidades()
+    {
+        var (service, context) = CriarService();
+        var tipo = CriarTipo(context);
+        var nota = await service.CreateAsync(new CreateNotaFiscalEntradaDto { Numero = "NF-UA-4", DataEntrada = Hoje });
+        var itemAntigo = new NotaFiscalItem
+        {
+            NotaFiscalEntradaId = nota.Id,
+            Destino = NotaFiscalItemDestino.Equipamento,
+            TipoEquipamentoId = tipo.Id,
+            Quantidade = 4,
+            Origem = EquipamentoOrigem.Comprado,
+            DataCriacao = Agora.UtcDateTime,
+        };
+        context.NotasFiscaisItens.Add(itemAntigo);
+        await context.SaveChangesAsync();
+        var ua = Rateio(context, 4)[0];
+
+        var item = await service.DefinirRateioUaAsync(nota.Id, itemAntigo.Id, new DefinirRateioUaDto { Itens = [ua] });
+
+        Assert.Single(item.RateioUa);
+        Assert.Equal(4, item.RateioUa[0].Quantidade);
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.DefinirRateioUaAsync(nota.Id, itemAntigo.Id, new DefinirRateioUaDto
+            {
+                Itens = [new ItemRateioUaInputDto { UnidadeOrcamentariaId = ua.UnidadeOrcamentariaId, Quantidade = 3 }],
+            }));
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.DefinirRateioUaAsync(nota.Id, 9999, new DefinirRateioUaDto { Itens = [ua] }));
     }
 }

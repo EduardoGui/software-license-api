@@ -8,6 +8,28 @@ namespace SoftwareLicense.Api.Services;
 // Regras comuns do rateio de UA por quantidade (itens de BM e de Ordem de Compra).
 public static class RateioUaValidador
 {
+    public static async Task ValidarPorValorAsync(
+        AppDbContext context, IReadOnlyList<ItemRateioUaValorInputDto> linhas, decimal valorTotal)
+    {
+        var idsUa = linhas.Select(i => i.UnidadeOrcamentariaId).ToList();
+        if (idsUa.Distinct().Count() != idsUa.Count)
+        {
+            throw new BusinessRuleException("Não é possível repetir a mesma UA no rateio.");
+        }
+
+        var unidadesExistentes = await context.UnidadesOrcamentarias.Where(u => idsUa.Contains(u.Id)).CountAsync();
+        if (unidadesExistentes != idsUa.Count)
+        {
+            throw new BusinessRuleException("Uma ou mais UAs informadas não existem.");
+        }
+
+        var soma = linhas.Sum(i => i.Valor);
+        if (soma != valorTotal)
+        {
+            throw new BusinessRuleException($"A soma do rateio ({soma:N2}) precisa ser igual ao valor da despesa ({valorTotal:N2}).");
+        }
+    }
+
     public static async Task ValidarPorQuantidadeAsync(
         AppDbContext context, IReadOnlyList<ItemRateioUaInputDto> linhas, decimal quantidadeDoItem, string descricaoDaQuantidade)
     {

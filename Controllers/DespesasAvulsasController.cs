@@ -45,6 +45,13 @@ public class DespesasAvulsasController : ControllerBase
         return Ok(despesa);
     }
 
+    [HttpPut("{id:int}/rateio-ua")]
+    public async Task<ActionResult<DespesaAvulsaDto>> DefinirRateioUa(int id, DefinirRateioUaValorDto dto)
+    {
+        var despesa = await _despesaAvulsaService.DefinirRateioUaAsync(id, dto);
+        return Ok(despesa);
+    }
+
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {

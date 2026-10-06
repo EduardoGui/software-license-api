@@ -23,4 +23,7 @@ public class CreateNotaFiscalItemDto
     public decimal? ValorUnitario { get; set; }
 
     public string? Origem { get; set; }
+
+    // Rateio de UA por quantidade (obrigatório, soma == Quantidade).
+    public List<ItemRateioUaInputDto> RateioUa { get; set; } = [];
 }

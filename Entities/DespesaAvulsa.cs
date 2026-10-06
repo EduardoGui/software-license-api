@@ -15,4 +15,6 @@ public class DespesaAvulsa
     public string? Observacoes { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
+
+    public List<DespesaAvulsaRateioUa> RateiosUa { get; set; } = [];
 }

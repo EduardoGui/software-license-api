@@ -16,4 +16,5 @@ public class NotaFiscalItemDto
     public decimal? ValorUnitario { get; set; }
     public string Origem { get; set; } = string.Empty;
     public DateTime DataCriacao { get; set; }
+    public List<NotaFiscalItemRateioUaDto> RateioUa { get; set; } = [];
 }

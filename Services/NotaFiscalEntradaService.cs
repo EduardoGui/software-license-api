@@ -52,6 +52,9 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
             .ThenInclude(i => i.TipoPatrimonio)
             .Include(n => n.Itens)
             .ThenInclude(i => i.Local)
+            .Include(n => n.Itens)
+            .ThenInclude(i => i.RateiosUa)
+            .ThenInclude(r => r.UnidadeOrcamentaria)
             .FirstOrDefaultAsync(n => n.Id == id);
 
         if (nota is null)
@@ -143,6 +146,8 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
 
         var origem = ValidarOrigem(dto.Origem);
 
+        await ValidarRateioDoItemAsync(dto);
+
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var item = new NotaFiscalItem
         {
@@ -154,6 +159,7 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
             ValorUnitario = dto.ValorUnitario,
             Origem = origem,
             DataCriacao = agora,
+            RateiosUa = MontarRateios(dto.RateioUa, agora),
         };
 
         _context.NotasFiscaisItens.Add(item);
@@ -213,6 +219,8 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
             }
         }
 
+        await ValidarRateioDoItemAsync(dto);
+
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var item = new NotaFiscalItem
         {
@@ -225,6 +233,7 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
             ValorUnitario = dto.ValorUnitario,
             Origem = EquipamentoOrigem.Comprado,
             DataCriacao = agora,
+            RateiosUa = MontarRateios(dto.RateioUa, agora),
         };
 
         _context.NotasFiscaisItens.Add(item);
@@ -256,6 +265,53 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
         item.Local = local;
         return ParaItemDto(item);
     }
+
+    public async Task<NotaFiscalItemDto> DefinirRateioUaAsync(int notaFiscalEntradaId, int itemId, DefinirRateioUaDto dto)
+    {
+        await BuscarNotaOuFalhar(notaFiscalEntradaId);
+
+        var item = await _context.NotasFiscaisItens
+            .Include(i => i.RateiosUa)
+            .FirstOrDefaultAsync(i => i.Id == itemId && i.NotaFiscalEntradaId == notaFiscalEntradaId)
+            ?? throw new BusinessRuleException($"Item {itemId} não pertence a esta nota fiscal.");
+
+        await RateioUaValidador.ValidarPorQuantidadeAsync(_context, dto.Itens, item.Quantidade, "quantidade do item");
+
+        // Só o rateio muda: as unidades (equipamentos/patrimônio) já geradas pelo item não são tocadas.
+        _context.NotaFiscalItemRateiosUa.RemoveRange(item.RateiosUa);
+        item.RateiosUa = MontarRateios(dto.Itens, _timeProvider.GetUtcNow().UtcDateTime);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Rateio de UA do item {NotaFiscalItemId} da nota fiscal {NotaFiscalEntradaId} definido", itemId, notaFiscalEntradaId);
+
+        var atualizado = await _context.NotasFiscaisItens
+            .Include(i => i.TipoEquipamento)
+            .Include(i => i.TipoPatrimonio)
+            .Include(i => i.Local)
+            .Include(i => i.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
+            .FirstAsync(i => i.Id == itemId);
+
+        return ParaItemDto(atualizado);
+    }
+
+    // A UA é obrigatória ao adicionar o item; validada antes de qualquer gravação (o item gera unidades).
+    private async Task ValidarRateioDoItemAsync(CreateNotaFiscalItemDto dto)
+    {
+        if (dto.RateioUa is null || dto.RateioUa.Count == 0)
+        {
+            throw new BusinessRuleException("Defina a UA do item (rateio por quantidade).");
+        }
+
+        await RateioUaValidador.ValidarPorQuantidadeAsync(_context, dto.RateioUa, dto.Quantidade, "quantidade do item");
+    }
+
+    private static List<NotaFiscalItemRateioUa> MontarRateios(IEnumerable<ItemRateioUaInputDto> linhas, DateTime agora) =>
+        linhas.Select(r => new NotaFiscalItemRateioUa
+        {
+            UnidadeOrcamentariaId = r.UnidadeOrcamentariaId,
+            Quantidade = r.Quantidade,
+            DataCriacao = agora,
+        }).ToList();
 
     public async Task<List<AnexoDto>> ListarAnexosAsync(int notaFiscalEntradaId)
     {
@@ -404,6 +460,13 @@ public class NotaFiscalEntradaService : INotaFiscalEntradaService
             ValorUnitario = i.ValorUnitario,
             Origem = i.Origem,
             DataCriacao = i.DataCriacao,
+            RateioUa = i.RateiosUa.Select(r => new NotaFiscalItemRateioUaDto
+            {
+                UnidadeOrcamentariaId = r.UnidadeOrcamentariaId,
+                UnidadeOrcamentariaCodigo = r.UnidadeOrcamentaria?.Codigo ?? string.Empty,
+                UnidadeOrcamentariaDescricao = r.UnidadeOrcamentaria?.Descricao ?? string.Empty,
+                Quantidade = r.Quantidade,
+            }).ToList(),
         };
     }
 }

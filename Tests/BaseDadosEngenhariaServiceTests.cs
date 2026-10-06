@@ -444,6 +444,28 @@ public class BaseDadosEngenhariaServiceTests
     }
 
     [Fact]
+    public async Task GerarAsync_DeveSerializarNumeroDoDocumentoEGravarNoExcel()
+    {
+        var (service, context) = CriarService();
+        var contrato = CriarContrato(context);
+        CriarItem(context, CriarBm(context, contrato, 3, new DateOnly(2026, 9, 1)), "Hora técnica", 5m);
+        CriarItemOrdem(context, CriarOrdem(context, 12, new DateOnly(2026, 10, 1)), "Cimento", 1m, 10m);
+
+        var relatorio = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto());
+
+        var json = System.Text.Json.JsonSerializer.Serialize(relatorio, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.Contains("\"numeroDocumento\":3", json);
+        Assert.Contains("\"numeroDocumento\":12", json);
+
+        using var stream = new MemoryStream(service.GerarExcel(relatorio));
+        using var workbook = new ClosedXML.Excel.XLWorkbook(stream);
+        var planilha = workbook.Worksheet(1);
+        Assert.Equal("Nº documento", planilha.Cell(1, 3).GetString());
+        Assert.Equal(3, planilha.Cell(2, 3).GetValue<int>());
+        Assert.Equal(12, planilha.Cell(3, 3).GetValue<int>());
+    }
+
+    [Fact]
     public async Task GerarAsync_DeveRejeitarOrigemInvalida()
     {
         var (service, _) = CriarService();
@@ -466,5 +488,194 @@ public class BaseDadosEngenhariaServiceTests
 
         Assert.NotEmpty(arquivo);
         Assert.Equal(2, relatorio.Linhas.Count);
+    }
+
+    private static Fornecedor CriarFornecedorSimples(AppDbContext context, string nome = "Forn Avulso")
+    {
+        var fornecedor = new Fornecedor { Nome = nome, Cnpj = "11.111.111/0001-11", DataCriacao = Agora, DataAtualizacao = Agora };
+        context.Fornecedores.Add(fornecedor);
+        context.SaveChanges();
+        return fornecedor;
+    }
+
+    private static DespesaAvulsa CriarDespesa(
+        AppDbContext context, Fornecedor fornecedor, decimal valor, DateOnly? emissao, string? numeroNf = null, string descricao = "Assinatura")
+    {
+        var despesa = new DespesaAvulsa
+        {
+            FornecedorId = fornecedor.Id,
+            Categoria = "Servicos",
+            Descricao = descricao,
+            NumeroNf = numeroNf,
+            DataEmissao = emissao,
+            Valor = valor,
+            DataCriacao = Agora,
+            DataAtualizacao = Agora,
+        };
+        context.DespesasAvulsas.Add(despesa);
+        context.SaveChanges();
+        return despesa;
+    }
+
+    [Fact]
+    public async Task GerarAsync_DespesaAvulsaRateadaPorValor_DeveGerarLinhaPorUaComValorRateado()
+    {
+        var (service, context) = CriarService();
+        var despesa = CriarDespesa(context, CriarFornecedorSimples(context), 100m, new DateOnly(2026, 10, 2), "NF-77");
+        var ua1 = CriarUa(context, "UA-01");
+        var ua2 = CriarUa(context, "UA-02");
+        context.DespesaAvulsaRateiosUa.AddRange(
+            new DespesaAvulsaRateioUa { DespesaAvulsaId = despesa.Id, UnidadeOrcamentariaId = ua1.Id, Valor = 30m, DataCriacao = Agora },
+            new DespesaAvulsaRateioUa { DespesaAvulsaId = despesa.Id, UnidadeOrcamentariaId = ua2.Id, Valor = 70m, DataCriacao = Agora });
+        context.SaveChanges();
+
+        var resultado = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto { Origem = BaseDadosOrigem.DespesaAvulsa });
+
+        Assert.Equal(2, resultado.Linhas.Count);
+        Assert.Equal([30m, 70m], resultado.Linhas.Select(l => l.ValorUa).ToArray());
+        Assert.All(resultado.Linhas, l =>
+        {
+            Assert.Equal(BaseDadosOrigem.DespesaAvulsa, l.Origem);
+            Assert.Equal(despesa.Id, l.NumeroDocumento);
+            Assert.Equal("Servicos", l.NumeroReferencia);
+            Assert.Equal("Assinatura", l.ItemDescricao);
+            Assert.Null(l.QuantidadeUa);
+            Assert.Null(l.ValorUnitario);
+            Assert.Equal(100m, l.ValorTotalBm);
+            Assert.Equal("Registrada", l.Status);
+            Assert.Equal("NF-77", l.NfNumero);
+            Assert.Equal(new DateOnly(2026, 10, 2), l.NfDataEmissao);
+        });
+    }
+
+    [Fact]
+    public async Task GerarAsync_DespesaAvulsa_DeveUsarObrigacaoParaNfEStatusESemUaAparecer()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedorSimples(context);
+        var paga = CriarDespesa(context, fornecedor, 50m, new DateOnly(2026, 9, 1), "NF-DESP");
+        context.Obrigacoes.Add(new Obrigacao
+        {
+            TipoMovimento = "DespesaAvulsa",
+            DespesaAvulsaId = paga.Id,
+            FornecedorId = fornecedor.Id,
+            Competencia = new DateOnly(2026, 9, 1),
+            ValorPrevisto = 50m,
+            DataNf = new DateOnly(2026, 9, 5),
+            NumeroNf = "NF-OBRIG",
+            ValorNota = 48m,
+            Pago = true,
+            DataCriacao = Agora,
+            DataAtualizacao = Agora,
+        });
+        CriarDespesa(context, fornecedor, 20m, null, descricao: "Sem data");
+        context.SaveChanges();
+
+        var resultado = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto { Origem = BaseDadosOrigem.DespesaAvulsa });
+
+        Assert.Equal(2, resultado.Linhas.Count);
+        var linhaPaga = resultado.Linhas.Single(l => l.NumeroDocumento == paga.Id);
+        Assert.Equal("Paga", linhaPaga.Status);
+        Assert.Equal("NF-OBRIG", linhaPaga.NfNumero);
+        Assert.Equal(48m, linhaPaga.NfValorTotal);
+        Assert.Null(linhaPaga.CodigoUa);
+        var semData = resultado.Linhas.Single(l => l.NumeroDocumento != paga.Id);
+        Assert.Equal(DateOnly.FromDateTime(Agora), semData.PeriodoInicio);
+
+        var soPagas = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto { Origem = BaseDadosOrigem.DespesaAvulsa, Status = "Paga" });
+        Assert.Single(soPagas.Linhas);
+        var porData = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto
+        {
+            Origem = BaseDadosOrigem.DespesaAvulsa,
+            De = new DateOnly(2026, 9, 1),
+            Ate = new DateOnly(2026, 9, 30),
+        });
+        Assert.Equal(paga.Id, Assert.Single(porData.Linhas).NumeroDocumento);
+    }
+
+    [Fact]
+    public async Task GerarAsync_NotaFiscalEntrada_DeveGerarLinhaPorUaComNfDaPropriaNota()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedorSimples(context, "Brain");
+        var tipo = new TipoEquipamento { Nome = "Notebook", Ativo = true, DataCriacao = Agora, DataAtualizacao = Agora };
+        var nota = new NotaFiscalEntrada
+        {
+            Numero = "NF-9001", DataEntrada = new DateOnly(2026, 10, 4), FornecedorId = fornecedor.Id, DataCriacao = Agora, DataAtualizacao = Agora,
+        };
+        var item = new NotaFiscalItem
+        {
+            NotaFiscalEntrada = nota,
+            Destino = NotaFiscalItemDestino.Equipamento,
+            TipoEquipamento = tipo,
+            Quantidade = 5,
+            ValorUnitario = 100m,
+            Origem = EquipamentoOrigem.Comprado,
+            DataCriacao = Agora,
+        };
+        var itemSemValor = new NotaFiscalItem
+        {
+            NotaFiscalEntrada = nota,
+            Destino = NotaFiscalItemDestino.Equipamento,
+            TipoEquipamento = tipo,
+            Descricao = "Mouse",
+            Quantidade = 2,
+            Origem = EquipamentoOrigem.Comprado,
+            DataCriacao = Agora.AddMinutes(1),
+        };
+        context.NotasFiscaisItens.AddRange(item, itemSemValor);
+        context.SaveChanges();
+        var ua1 = CriarUa(context, "UA-01");
+        var ua2 = CriarUa(context, "UA-02");
+        context.NotaFiscalItemRateiosUa.AddRange(
+            new NotaFiscalItemRateioUa { NotaFiscalItemId = item.Id, UnidadeOrcamentariaId = ua1.Id, Quantidade = 2, DataCriacao = Agora },
+            new NotaFiscalItemRateioUa { NotaFiscalItemId = item.Id, UnidadeOrcamentariaId = ua2.Id, Quantidade = 3, DataCriacao = Agora },
+            new NotaFiscalItemRateioUa { NotaFiscalItemId = itemSemValor.Id, UnidadeOrcamentariaId = ua1.Id, Quantidade = 2, DataCriacao = Agora });
+        context.SaveChanges();
+
+        var resultado = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto { Origem = BaseDadosOrigem.NotaFiscalEntrada });
+
+        Assert.Equal(3, resultado.Linhas.Count);
+        Assert.All(resultado.Linhas, l =>
+        {
+            Assert.Equal(BaseDadosOrigem.NotaFiscalEntrada, l.Origem);
+            Assert.Equal("NF-9001", l.NumeroReferencia);
+            Assert.Equal("NF-9001", l.NfNumero);
+            Assert.Equal(new DateOnly(2026, 10, 4), l.NfDataEmissao);
+            Assert.Equal(500m, l.ValorTotalBm);
+            Assert.Equal(500m, l.NfValorTotal);
+            Assert.Equal("Brain", l.FornecedorNome);
+            Assert.Equal("Recebida", l.Status);
+        });
+        Assert.Equal([200m, 300m, null], resultado.Linhas.Select(l => l.ValorUa).ToArray());
+        Assert.Equal("Notebook", resultado.Linhas[0].ItemDescricao);
+        Assert.Equal("Mouse", resultado.Linhas[2].ItemDescricao);
+        Assert.Equal(2m, resultado.Linhas[2].QuantidadeUa);
+
+        var statusIncompativel = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto
+        {
+            Origem = BaseDadosOrigem.NotaFiscalEntrada,
+            Status = "Emitida",
+        });
+        Assert.Empty(statusIncompativel.Linhas);
+    }
+
+    [Fact]
+    public async Task GerarAsync_NotaFiscalEntradaSemFornecedorNemItens_DeveAparecer()
+    {
+        var (service, context) = CriarService();
+        context.NotasFiscaisEntrada.Add(new NotaFiscalEntrada
+        {
+            Numero = "NF-VAZIA", DataEntrada = new DateOnly(2026, 10, 4), DataCriacao = Agora, DataAtualizacao = Agora,
+        });
+        context.SaveChanges();
+
+        var resultado = await service.GerarAsync(new BaseDadosEngenhariaFiltroDto());
+
+        var linha = Assert.Single(resultado.Linhas);
+        Assert.Equal(BaseDadosOrigem.NotaFiscalEntrada, linha.Origem);
+        Assert.Equal(string.Empty, linha.FornecedorNome);
+        Assert.Null(linha.ItemDescricao);
+        Assert.Equal(0m, linha.ValorTotalBm);
     }
 }

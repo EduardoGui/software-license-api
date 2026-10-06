@@ -45,6 +45,13 @@ public class NotasFiscaisEntradaController : ControllerBase
         return Ok(item);
     }
 
+    [HttpPut("{id:int}/itens/{itemId:int}/rateio-ua")]
+    public async Task<ActionResult<NotaFiscalItemDto>> DefinirRateioUa(int id, int itemId, DefinirRateioUaDto dto)
+    {
+        var item = await _notaFiscalEntradaService.DefinirRateioUaAsync(id, itemId, dto);
+        return Ok(item);
+    }
+
     [HttpGet("{id:int}/anexos")]
     public async Task<ActionResult<List<AnexoDto>>> ListarAnexos(int id)
     {
