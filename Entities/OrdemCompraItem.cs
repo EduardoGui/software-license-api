@@ -13,4 +13,8 @@ public class OrdemCompraItem
     public decimal ValorUnitario { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
+
+    // Nulo = rateio de UA ainda não definido (bloqueia a emissão da OC).
+    public string? MetodoRateioUa { get; set; }
+    public List<OrdemCompraItemRateioUa> RateiosUa { get; set; } = [];
 }

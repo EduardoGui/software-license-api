@@ -4,6 +4,9 @@ namespace SoftwareLicense.Api.DTOs;
 
 public class CreateOrdemCompraItemDto
 {
+    // Só usado na edição: item existente a ser atualizado (preserva o rateio de UA); vazio = item novo.
+    public int? Id { get; set; }
+
     [MaxLength(50)]
     public string? Codigo { get; set; }
 

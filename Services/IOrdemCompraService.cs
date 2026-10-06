@@ -11,6 +11,7 @@ public interface IOrdemCompraService
     Task<OrdemCompraDto> EmitirAsync(int id);
     Task<OrdemCompraDto> MarcarAssinadaAsync(int id);
     Task<OrdemCompraDto> CancelarAsync(int id);
+    Task<OrdemCompraItemDto> DefinirRateioUaAsync(int id, int itemId, DefinirRateioUaDto dto);
     Task<byte[]> GerarPdfAsync(int id);
     Task<List<AnexoDto>> ListarAnexosAsync(int ordemCompraId);
     Task<AnexoDto> AdicionarAnexoAsync(int ordemCompraId, AdicionarAnexoDto dto);

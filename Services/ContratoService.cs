@@ -774,24 +774,7 @@ public class ContratoService : IContratoService
         var item = medicao.Itens.FirstOrDefault(i => i.Id == itemId)
             ?? throw new BusinessRuleException($"Item {itemId} não pertence a este BM.");
 
-        var idsUa = dto.Itens.Select(i => i.UnidadeOrcamentariaId).ToList();
-        if (idsUa.Distinct().Count() != idsUa.Count)
-        {
-            throw new BusinessRuleException("Não é possível repetir a mesma UA no rateio do item.");
-        }
-
-        var unidadesExistentes = await _context.UnidadesOrcamentarias.Where(u => idsUa.Contains(u.Id)).CountAsync();
-        if (unidadesExistentes != idsUa.Count)
-        {
-            throw new BusinessRuleException("Uma ou mais UAs informadas não existem.");
-        }
-
-        var somaQuantidade = dto.Itens.Sum(i => i.Quantidade);
-        if (somaQuantidade != item.QuantidadeMedidaNestaBm)
-        {
-            throw new BusinessRuleException(
-                $"A soma do rateio ({somaQuantidade}) precisa ser igual à quantidade medida do item ({item.QuantidadeMedidaNestaBm}).");
-        }
+        await RateioUaValidador.ValidarPorQuantidadeAsync(_context, dto.Itens, item.QuantidadeMedidaNestaBm, "quantidade medida do item");
 
         _context.MedicaoBmItemRateiosUa.RemoveRange(item.RateiosUa);
         var agora = _timeProvider.GetUtcNow().UtcDateTime;

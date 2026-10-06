@@ -11,4 +11,6 @@ public class OrdemCompraItemDto
     public decimal Quantidade { get; set; }
     public decimal ValorUnitario { get; set; }
     public decimal ValorTotal { get; set; }
+    public string? MetodoRateioUa { get; set; }
+    public List<OrdemCompraItemRateioUaDto> RateioUa { get; set; } = [];
 }

@@ -170,18 +170,7 @@ public class OrdemCompraService : IOrdemCompraService
         ordemCompra.ContatoAprovacaoEmail = dto.ContatoAprovacaoEmail?.Trim();
         ordemCompra.DataAtualizacao = agora;
 
-        _context.OrdemCompraItens.RemoveRange(ordemCompra.Itens);
-        ordemCompra.Itens = dto.Itens.Select(i => new OrdemCompraItem
-        {
-            Codigo = i.Codigo?.Trim(),
-            Descricao = i.Descricao.Trim(),
-            Unidade = i.Unidade.Trim(),
-            MarcaReferencia = i.MarcaReferencia?.Trim(),
-            Quantidade = i.Quantidade,
-            ValorUnitario = i.ValorUnitario,
-            DataCriacao = agora,
-            DataAtualizacao = agora,
-        }).ToList();
+        SincronizarItens(ordemCompra, dto.Itens, agora);
 
         var obrigacao = await _context.Obrigacoes.FirstOrDefaultAsync(o => o.OrdemCompraId == id);
         if (obrigacao is not null)
@@ -208,6 +197,11 @@ public class OrdemCompraService : IOrdemCompraService
         if (ordemCompra.Status != OrdemCompraStatus.Rascunho)
         {
             throw new BusinessRuleException("Só é possível emitir uma Ordem de Compra em Rascunho.");
+        }
+
+        if (ordemCompra.Itens.Any(i => i.RateiosUa.Count == 0))
+        {
+            throw new BusinessRuleException("Defina a UA de todos os itens antes de emitir a Ordem de Compra.");
         }
 
         ordemCompra.Status = OrdemCompraStatus.Emitida;
@@ -261,6 +255,42 @@ public class OrdemCompraService : IOrdemCompraService
         _logger.LogInformation("Ordem de Compra {OrdemCompraId} cancelada", ordemCompra.Id);
 
         return ParaDto(ordemCompra);
+    }
+
+    public async Task<OrdemCompraItemDto> DefinirRateioUaAsync(int id, int itemId, DefinirRateioUaDto dto)
+    {
+        var ordemCompra = await BuscarComItensOuFalhar(id);
+
+        if (ordemCompra.Status == OrdemCompraStatus.Cancelada)
+        {
+            throw new BusinessRuleException("Não é possível alterar o rateio de UA de uma Ordem de Compra cancelada.");
+        }
+
+        var item = ordemCompra.Itens.FirstOrDefault(i => i.Id == itemId)
+            ?? throw new BusinessRuleException($"Item {itemId} não pertence a esta Ordem de Compra.");
+
+        await RateioUaValidador.ValidarPorQuantidadeAsync(_context, dto.Itens, item.Quantidade, "quantidade do item");
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        _context.OrdemCompraItemRateiosUa.RemoveRange(item.RateiosUa);
+        item.MetodoRateioUa = MetodoRateioUa.Quantidade;
+        item.RateiosUa = dto.Itens.Select(r => new OrdemCompraItemRateioUa
+        {
+            UnidadeOrcamentariaId = r.UnidadeOrcamentariaId,
+            Quantidade = r.Quantidade,
+            DataCriacao = agora,
+        }).ToList();
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Rateio de UA do item {ItemId} da Ordem de Compra {OrdemCompraId} definido", itemId, id);
+
+        // Recarrega para trazer código/descrição das UAs recém-vinculadas.
+        var itemAtualizado = await _context.OrdemCompraItens
+            .Include(i => i.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
+            .FirstAsync(i => i.Id == itemId);
+
+        return ParaItemDto(itemAtualizado);
     }
 
     public async Task<byte[]> GerarPdfAsync(int id)
@@ -359,7 +389,7 @@ public class OrdemCompraService : IOrdemCompraService
         var ordemCompra = await _context.OrdensCompra
             .Include(o => o.Fornecedor)
             .Include(o => o.Local)
-            .Include(o => o.Itens)
+            .Include(o => o.Itens).ThenInclude(i => i.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
             .FirstOrDefaultAsync(o => o.Id == id);
 
         if (ordemCompra is null)
@@ -425,7 +455,63 @@ public class OrdemCompraService : IOrdemCompraService
         Quantidade = i.Quantidade,
         ValorUnitario = i.ValorUnitario,
         ValorTotal = i.Quantidade * i.ValorUnitario,
+        MetodoRateioUa = i.MetodoRateioUa,
+        RateioUa = i.RateiosUa.Select(r => new OrdemCompraItemRateioUaDto
+        {
+            UnidadeOrcamentariaId = r.UnidadeOrcamentariaId,
+            UnidadeOrcamentariaCodigo = r.UnidadeOrcamentaria.Codigo,
+            UnidadeOrcamentariaDescricao = r.UnidadeOrcamentaria.Descricao,
+            Quantidade = r.Quantidade,
+        }).ToList(),
     };
+
+    // Atualiza os itens por Id (itens existentes preservam o rateio de UA, exceto se a quantidade mudar);
+    // itens sem Id são criados e os que não vieram no payload são removidos.
+    private void SincronizarItens(OrdemCompra ordemCompra, List<CreateOrdemCompraItemDto> itensDto, DateTime agora)
+    {
+        var idsEnviados = itensDto.Where(i => i.Id is not null).Select(i => i.Id!.Value).ToList();
+        if (idsEnviados.Distinct().Count() != idsEnviados.Count)
+        {
+            throw new BusinessRuleException("O mesmo item foi enviado mais de uma vez.");
+        }
+
+        var idsDaOrdem = ordemCompra.Itens.Select(i => i.Id).ToHashSet();
+        if (idsEnviados.Any(itemId => !idsDaOrdem.Contains(itemId)))
+        {
+            throw new BusinessRuleException("Um dos itens informados não pertence a esta Ordem de Compra.");
+        }
+
+        foreach (var removido in ordemCompra.Itens.Where(i => !idsEnviados.Contains(i.Id)).ToList())
+        {
+            _context.OrdemCompraItemRateiosUa.RemoveRange(removido.RateiosUa);
+            _context.OrdemCompraItens.Remove(removido);
+            ordemCompra.Itens.Remove(removido);
+        }
+
+        foreach (var dtoItem in itensDto)
+        {
+            var item = dtoItem.Id is null ? null : ordemCompra.Itens.First(i => i.Id == dtoItem.Id);
+            if (item is null)
+            {
+                item = new OrdemCompraItem { DataCriacao = agora };
+                ordemCompra.Itens.Add(item);
+            }
+            else if (item.Quantidade != dtoItem.Quantidade && item.RateiosUa.Count > 0)
+            {
+                _context.OrdemCompraItemRateiosUa.RemoveRange(item.RateiosUa);
+                item.RateiosUa = [];
+                item.MetodoRateioUa = null;
+            }
+
+            item.Codigo = dtoItem.Codigo?.Trim();
+            item.Descricao = dtoItem.Descricao.Trim();
+            item.Unidade = dtoItem.Unidade.Trim();
+            item.MarcaReferencia = dtoItem.MarcaReferencia?.Trim();
+            item.Quantidade = dtoItem.Quantidade;
+            item.ValorUnitario = dtoItem.ValorUnitario;
+            item.DataAtualizacao = agora;
+        }
+    }
 
     private byte[] GerarPdfDocumento(OrdemCompra o)
     {

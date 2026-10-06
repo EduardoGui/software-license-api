@@ -45,6 +45,13 @@ public class OrdensCompraController : ControllerBase
         return Ok(ordemCompra);
     }
 
+    [HttpPut("{id:int}/itens/{itemId:int}/rateio-ua")]
+    public async Task<ActionResult<OrdemCompraItemDto>> DefinirRateioUa(int id, int itemId, DefinirRateioUaDto dto)
+    {
+        var item = await _ordemCompraService.DefinirRateioUaAsync(id, itemId, dto);
+        return Ok(item);
+    }
+
     [HttpPatch("{id:int}/emitir")]
     public async Task<ActionResult<OrdemCompraDto>> Emitir(int id)
     {

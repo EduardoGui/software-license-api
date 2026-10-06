@@ -69,6 +69,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<MedicaoBmImposto> MedicaoBmImpostos => Set<MedicaoBmImposto>();
     public DbSet<OrdemCompra> OrdensCompra => Set<OrdemCompra>();
     public DbSet<OrdemCompraItem> OrdemCompraItens => Set<OrdemCompraItem>();
+    public DbSet<OrdemCompraItemRateioUa> OrdemCompraItemRateiosUa => Set<OrdemCompraItemRateioUa>();
     public DbSet<OrdemCompraAnexo> OrdemCompraAnexos => Set<OrdemCompraAnexo>();
     public DbSet<DespesaAvulsa> DespesasAvulsas => Set<DespesaAvulsa>();
     public DbSet<DespesaAvulsaAnexo> DespesaAvulsaAnexos => Set<DespesaAvulsaAnexo>();
@@ -469,8 +470,17 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(i => i.MarcaReferencia).HasMaxLength(100);
             entity.Property(i => i.Quantidade).HasPrecision(18, 6);
             entity.Property(i => i.ValorUnitario).HasPrecision(18, 2);
+            entity.Property(i => i.MetodoRateioUa).HasMaxLength(20);
             entity.HasIndex(i => i.OrdemCompraId);
             entity.HasOne(i => i.OrdemCompra).WithMany(o => o.Itens).HasForeignKey(i => i.OrdemCompraId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<OrdemCompraItemRateioUa>(entity =>
+        {
+            entity.Property(r => r.Quantidade).HasPrecision(18, 6);
+            entity.HasIndex(r => new { r.OrdemCompraItemId, r.UnidadeOrcamentariaId }).IsUnique();
+            entity.HasOne(r => r.OrdemCompraItem).WithMany(i => i.RateiosUa).HasForeignKey(r => r.OrdemCompraItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(r => r.UnidadeOrcamentaria).WithMany().HasForeignKey(r => r.UnidadeOrcamentariaId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<OrdemCompraAnexo>(entity =>
