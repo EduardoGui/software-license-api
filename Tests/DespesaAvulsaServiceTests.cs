@@ -42,6 +42,7 @@ public class DespesaAvulsaServiceTests
             Categoria = DespesaAvulsaCategoria.Outros,
             Descricao = "Teste",
             Valor = 100m,
+            RateioUa = await RateioUnicoAsync(context, 100m),
         });
 
         await service.DeleteAsync(despesa.Id);
@@ -61,6 +62,7 @@ public class DespesaAvulsaServiceTests
             Categoria = DespesaAvulsaCategoria.Outros,
             Descricao = "Teste",
             Valor = 100m,
+            RateioUa = await RateioUnicoAsync(context, 100m),
         });
         await service.AdicionarAnexoAsync(despesa.Id, new AdicionarAnexoDto
         {
@@ -84,6 +86,7 @@ public class DespesaAvulsaServiceTests
             Categoria = DespesaAvulsaCategoria.Outros,
             Descricao = "Teste",
             Valor = 100m,
+            RateioUa = await RateioUnicoAsync(context, 100m),
         });
         var obrigacao = await context.Obrigacoes.FirstAsync(o => o.DespesaAvulsaId == despesa.Id);
         obrigacao.Pago = true;
@@ -103,6 +106,24 @@ public class DespesaAvulsaServiceTests
         return (ua1.Id, ua2.Id);
     }
 
+    // Rateio de todo o valor em uma UA "padrão" (a UA agora é obrigatória ao criar a despesa).
+    private static async Task<List<ItemRateioUaValorInputDto>> RateioUnicoAsync(AppDbContext context, decimal valor)
+    {
+        var ua = await context.UnidadesOrcamentarias.FirstOrDefaultAsync(u => u.Codigo == "UA-PADRAO");
+        if (ua is null)
+        {
+            var setor = new Setor { Nome = "Setor padrão", DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+            ua = new UnidadeOrcamentaria
+            {
+                Setor = setor, Codigo = "UA-PADRAO", Descricao = "UA padrão", DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime,
+            };
+            context.UnidadesOrcamentarias.Add(ua);
+            await context.SaveChangesAsync();
+        }
+
+        return [new ItemRateioUaValorInputDto { UnidadeOrcamentariaId = ua.Id, Valor = valor }];
+    }
+
     private static DefinirRateioUaValorDto RateioPorValor(params (int UaId, decimal Valor)[] linhas) => new()
     {
         Itens = linhas.Select(l => new ItemRateioUaValorInputDto { UnidadeOrcamentariaId = l.UaId, Valor = l.Valor }).ToList(),
@@ -117,7 +138,38 @@ public class DespesaAvulsaServiceTests
             Categoria = DespesaAvulsaCategoria.Outros,
             Descricao = "Teste",
             Valor = valor,
+            RateioUa = await RateioUnicoAsync(context, valor),
         });
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveExigirRateioDeUaComSomaIgualAoValorSemCriarNada()
+    {
+        var service = CriarService(out var context);
+        var fornecedorId = await CriarFornecedorAsync(context);
+        var (ua1, ua2) = await CriarDuasUasAsync(context);
+
+        CreateDespesaAvulsaDto Dto(List<ItemRateioUaValorInputDto> rateio) => new()
+        {
+            FornecedorId = fornecedorId,
+            Categoria = DespesaAvulsaCategoria.Outros,
+            Descricao = "Teste",
+            Valor = 100m,
+            RateioUa = rateio,
+        };
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(Dto([])));
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(Dto(RateioPorValor((ua1, 99m)).Itens)));
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(Dto(RateioPorValor((ua1, 50m), (ua1, 50m)).Itens)));
+        Assert.Equal(0, await context.DespesasAvulsas.CountAsync());
+        Assert.Equal(0, await context.Obrigacoes.CountAsync());
+
+        var criada = await service.CreateAsync(Dto(RateioPorValor((ua1, 30m), (ua2, 70m)).Itens));
+
+        Assert.Equal(2, criada.RateioUa.Count);
+        Assert.Equal(100m, criada.RateioUa.Sum(r => r.Valor));
+        Assert.Equal(2, await context.DespesaAvulsaRateiosUa.CountAsync());
+        Assert.Equal(1, await context.Obrigacoes.CountAsync());
     }
 
     [Fact]

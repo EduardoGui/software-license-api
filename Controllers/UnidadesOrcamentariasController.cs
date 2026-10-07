@@ -24,6 +24,13 @@ public class UnidadesOrcamentariasController : ControllerBase
         return Ok(unidades);
     }
 
+    [HttpGet("usadas-por-fornecedor/{fornecedorId:int}")]
+    public async Task<ActionResult<List<UnidadeOrcamentariaUsadaDto>>> UsadasPorFornecedor(int fornecedorId)
+    {
+        var unidades = await _unidadeOrcamentariaService.ListarUsadasPorFornecedorAsync(fornecedorId);
+        return Ok(unidades);
+    }
+
     [HttpGet("{id:int}")]
     public async Task<ActionResult<UnidadeOrcamentariaDto>> GetById(int id)
     {

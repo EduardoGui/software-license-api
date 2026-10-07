@@ -84,6 +84,56 @@ public class UnidadeOrcamentariaService : IUnidadeOrcamentariaService
         .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
         .ToArray()).ToUpperInvariant();
 
+    // UAs ativas já usadas em rateios com o fornecedor (BM do contrato dele, OC, despesa avulsa e NF de entrada),
+    // das mais usadas / recentes para as menos, para facilitar a escolha da UA.
+    public async Task<List<UnidadeOrcamentariaUsadaDto>> ListarUsadasPorFornecedorAsync(int fornecedorId)
+    {
+        var usos = new List<(int UaId, DateTime Data)>();
+
+        usos.AddRange((await _context.MedicaoBmItemRateiosUa
+                .Where(r => r.MedicaoBmItem.MedicaoBm.Contrato.FornecedorId == fornecedorId)
+                .Select(r => new { r.UnidadeOrcamentariaId, r.DataCriacao }).ToListAsync())
+            .Select(x => (x.UnidadeOrcamentariaId, x.DataCriacao)));
+
+        usos.AddRange((await _context.OrdemCompraItemRateiosUa
+                .Where(r => r.OrdemCompraItem.OrdemCompra.FornecedorId == fornecedorId)
+                .Select(r => new { r.UnidadeOrcamentariaId, r.DataCriacao }).ToListAsync())
+            .Select(x => (x.UnidadeOrcamentariaId, x.DataCriacao)));
+
+        usos.AddRange((await _context.DespesaAvulsaRateiosUa
+                .Where(r => r.DespesaAvulsa.FornecedorId == fornecedorId)
+                .Select(r => new { r.UnidadeOrcamentariaId, r.DataCriacao }).ToListAsync())
+            .Select(x => (x.UnidadeOrcamentariaId, x.DataCriacao)));
+
+        usos.AddRange((await _context.NotaFiscalItemRateiosUa
+                .Where(r => r.NotaFiscalItem.NotaFiscalEntrada.FornecedorId == fornecedorId)
+                .Select(r => new { r.UnidadeOrcamentariaId, r.DataCriacao }).ToListAsync())
+            .Select(x => (x.UnidadeOrcamentariaId, x.DataCriacao)));
+
+        var agrupado = usos
+            .GroupBy(u => u.UaId)
+            .Select(g => new { UaId = g.Key, Usos = g.Count(), Ultimo = g.Max(x => x.Data) })
+            .ToList();
+
+        var ids = agrupado.Select(a => a.UaId).ToList();
+        var unidades = await _context.UnidadesOrcamentarias
+            .Where(u => ids.Contains(u.Id) && u.Ativa)
+            .ToDictionaryAsync(u => u.Id);
+
+        return agrupado
+            .Where(a => unidades.ContainsKey(a.UaId))
+            .OrderByDescending(a => a.Usos).ThenByDescending(a => a.Ultimo)
+            .Select(a => new UnidadeOrcamentariaUsadaDto
+            {
+                Id = a.UaId,
+                Codigo = unidades[a.UaId].Codigo,
+                Descricao = unidades[a.UaId].Descricao,
+                Usos = a.Usos,
+                UltimoUso = a.Ultimo,
+            })
+            .ToList();
+    }
+
     public async Task<UnidadeOrcamentariaDto> GetByIdAsync(int id)
     {
         var unidade = await BuscarOuFalhar(id);

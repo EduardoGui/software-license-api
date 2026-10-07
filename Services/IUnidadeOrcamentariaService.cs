@@ -8,4 +8,5 @@ public interface IUnidadeOrcamentariaService
     Task<UnidadeOrcamentariaDto> GetByIdAsync(int id);
     Task<UnidadeOrcamentariaDto> CreateAsync(CreateUnidadeOrcamentariaDto dto);
     Task<UnidadeOrcamentariaDto> UpdateAsync(int id, UpdateUnidadeOrcamentariaDto dto);
+    Task<List<UnidadeOrcamentariaUsadaDto>> ListarUsadasPorFornecedorAsync(int fornecedorId);
 }

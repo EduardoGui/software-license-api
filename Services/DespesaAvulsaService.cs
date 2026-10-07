@@ -75,9 +75,23 @@ public class DespesaAvulsaService : IDespesaAvulsaService
 
         ValidarCategoria(dto.Categoria);
 
+        // UA obrigatória ao criar: validada antes de qualquer gravação.
+        if (dto.RateioUa is null || dto.RateioUa.Count == 0)
+        {
+            throw new BusinessRuleException("Defina a UA da despesa (rateio por valor).");
+        }
+
+        await RateioUaValidador.ValidarPorValorAsync(_context, dto.RateioUa, dto.Valor);
+
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var despesa = new DespesaAvulsa
         {
+            RateiosUa = dto.RateioUa.Select(r => new DespesaAvulsaRateioUa
+            {
+                UnidadeOrcamentariaId = r.UnidadeOrcamentariaId,
+                Valor = r.Valor,
+                DataCriacao = agora,
+            }).ToList(),
             FornecedorId = dto.FornecedorId,
             Categoria = dto.Categoria,
             Descricao = dto.Descricao.Trim(),

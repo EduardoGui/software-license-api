@@ -28,4 +28,7 @@ public class CreateDespesaAvulsaDto
     public bool Recorrente { get; set; }
 
     public string? Observacoes { get; set; }
+
+    // Rateio de UA por valor, obrigatório ao criar (soma == Valor).
+    public List<ItemRateioUaValorInputDto> RateioUa { get; set; } = [];
 }

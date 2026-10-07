@@ -144,4 +144,44 @@ public class UnidadeOrcamentariaServiceTests
         Assert.Equal("HP.RH.2001", Assert.Single(comAsteriscos).Codigo);
         Assert.Equal("HP.RH.2002", Assert.Single(curingaNoMeio).Codigo);
     }
+
+    [Fact]
+    public async Task ListarUsadasPorFornecedorAsync_DeveListarUasUsadasComOFornecedorOrdenadasPorUso()
+    {
+        var (service, context) = CriarService();
+        var setor = CriarSetor(context);
+        var uaA = new UnidadeOrcamentaria { SetorId = setor.Id, Codigo = "HP.A.1", Descricao = "A", Ativa = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        var uaB = new UnidadeOrcamentaria { SetorId = setor.Id, Codigo = "HP.B.1", Descricao = "B", Ativa = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        var uaInativa = new UnidadeOrcamentaria { SetorId = setor.Id, Codigo = "HP.C.1", Descricao = "C", Ativa = false, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        var uaOutra = new UnidadeOrcamentaria { SetorId = setor.Id, Codigo = "HP.D.1", Descricao = "D", Ativa = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        var fornecedor = new Fornecedor { Nome = "Forn", DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        var outro = new Fornecedor { Nome = "Outro", DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
+        context.UnidadesOrcamentarias.AddRange(uaA, uaB, uaInativa, uaOutra);
+        context.Fornecedores.AddRange(fornecedor, outro);
+        context.SaveChanges();
+
+        DespesaAvulsa Despesa(Fornecedor f) => new()
+        {
+            FornecedorId = f.Id, Categoria = "Outros", Descricao = "x", Valor = 10m, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime,
+        };
+        var d1 = Despesa(fornecedor);
+        var d2 = Despesa(fornecedor);
+        var d3 = Despesa(outro);
+        context.DespesasAvulsas.AddRange(d1, d2, d3);
+        context.SaveChanges();
+        DespesaAvulsaRateioUa Rateio(DespesaAvulsa d, UnidadeOrcamentaria ua, int diasAtras) => new()
+        {
+            DespesaAvulsaId = d.Id, UnidadeOrcamentariaId = ua.Id, Valor = 10m, DataCriacao = Agora.UtcDateTime.AddDays(-diasAtras),
+        };
+        context.DespesaAvulsaRateiosUa.AddRange(
+            Rateio(d1, uaB, 10), Rateio(d2, uaB, 2), Rateio(d1, uaA, 1), Rateio(d2, uaInativa, 1), Rateio(d3, uaOutra, 1));
+        context.SaveChanges();
+
+        var usadas = await service.ListarUsadasPorFornecedorAsync(fornecedor.Id);
+
+        Assert.Equal(["HP.B.1", "HP.A.1"], usadas.Select(u => u.Codigo).ToArray());
+        Assert.Equal(2, usadas[0].Usos);
+        Assert.Equal(1, usadas[1].Usos);
+        Assert.Empty(await service.ListarUsadasPorFornecedorAsync(9999));
+    }
 }
