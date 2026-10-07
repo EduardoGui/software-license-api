@@ -25,7 +25,7 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
         _timeProvider = timeProvider;
     }
 
-    public async Task<SolicitacaoPagamentoDto> GerarAsync(int obrigacaoId, int? usuarioId, string? emailUsuario)
+    public async Task<SolicitacaoPagamentoDto> GerarAsync(int obrigacaoId, int? usuarioId)
     {
         var obrigacao = await BuscarObrigacaoAsync(obrigacaoId);
         var feriados = await _context.Feriados.Where(f => f.Ativo).Select(f => f.Data).ToListAsync();
@@ -34,7 +34,7 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
         var para = await EmailsAsync(TipoDestinatarioEmail.Para);
         var cc = await EmailsAsync(TipoDestinatarioEmail.Cc);
         var anexos = await ListarAnexosAsync(obrigacao);
-        var assinatura = await NomeDoUsuarioAsync(usuarioId, emailUsuario);
+        var assinatura = await NomeDoUsuarioAsync(usuarioId);
 
         var agora = HorarioBrasilia.Agora(_timeProvider);
         var hoje = DateOnly.FromDateTime(agora);
@@ -71,9 +71,9 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
         };
     }
 
-    public async Task<(byte[] Arquivo, string NomeArquivo)> GerarEmlAsync(int obrigacaoId, int? usuarioId, string? emailUsuario)
+    public async Task<(byte[] Arquivo, string NomeArquivo)> GerarEmlAsync(int obrigacaoId, int? usuarioId)
     {
-        var solicitacao = await GerarAsync(obrigacaoId, usuarioId, emailUsuario);
+        var solicitacao = await GerarAsync(obrigacaoId, usuarioId);
         var obrigacao = await BuscarObrigacaoAsync(obrigacaoId);
         var anexos = await CarregarAnexosComConteudoAsync(obrigacao);
 
@@ -171,7 +171,11 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
         sb.AppendLine("Qualquer dúvida, estou à disposição.");
         sb.AppendLine();
         sb.AppendLine("Atenciosamente,");
-        sb.AppendLine(assinatura);
+        if (!string.IsNullOrWhiteSpace(assinatura))
+        {
+            sb.AppendLine(assinatura);
+        }
+
         return sb.ToString();
     }
 
@@ -190,7 +194,7 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
         sb.Append(string.Join("<br>", dados.Select(d => $"<b>{H(d.Rotulo)}:</b> {H(d.Valor)}")));
         sb.Append("</p>");
         sb.Append("<p>Qualquer dúvida, estou à disposição.</p>");
-        sb.Append($"<p>Atenciosamente,<br>{H(assinatura)}</p>");
+        sb.Append(string.IsNullOrWhiteSpace(assinatura) ? "<p>Atenciosamente,</p>" : $"<p>Atenciosamente,<br>{H(assinatura)}</p>");
         sb.Append("</div>");
         return sb.ToString();
     }
@@ -235,18 +239,16 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
             .Select(e => e.Email)
             .ToListAsync();
 
-    private async Task<string> NomeDoUsuarioAsync(int? usuarioId, string? emailUsuario)
+    // Assinatura = nome do colaborador vinculado à conta. Sem vínculo, fica em branco (não usa o e-mail de login).
+    private async Task<string> NomeDoUsuarioAsync(int? usuarioId)
     {
-        if (usuarioId is not null)
+        if (usuarioId is null)
         {
-            var nome = await _context.Usuarios.AsNoTracking().Where(u => u.Id == usuarioId).Select(u => u.Nome).FirstOrDefaultAsync();
-            if (!string.IsNullOrWhiteSpace(nome))
-            {
-                return nome;
-            }
+            return string.Empty;
         }
 
-        return string.IsNullOrWhiteSpace(emailUsuario) ? string.Empty : emailUsuario;
+        var nome = await _context.Usuarios.AsNoTracking().Where(u => u.Id == usuarioId).Select(u => u.Nome).FirstOrDefaultAsync();
+        return string.IsNullOrWhiteSpace(nome) ? string.Empty : nome;
     }
 
     // Anexos da própria origem (sem trazer o conteúdo binário).

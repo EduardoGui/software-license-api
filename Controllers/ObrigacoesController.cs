@@ -44,14 +44,14 @@ public class ObrigacoesController : ControllerBase
     [HttpGet("{id:int}/solicitacao-pagamento")]
     public async Task<ActionResult<SolicitacaoPagamentoDto>> SolicitacaoPagamento(int id)
     {
-        var solicitacao = await _solicitacaoPagamentoService.GerarAsync(id, User.ObterUsuarioId(), EmailDoUsuario());
+        var solicitacao = await _solicitacaoPagamentoService.GerarAsync(id, User.ObterUsuarioId());
         return Ok(solicitacao);
     }
 
     [HttpGet("{id:int}/solicitacao-pagamento/eml")]
     public async Task<IActionResult> SolicitacaoPagamentoEml(int id)
     {
-        var (arquivo, nome) = await _solicitacaoPagamentoService.GerarEmlAsync(id, User.ObterUsuarioId(), EmailDoUsuario());
+        var (arquivo, nome) = await _solicitacaoPagamentoService.GerarEmlAsync(id, User.ObterUsuarioId());
         return File(arquivo, "message/rfc822", nome);
     }
 
@@ -61,8 +61,6 @@ public class ObrigacoesController : ControllerBase
         var obrigacao = await _obrigacaoService.MarcarEnviadaFinanceiroAsync(id, dto);
         return Ok(obrigacao);
     }
-
-    private string? EmailDoUsuario() => User.FindFirst("email")?.Value ?? User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
 
     [HttpPatch("{id:int}/marcar-paga")]
     public async Task<ActionResult<ObrigacaoDto>> MarcarPaga(int id)

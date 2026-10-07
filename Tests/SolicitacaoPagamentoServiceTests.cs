@@ -131,7 +131,7 @@ public class SolicitacaoPagamentoServiceTests
         context.SaveChanges();
         var usuarioId = context.Usuarios.Single().Id;
 
-        var dto = await service.GerarAsync(obrigacao.Id, usuarioId, "eduardo@hope-br.com");
+        var dto = await service.GerarAsync(obrigacao.Id, usuarioId);
 
         Assert.Equal("Solicitação de Pagamento - Papelaria Central", dto.Assunto);
         Assert.Equal(["financeiro@hope-br.com"], dto.Para);
@@ -158,13 +158,16 @@ public class SolicitacaoPagamentoServiceTests
         var (service, context) = CriarService();
         var obrigacao = CriarObrigacaoDeDespesa(context, vencimento: new DateOnly(2026, 10, 14), comNota: false);
 
-        var dto = await service.GerarAsync(obrigacao.Id, null, "admin@hope-br.com");
+        var dto = await service.GerarAsync(obrigacao.Id, null);
 
         Assert.Contains("Verifique o vencimento menor que 7 dias úteis", dto.Avisos);
         Assert.Contains(dto.Avisos, a => a.StartsWith("Sem anexo"));
         Assert.Contains(dto.Avisos, a => a.StartsWith("Dados da nota fiscal incompletos"));
         Assert.Contains(dto.Avisos, a => a.StartsWith("Nenhum destinatário"));
-        Assert.EndsWith("Atenciosamente," + Environment.NewLine + "admin@hope-br.com" + Environment.NewLine, dto.CorpoTexto);
+        // Conta sem colaborador vinculado: sem assinatura (nunca usa o e-mail de login).
+        Assert.EndsWith("Atenciosamente," + Environment.NewLine, dto.CorpoTexto);
+        Assert.DoesNotContain("@", dto.CorpoTexto);
+        Assert.DoesNotContain("@", dto.CorpoHtml);
         Assert.Contains("Documento Fiscal: (não informado)", dto.CorpoTexto);
     }
 
@@ -174,7 +177,7 @@ public class SolicitacaoPagamentoServiceTests
         var (service, context) = CriarService();
         var obrigacao = CriarObrigacaoDeDespesa(context, vencimento: null);
 
-        var dto = await service.GerarAsync(obrigacao.Id, null, null);
+        var dto = await service.GerarAsync(obrigacao.Id, null);
 
         Assert.Null(dto.DataPagamentoSugerida);
         Assert.Contains(dto.Avisos, a => a.StartsWith("Vencimento não informado"));
@@ -187,7 +190,7 @@ public class SolicitacaoPagamentoServiceTests
         // Quarta 07/10 -> quarta 21/10: 10 dias úteis; com 4 feriados úteis cai para 6 (< 7).
         var obrigacao = CriarObrigacaoDeDespesa(context, vencimento: new DateOnly(2026, 10, 21));
 
-        var semFeriados = await service.GerarAsync(obrigacao.Id, null, null);
+        var semFeriados = await service.GerarAsync(obrigacao.Id, null);
         Assert.DoesNotContain("Verifique o vencimento menor que 7 dias úteis", semFeriados.Avisos);
 
         foreach (var dia in new[] { 8, 9, 12, 13 })
@@ -201,7 +204,7 @@ public class SolicitacaoPagamentoServiceTests
 
         context.SaveChanges();
 
-        var comFeriados = await service.GerarAsync(obrigacao.Id, null, null);
+        var comFeriados = await service.GerarAsync(obrigacao.Id, null);
         Assert.Contains("Verifique o vencimento menor que 7 dias úteis", comFeriados.Avisos);
     }
 
@@ -226,7 +229,7 @@ public class SolicitacaoPagamentoServiceTests
         context.Obrigacoes.Add(obrigacao);
         context.SaveChanges();
 
-        var dto = await service.GerarAsync(obrigacao.Id, null, null);
+        var dto = await service.GerarAsync(obrigacao.Id, null);
 
         Assert.Contains("referente a Ordem de Compra nº 021 (obra Obra Norte).", dto.CorpoTexto);
     }
@@ -239,8 +242,8 @@ public class SolicitacaoPagamentoServiceTests
         obrigacao.Cancelada = true;
         context.SaveChanges();
 
-        await Assert.ThrowsAsync<BusinessRuleException>(() => service.GerarAsync(obrigacao.Id, null, null));
-        await Assert.ThrowsAsync<NotFoundException>(() => service.GerarAsync(9999, null, null));
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.GerarAsync(obrigacao.Id, null));
+        await Assert.ThrowsAsync<NotFoundException>(() => service.GerarAsync(9999, null));
     }
 
     // ---------- .eml ----------
@@ -254,7 +257,7 @@ public class SolicitacaoPagamentoServiceTests
         AdicionarDestinatario(context, "financeiro@hope-br.com", TipoDestinatarioEmail.Para);
         AdicionarDestinatario(context, "gerente@hope-br.com", TipoDestinatarioEmail.Cc);
 
-        var (arquivo, nome) = await service.GerarEmlAsync(obrigacao.Id, null, "admin@hope-br.com");
+        var (arquivo, nome) = await service.GerarEmlAsync(obrigacao.Id, null);
         var texto = Encoding.ASCII.GetString(arquivo);
 
         Assert.Equal("solicitacao-pagamento-Papelaria-Central.eml", nome);
