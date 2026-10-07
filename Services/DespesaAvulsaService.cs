@@ -127,8 +127,8 @@ public class DespesaAvulsaService : IDespesaAvulsaService
 
         _logger.LogInformation("Despesa avulsa {DespesaAvulsaId} criada", despesa.Id);
 
-        despesa.Fornecedor = fornecedor;
-        return ParaDto(despesa);
+        // Recarrega para trazer o código/descrição das UAs do rateio recém-criado (o rateio foi gravado só com os ids).
+        return ParaDto(await BuscarOuFalhar(despesa.Id));
     }
 
     public async Task<DespesaAvulsaDto> UpdateAsync(int id, UpdateDespesaAvulsaDto dto)

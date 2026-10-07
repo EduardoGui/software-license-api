@@ -164,9 +164,12 @@ public class DespesaAvulsaServiceTests
         Assert.Equal(0, await context.DespesasAvulsas.CountAsync());
         Assert.Equal(0, await context.Obrigacoes.CountAsync());
 
+        // Como em produção: cada requisição tem um contexto novo, sem as UAs já rastreadas.
+        context.ChangeTracker.Clear();
         var criada = await service.CreateAsync(Dto(RateioPorValor((ua1, 30m), (ua2, 70m)).Itens));
 
         Assert.Equal(2, criada.RateioUa.Count);
+        Assert.Equal(["UA-01", "UA-02"], criada.RateioUa.Select(r => r.UnidadeOrcamentariaCodigo).ToArray());
         Assert.Equal(100m, criada.RateioUa.Sum(r => r.Valor));
         Assert.Equal(2, await context.DespesaAvulsaRateiosUa.CountAsync());
         Assert.Equal(1, await context.Obrigacoes.CountAsync());
