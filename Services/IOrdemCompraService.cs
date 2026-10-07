@@ -9,6 +9,7 @@ public interface IOrdemCompraService
     Task<OrdemCompraDto> CreateAsync(CreateOrdemCompraDto dto);
     Task<OrdemCompraDto> UpdateAsync(int id, UpdateOrdemCompraDto dto);
     Task<OrdemCompraDto> EmitirAsync(int id);
+    Task<OrdemCompraDto> ReabrirAsync(int id);
     Task<OrdemCompraDto> MarcarAssinadaAsync(int id);
     Task<OrdemCompraDto> CancelarAsync(int id);
     Task<OrdemCompraItemDto> DefinirRateioUaAsync(int id, int itemId, DefinirRateioUaDto dto);

@@ -59,6 +59,13 @@ public class OrdensCompraController : ControllerBase
         return Ok(ordemCompra);
     }
 
+    [HttpPatch("{id:int}/reabrir")]
+    public async Task<ActionResult<OrdemCompraDto>> Reabrir(int id)
+    {
+        var ordemCompra = await _ordemCompraService.ReabrirAsync(id);
+        return Ok(ordemCompra);
+    }
+
     [HttpPatch("{id:int}/marcar-assinada")]
     public async Task<ActionResult<OrdemCompraDto>> MarcarAssinada(int id)
     {

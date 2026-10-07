@@ -183,6 +183,62 @@ public class OrdemCompraServiceTests
     }
 
     [Fact]
+    public async Task ReabrirAsync_DeveVoltarEmitidaParaRascunhoPermitirNovoItemEExigirUaParaReemitir()
+    {
+        var (service, context) = CriarService();
+        var oc = await CriarOrdemAsync(service, context, Item("Cimento", 10m));
+        var ua = CriarUa(context, "UA-01");
+        var itemId = oc.Itens[0].Id;
+        await service.DefinirRateioUaAsync(oc.Id, itemId, Rateio((ua.Id, 10m)));
+        await service.EmitirAsync(oc.Id);
+
+        var reaberta = await service.ReabrirAsync(oc.Id);
+        Assert.Equal(OrdemCompraStatus.Rascunho, reaberta.Status);
+
+        await service.UpdateAsync(oc.Id, ParaUpdate(oc, [Item("Cimento", 10m, itemId), Item("Areia", 5m)]));
+        var depois = await service.GetByIdAsync(oc.Id);
+        Assert.Equal(2, depois.Itens.Count);
+        Assert.Single(depois.Itens.Single(i => i.Id == itemId).RateioUa);
+        Assert.Equal(oc.Numero, depois.Numero);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.EmitirAsync(oc.Id));
+        await service.DefinirRateioUaAsync(oc.Id, depois.Itens.Single(i => i.Id != itemId).Id, Rateio((ua.Id, 5m)));
+        Assert.Equal(OrdemCompraStatus.Emitida, (await service.EmitirAsync(oc.Id)).Status);
+    }
+
+    [Fact]
+    public async Task ReabrirAsync_DeveRejeitarRascunhoAssinadaCanceladaEObrigacaoPaga()
+    {
+        var (service, context) = CriarService();
+        var oc = await CriarOrdemAsync(service, context, Item("Cimento", 10m));
+        var ua = CriarUa(context, "UA-01");
+        await service.DefinirRateioUaAsync(oc.Id, oc.Itens[0].Id, Rateio((ua.Id, 10m)));
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.ReabrirAsync(oc.Id));
+
+        await service.EmitirAsync(oc.Id);
+        var obrigacao = await context.Obrigacoes.SingleAsync(o => o.OrdemCompraId == oc.Id);
+        obrigacao.Pago = true;
+        await context.SaveChangesAsync();
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.ReabrirAsync(oc.Id));
+
+        obrigacao.Pago = false;
+        await context.SaveChangesAsync();
+        await service.MarcarAssinadaAsync(oc.Id);
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.ReabrirAsync(oc.Id));
+    }
+
+    [Fact]
+    public async Task ReabrirAsync_DeveRejeitarOrdemCancelada()
+    {
+        var (service, context) = CriarService();
+        var oc = await CriarOrdemAsync(service, context, Item("Cimento", 10m));
+        await service.CancelarAsync(oc.Id);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.ReabrirAsync(oc.Id));
+    }
+
+    [Fact]
     public async Task UpdateAsync_DevePreservarRateioQuandoQuantidadeNaoMuda()
     {
         var (service, context) = CriarService();

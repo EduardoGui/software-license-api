@@ -213,6 +213,32 @@ public class OrdemCompraService : IOrdemCompraService
         return ParaDto(ordemCompra);
     }
 
+    // Devolve uma OC emitida para Rascunho (ex.: faltou um item). Mantém número, obrigação e rateios de UA;
+    // para voltar a Emitida precisa passar de novo pela regra de UA em todos os itens.
+    public async Task<OrdemCompraDto> ReabrirAsync(int id)
+    {
+        var ordemCompra = await BuscarComItensOuFalhar(id);
+
+        if (ordemCompra.Status != OrdemCompraStatus.Emitida)
+        {
+            throw new BusinessRuleException("Só é possível reabrir para edição uma Ordem de Compra emitida (não assinada).");
+        }
+
+        var obrigacao = await _context.Obrigacoes.FirstOrDefaultAsync(o => o.OrdemCompraId == id);
+        if (obrigacao is { Pago: true })
+        {
+            throw new BusinessRuleException("Não é possível reabrir uma Ordem de Compra cuja obrigação já foi paga.");
+        }
+
+        ordemCompra.Status = OrdemCompraStatus.Rascunho;
+        ordemCompra.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Ordem de Compra {OrdemCompraId} reaberta para edição (voltou a Rascunho)", ordemCompra.Id);
+
+        return ParaDto(ordemCompra);
+    }
+
     public async Task<OrdemCompraDto> MarcarAssinadaAsync(int id)
     {
         var ordemCompra = await BuscarComItensOuFalhar(id);
