@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SoftwareLicense.Api.DTOs;
+using SoftwareLicense.Api.Extensions;
 using SoftwareLicense.Api.Services;
 
 namespace SoftwareLicense.Api.Controllers;
@@ -11,10 +12,12 @@ namespace SoftwareLicense.Api.Controllers;
 public class ObrigacoesController : ControllerBase
 {
     private readonly IObrigacaoService _obrigacaoService;
+    private readonly ISolicitacaoPagamentoService _solicitacaoPagamentoService;
 
-    public ObrigacoesController(IObrigacaoService obrigacaoService)
+    public ObrigacoesController(IObrigacaoService obrigacaoService, ISolicitacaoPagamentoService solicitacaoPagamentoService)
     {
         _obrigacaoService = obrigacaoService;
+        _solicitacaoPagamentoService = solicitacaoPagamentoService;
     }
 
     [HttpGet]
@@ -37,6 +40,29 @@ public class ObrigacoesController : ControllerBase
         var obrigacao = await _obrigacaoService.UpdateAsync(id, dto);
         return Ok(obrigacao);
     }
+
+    [HttpGet("{id:int}/solicitacao-pagamento")]
+    public async Task<ActionResult<SolicitacaoPagamentoDto>> SolicitacaoPagamento(int id)
+    {
+        var solicitacao = await _solicitacaoPagamentoService.GerarAsync(id, User.ObterUsuarioId(), EmailDoUsuario());
+        return Ok(solicitacao);
+    }
+
+    [HttpGet("{id:int}/solicitacao-pagamento/eml")]
+    public async Task<IActionResult> SolicitacaoPagamentoEml(int id)
+    {
+        var (arquivo, nome) = await _solicitacaoPagamentoService.GerarEmlAsync(id, User.ObterUsuarioId(), EmailDoUsuario());
+        return File(arquivo, "message/rfc822", nome);
+    }
+
+    [HttpPatch("{id:int}/marcar-enviada-financeiro")]
+    public async Task<ActionResult<ObrigacaoDto>> MarcarEnviadaFinanceiro(int id, MarcarEnviadaFinanceiroDto dto)
+    {
+        var obrigacao = await _obrigacaoService.MarcarEnviadaFinanceiroAsync(id, dto);
+        return Ok(obrigacao);
+    }
+
+    private string? EmailDoUsuario() => User.FindFirst("email")?.Value ?? User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
 
     [HttpPatch("{id:int}/marcar-paga")]
     public async Task<ActionResult<ObrigacaoDto>> MarcarPaga(int id)

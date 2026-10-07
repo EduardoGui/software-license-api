@@ -105,6 +105,35 @@ public class ObrigacaoService : IObrigacaoService
         return ParaDto(obrigacao);
     }
 
+    // Registra que o pedido de pagamento foi enviado ao financeiro (hoje) e a data de pagamento combinada.
+    public async Task<ObrigacaoDto> MarcarEnviadaFinanceiroAsync(int id, MarcarEnviadaFinanceiroDto dto)
+    {
+        var obrigacao = await BuscarOuFalhar(id);
+
+        if (obrigacao.Cancelada)
+        {
+            throw new BusinessRuleException("Não é possível marcar como enviada ao financeiro uma obrigação cancelada.");
+        }
+
+        if (obrigacao.Pago)
+        {
+            throw new BusinessRuleException("Esta obrigação já está paga.");
+        }
+
+        obrigacao.DataEnvioFinanceiro = HorarioBrasilia.Hoje(_timeProvider);
+        if (dto.DataPrevistaPagamento is not null)
+        {
+            obrigacao.DataPrevistaPagamento = dto.DataPrevistaPagamento;
+        }
+
+        obrigacao.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Obrigação {ObrigacaoId} marcada como enviada ao financeiro", obrigacao.Id);
+
+        return ParaDto(obrigacao);
+    }
+
     public async Task<ObrigacaoDto> MarcarPagaAsync(int id)
     {
         var obrigacao = await BuscarOuFalhar(id);

@@ -8,6 +8,7 @@ public interface IObrigacaoService
     Task<ObrigacaoDto> GetByIdAsync(int id);
     Task<ObrigacaoDto> UpdateAsync(int id, UpdateObrigacaoDto dto);
     Task<ObrigacaoDto> MarcarPagaAsync(int id);
+    Task<ObrigacaoDto> MarcarEnviadaFinanceiroAsync(int id, MarcarEnviadaFinanceiroDto dto);
     Task<ObrigacaoDto> DesmarcarPagaAsync(int id);
     Task<ObrigacaoDto> CancelarAsync(int id);
     Task<ObrigacaoDto> ReativarAsync(int id);

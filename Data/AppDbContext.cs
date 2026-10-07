@@ -27,6 +27,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<ReembolsoDespesaItem> ReembolsoDespesaItens => Set<ReembolsoDespesaItem>();
     public DbSet<ReembolsoDespesaItemAnexo> ReembolsoDespesaItemAnexos => Set<ReembolsoDespesaItemAnexo>();
     public DbSet<EmailNotificacaoReembolso> EmailsNotificacaoReembolso => Set<EmailNotificacaoReembolso>();
+    public DbSet<EmailPagamentoFinanceiro> EmailsPagamentoFinanceiro => Set<EmailPagamentoFinanceiro>();
     public DbSet<Local> Locais => Set<Local>();
     public DbSet<Licenca> Licencas => Set<Licenca>();
     public DbSet<LicencaValor> LicencaValores => Set<LicencaValor>();
@@ -232,6 +233,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         });
 
         modelBuilder.Entity<EmailNotificacaoReembolso>(entity =>
+        {
+            entity.Property(e => e.Email).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.TipoDestinatario).IsRequired().HasMaxLength(10);
+            entity.HasIndex(e => e.Email).IsUnique();
+        });
+
+        modelBuilder.Entity<EmailPagamentoFinanceiro>(entity =>
         {
             entity.Property(e => e.Email).IsRequired().HasMaxLength(200);
             entity.Property(e => e.TipoDestinatario).IsRequired().HasMaxLength(10);
