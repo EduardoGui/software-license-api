@@ -229,6 +229,24 @@ public class OrdemCompraServiceTests
     }
 
     [Fact]
+    public async Task MarcarAssinadaAsync_DeveExigirUaEmTodosOsItensDeOcEmitidaAntiga()
+    {
+        var (service, context) = CriarService();
+        var oc = await CriarOrdemAsync(service, context, Item("Cimento", 10m));
+        var ua = CriarUa(context, "UA-01");
+        // Simula uma OC emitida antes da regra de UA (sem rateio).
+        var entidade = await context.OrdensCompra.SingleAsync(o => o.Id == oc.Id);
+        entidade.Status = OrdemCompraStatus.Emitida;
+        await context.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.MarcarAssinadaAsync(oc.Id));
+
+        await service.DefinirRateioUaAsync(oc.Id, oc.Itens[0].Id, Rateio((ua.Id, 10m)));
+        var assinada = await service.MarcarAssinadaAsync(oc.Id);
+        Assert.Equal(OrdemCompraStatus.Assinada, assinada.Status);
+    }
+
+    [Fact]
     public async Task ReabrirAsync_DeveRejeitarOrdemCancelada()
     {
         var (service, context) = CriarService();

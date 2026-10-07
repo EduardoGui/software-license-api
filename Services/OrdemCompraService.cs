@@ -248,6 +248,12 @@ public class OrdemCompraService : IOrdemCompraService
             throw new BusinessRuleException("Só é possível marcar como assinada uma Ordem de Compra emitida.");
         }
 
+        // OCs emitidas antes da regra de UA precisam ser regularizadas antes de assinar.
+        if (ordemCompra.Itens.Any(i => i.RateiosUa.Count == 0))
+        {
+            throw new BusinessRuleException("Defina a UA de todos os itens antes de marcar a Ordem de Compra como assinada.");
+        }
+
         ordemCompra.Status = OrdemCompraStatus.Assinada;
         ordemCompra.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
         await _context.SaveChangesAsync();
