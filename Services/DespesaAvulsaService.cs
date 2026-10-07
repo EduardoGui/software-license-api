@@ -74,6 +74,7 @@ public class DespesaAvulsaService : IDespesaAvulsaService
             ?? throw new NotFoundException($"Fornecedor {dto.FornecedorId} não encontrado.");
 
         ValidarCategoria(dto.Categoria);
+        await ValidarNotaFiscalUnicaAsync(dto.FornecedorId, dto.NumeroNf, dto.DataEmissao, idAtual: null);
 
         // UA obrigatória ao criar: validada antes de qualquer gravação.
         if (dto.RateioUa is null || dto.RateioUa.Count == 0)
@@ -139,6 +140,14 @@ public class DespesaAvulsaService : IDespesaAvulsaService
             ?? throw new NotFoundException($"Fornecedor {dto.FornecedorId} não encontrado.");
 
         ValidarCategoria(dto.Categoria);
+
+        var chaveMudou = despesa.FornecedorId != dto.FornecedorId
+            || NormalizarNumeroNf(despesa.NumeroNf) != NormalizarNumeroNf(dto.NumeroNf)
+            || despesa.DataEmissao != dto.DataEmissao;
+        if (chaveMudou)
+        {
+            await ValidarNotaFiscalUnicaAsync(dto.FornecedorId, dto.NumeroNf, dto.DataEmissao, idAtual: id);
+        }
 
         despesa.FornecedorId = dto.FornecedorId;
         despesa.Categoria = dto.Categoria;
@@ -303,6 +312,37 @@ public class DespesaAvulsaService : IDespesaAvulsaService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Anexo {AnexoId} excluído da despesa avulsa {DespesaAvulsaId}", anexoId, despesaAvulsaId);
+    }
+
+    private static string? NormalizarNumeroNf(string? numeroNf) =>
+        string.IsNullOrWhiteSpace(numeroNf) ? null : numeroNf.Trim().ToLowerInvariant();
+
+    // Mesmo fornecedor + mesmo número de NF + mesma data de emissão = lançamento duplicado (ex.: clique repetido).
+    // Sem número de NF não há como identificar duplicidade, então não valida.
+    private async Task ValidarNotaFiscalUnicaAsync(int fornecedorId, string? numeroNf, DateOnly? dataEmissao, int? idAtual)
+    {
+        var numero = NormalizarNumeroNf(numeroNf);
+        if (numero is null)
+        {
+            return;
+        }
+
+        var existente = await _context.DespesasAvulsas
+            .Where(d => d.FornecedorId == fornecedorId
+                && d.NumeroNf != null && d.NumeroNf.Trim().ToLower() == numero
+                && d.DataEmissao == dataEmissao
+                && d.Id != idAtual)
+            .Select(d => new { d.Id })
+            .FirstOrDefaultAsync();
+
+        if (existente is not null)
+        {
+            var emissao = dataEmissao is null
+                ? "sem data de emissão"
+                : $"emitida em {dataEmissao.Value.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture)}";
+            throw new BusinessRuleException(
+                $"Já existe uma despesa avulsa deste fornecedor com a NF nº {numeroNf!.Trim()} {emissao} (despesa nº {existente.Id}).");
+        }
     }
 
     private static void ValidarCategoria(string categoria)

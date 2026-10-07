@@ -252,4 +252,86 @@ public class DespesaAvulsaServiceTests
         Assert.False(await context.DespesasAvulsas.AnyAsync());
         Assert.Equal(0, await context.DespesaAvulsaRateiosUa.CountAsync());
     }
+
+    private static async Task<DespesaAvulsaDto> CriarComNfAsync(
+        DespesaAvulsaService service, AppDbContext context, int fornecedorId, string? numeroNf, DateOnly? emissao)
+    {
+        return await service.CreateAsync(new CreateDespesaAvulsaDto
+        {
+            FornecedorId = fornecedorId,
+            Categoria = DespesaAvulsaCategoria.Outros,
+            Descricao = "Teste NF",
+            NumeroNf = numeroNf,
+            DataEmissao = emissao,
+            Valor = 100m,
+            RateioUa = await RateioUnicoAsync(context, 100m),
+        });
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeveRejeitarMesmoFornecedorMesmaNfMesmaDataDeEmissao()
+    {
+        var service = CriarService(out var context);
+        var fornecedorId = await CriarFornecedorAsync(context);
+        var primeira = await CriarComNfAsync(service, context, fornecedorId, "NF-100", new DateOnly(2026, 10, 6));
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => CriarComNfAsync(service, context, fornecedorId, "  nf-100 ", new DateOnly(2026, 10, 6)));
+
+        Assert.Contains($"despesa nº {primeira.Id}", ex.Message);
+        Assert.Equal(1, await context.DespesasAvulsas.CountAsync());
+        Assert.Equal(1, await context.Obrigacoes.CountAsync());
+    }
+
+    [Fact]
+    public async Task CreateAsync_DevePermitirQuandoMudaFornecedorNumeroOuData()
+    {
+        var service = CriarService(out var context);
+        var fornecedorId = await CriarFornecedorAsync(context);
+        var outroFornecedorId = await CriarFornecedorAsync(context);
+        await CriarComNfAsync(service, context, fornecedorId, "NF-100", new DateOnly(2026, 10, 6));
+
+        await CriarComNfAsync(service, context, outroFornecedorId, "NF-100", new DateOnly(2026, 10, 6));
+        await CriarComNfAsync(service, context, fornecedorId, "NF-101", new DateOnly(2026, 10, 6));
+        await CriarComNfAsync(service, context, fornecedorId, "NF-100", new DateOnly(2026, 10, 7));
+
+        Assert.Equal(4, await context.DespesasAvulsas.CountAsync());
+    }
+
+    [Fact]
+    public async Task CreateAsync_SemNumeroDeNf_NaoDeveValidarDuplicidade()
+    {
+        var service = CriarService(out var context);
+        var fornecedorId = await CriarFornecedorAsync(context);
+
+        await CriarComNfAsync(service, context, fornecedorId, null, new DateOnly(2026, 10, 6));
+        await CriarComNfAsync(service, context, fornecedorId, "", new DateOnly(2026, 10, 6));
+
+        Assert.Equal(2, await context.DespesasAvulsas.CountAsync());
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DeveRejeitarMudarParaNfJaExistenteEPermitirSalvarSemMudarAChave()
+    {
+        var service = CriarService(out var context);
+        var fornecedorId = await CriarFornecedorAsync(context);
+        var a = await CriarComNfAsync(service, context, fornecedorId, "NF-100", new DateOnly(2026, 10, 6));
+        var b = await CriarComNfAsync(service, context, fornecedorId, "NF-200", new DateOnly(2026, 10, 6));
+
+        UpdateDespesaAvulsaDto Atualizacao(DespesaAvulsaDto d, string numeroNf, string descricao) => new()
+        {
+            FornecedorId = d.FornecedorId,
+            Categoria = d.Categoria,
+            Descricao = descricao,
+            NumeroNf = numeroNf,
+            DataEmissao = d.DataEmissao,
+            Valor = d.Valor,
+        };
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.UpdateAsync(b.Id, Atualizacao(b, "NF-100", "x")));
+
+        // Mesma chave da própria despesa (só muda a descrição) continua permitido.
+        var atualizada = await service.UpdateAsync(a.Id, Atualizacao(a, "NF-100", "Descrição nova"));
+        Assert.Equal("Descrição nova", atualizada.Descricao);
+    }
 }
