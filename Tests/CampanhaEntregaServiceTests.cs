@@ -976,4 +976,75 @@ public class CampanhaEntregaServiceTests
 
         Assert.Equal(EntregaStatus.Cancelado, cancelada.Status);
     }
+
+    [Fact]
+    public void ItemDoCatalogo_DevePermitirQuantidadePadraoZeroERejeitarNegativa()
+    {
+        static bool Valido(int quantidade)
+        {
+            var item = new CampanhaEntregaItemInputDto { Descricao = "Camisa", Quantidade = quantidade };
+            return System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+                item, new System.ComponentModel.DataAnnotations.ValidationContext(item), [], validateAllProperties: true);
+        }
+
+        Assert.True(Valido(0));
+        Assert.True(Valido(2));
+        Assert.False(Valido(-1));
+    }
+
+    [Fact]
+    public async Task AdicionarEntregaAsync_Kit_ItensComQuantidadePadraoZeroNaoEntramNemExigemSaldo()
+    {
+        var service = CriarService(out var context);
+        var campanha = await service.CreateAsync(new CreateCampanhaEntregaDto { Nome = "Uniformes" });
+        await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
+        {
+            Itens =
+            [
+                new CampanhaEntregaItemInputDto { Descricao = "Boné", Quantidade = 1, QuantidadeDisponivel = 5 },
+                new CampanhaEntregaItemInputDto { Descricao = "Camisa M", Quantidade = 0, QuantidadeDisponivel = 0 },
+            ],
+        });
+        var joao = await CriarUsuarioAsync(context, "João", "joao@hope.com");
+
+        var entrega = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = joao.Id });
+
+        var item = Assert.Single(entrega.Itens);
+        Assert.Equal("Boné", item.Descricao);
+    }
+
+    [Fact]
+    public async Task AdicionarEntregaAsync_Kit_ComTodosOsPadroesZero_CriaEntregaVaziaEPermitePreencherDepois()
+    {
+        var service = CriarService(out var context);
+        var campanha = await service.CreateAsync(new CreateCampanhaEntregaDto { Nome = "Uniformes" });
+        var comItens = await service.AtualizarItensCampanhaAsync(campanha.Id, new UpdateCampanhaEntregaItensDto
+        {
+            Itens =
+            [
+                new CampanhaEntregaItemInputDto { Descricao = "Camisa", Tamanho = "M", Quantidade = 0, QuantidadeDisponivel = 3 },
+                new CampanhaEntregaItemInputDto { Descricao = "Camisa", Tamanho = "G", Quantidade = 0, QuantidadeDisponivel = 0 },
+            ],
+        });
+        var maria = await CriarUsuarioAsync(context, "Maria", "maria@hope.com");
+
+        var entrega = await service.AdicionarEntregaAsync(campanha.Id, new CreateEntregaDto { UsuarioId = maria.Id });
+
+        Assert.Equal(EntregaStatus.Pendente, entrega.Status);
+        Assert.Empty(entrega.Itens);
+
+        // Preenche só o que vale para ela (a quantidade por colaborador sim é validada contra o saldo).
+        var camisaM = comItens.Itens.Single(x => x.Tamanho == "M");
+        var camisaG = comItens.Itens.Single(x => x.Tamanho == "G");
+        var atualizada = await service.AtualizarItensEntregaAsync(campanha.Id, entrega.Id, new UpdateEntregaItensDto
+        {
+            Itens = [new ItemEntregaInputDto { CampanhaEntregaItemId = camisaM.Id, Quantidade = 2 }],
+        });
+        Assert.Equal(2, Assert.Single(atualizada.Itens).Quantidade);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.AtualizarItensEntregaAsync(campanha.Id, entrega.Id, new UpdateEntregaItensDto
+        {
+            Itens = [new ItemEntregaInputDto { CampanhaEntregaItemId = camisaG.Id, Quantidade = 1 }],
+        }));
+    }
 }

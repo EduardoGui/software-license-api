@@ -14,7 +14,8 @@ public class CampanhaEntregaItemInputDto
     [MaxLength(30)]
     public string? Tamanho { get; set; }
 
-    [Range(1, int.MaxValue, ErrorMessage = "Quantidade deve ser maior que zero.")]
+    // Quantidade padrão por pessoa (Kit). Zero = o item não vem no kit: a quantidade é preenchida por colaborador.
+    [Range(0, int.MaxValue, ErrorMessage = "Quantidade padrão não pode ser negativa.")]
     public int Quantidade { get; set; }
 
     public DateOnly? Validade { get; set; }

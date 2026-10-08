@@ -874,7 +874,9 @@ public class CampanhaEntregaService : ICampanhaEntregaService
     }
 
     // Kit: todos os itens do catálogo entram em cada entrega (× quantidade de kits).
+    // Só itens com quantidade padrão maior que zero entram no kit; os com 0 são preenchidos por colaborador depois.
     private static List<EntregaItem> CopiarItensDaCampanha(CampanhaEntrega campanha, int quantidadeKits = 1) => campanha.Itens
+        .Where(i => i.Quantidade > 0)
         .Select(i => new EntregaItem
         {
             CampanhaEntregaItem = i,
@@ -886,6 +888,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         }).ToList();
 
     private static Dictionary<int, int> PedidoDosItensPadrao(CampanhaEntrega campanha, int quantidadeKits, int quantidadeEntregas) => campanha.Itens
+        .Where(i => i.Quantidade > 0)
         .ToDictionary(i => i.Id, i => i.Quantidade * quantidadeKits * quantidadeEntregas);
 
     private static string Rotulo(CampanhaEntregaItem item) =>
