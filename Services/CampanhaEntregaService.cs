@@ -476,13 +476,28 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         var campanha = await BuscarCampanhaOuFalhar(campanhaId);
         var entrega = await BuscarEntregaOuFalhar(campanhaId, entregaId);
 
-        if (entrega.Status != EntregaStatus.Pendente)
+        if (entrega.Status is not (EntregaStatus.Pendente or EntregaStatus.Divergencia))
         {
-            throw new BusinessRuleException("Só é possível editar os itens enquanto a entrega estiver Pendente (antes do e-mail ser enviado).");
+            throw new BusinessRuleException("Só é possível editar os itens enquanto a entrega estiver Pendente (antes do e-mail ser enviado) ou com uma divergência a tratar.");
         }
 
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var novosItens = ResolverItensDaEntrega(campanha, dto.Itens, entregaId);
+
+        // Divergência: ajustar os itens é a forma de tratá-la. A entrega volta a Pendente (o link antigo deixa de valer;
+        // é só reenviar o e-mail) e a contestação sai da tela, mas fica guardada na auditoria.
+        var tratandoDivergencia = entrega.Status == EntregaStatus.Divergencia;
+        var tipoDivergencia = entrega.TipoDivergencia;
+        var observacaoDivergencia = entrega.ObservacaoDivergencia;
+        if (tratandoDivergencia)
+        {
+            entrega.Status = EntregaStatus.Pendente;
+            entrega.TipoDivergencia = null;
+            entrega.ObservacaoDivergencia = null;
+            entrega.DataConfirmacao = null;
+            entrega.IpConfirmacao = null;
+            entrega.UserAgentConfirmacao = null;
+        }
 
         _context.EntregaItens.RemoveRange(entrega.Itens);
         entrega.Itens = novosItens;
@@ -491,6 +506,12 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Itens da entrega {EntregaId} atualizados", entregaId);
+        if (tratandoDivergencia)
+        {
+            var detalhe = $"Divergência: {tipoDivergencia}" + (string.IsNullOrWhiteSpace(observacaoDivergencia) ? string.Empty : $" — {observacaoDivergencia}")
+                + ". Itens ajustados; entrega voltou a Pendente.";
+            await _auditoriaService.RegistrarAsync(null, LogAuditoriaEntidade.Entrega, entrega.Id, LogAuditoriaAcao.DivergenciaResolvida, detalhe);
+        }
 
         return ParaEntregaDto(entrega);
     }
@@ -523,9 +544,9 @@ public class CampanhaEntregaService : ICampanhaEntregaService
     {
         var entrega = await BuscarEntregaOuFalhar(campanhaId, entregaId);
 
-        if (entrega.Status is not (EntregaStatus.Pendente or EntregaStatus.EmailEnviado))
+        if (entrega.Status is not (EntregaStatus.Pendente or EntregaStatus.EmailEnviado or EntregaStatus.Divergencia))
         {
-            throw new BusinessRuleException("Só é possível cancelar uma entrega enquanto ela estiver Pendente ou com e-mail já enviado (aguardando confirmação).");
+            throw new BusinessRuleException("Só é possível cancelar uma entrega enquanto ela estiver Pendente, com e-mail já enviado (aguardando confirmação) ou com divergência.");
         }
 
         entrega.Status = EntregaStatus.Cancelado;

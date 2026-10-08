@@ -938,4 +938,42 @@ public class CampanhaEntregaServiceTests
         var cancelada = await service.CancelarEntregaAsync(entrega.CampanhaEntregaId, entrega.Id);
         Assert.Equal(EntregaStatus.Cancelado, cancelada.Status);
     }
+
+    [Fact]
+    public async Task AtualizarItensEntregaAsync_ComDivergencia_DeveTratarVoltarAPendenteELimparAContestacaoGuardandoNaAuditoria()
+    {
+        var (service, context, token) = await CriarEntregaComEmailEnviadoAsync();
+        await service.RegistrarDivergenciaPorTokenAsync(
+            token, new RegistrarDivergenciaDto { TipoDivergencia = TipoDivergenciaEntrega.QuantidadeIncorreta, Observacao = "Faltou uma camisa" }, "1.1.1.1", "UA");
+        var entrega = await context.Entregas.AsNoTracking().Include(e => e.CampanhaEntrega).ThenInclude(c => c.Itens).FirstAsync();
+        var itemCatalogo = entrega.CampanhaEntrega.Itens[0];
+
+        var resultado = await service.AtualizarItensEntregaAsync(entrega.CampanhaEntregaId, entrega.Id, new UpdateEntregaItensDto
+        {
+            Itens = [new ItemEntregaInputDto { CampanhaEntregaItemId = itemCatalogo.Id, Quantidade = 2 }],
+        });
+
+        Assert.Equal(EntregaStatus.Pendente, resultado.Status);
+        Assert.Null(resultado.TipoDivergencia);
+        Assert.Null(resultado.ObservacaoDivergencia);
+        var depois = await context.Entregas.AsNoTracking().FirstAsync();
+        Assert.Null(depois.DataConfirmacao);
+        Assert.Null(depois.IpConfirmacao);
+        var log = await context.LogsAuditoria.AsNoTracking().SingleAsync(l => l.Acao == LogAuditoriaAcao.DivergenciaResolvida);
+        Assert.Contains("QuantidadeIncorreta", log.Detalhe);
+        Assert.Contains("Faltou uma camisa", log.Detalhe);
+    }
+
+    [Fact]
+    public async Task CancelarEntregaAsync_DevePermitirCancelarEntregaComDivergencia()
+    {
+        var (service, context, token) = await CriarEntregaComEmailEnviadoAsync();
+        await service.RegistrarDivergenciaPorTokenAsync(
+            token, new RegistrarDivergenciaDto { TipoDivergencia = TipoDivergenciaEntrega.NaoRecebi }, "1.1.1.1", "UA");
+        var entrega = await context.Entregas.AsNoTracking().FirstAsync();
+
+        var cancelada = await service.CancelarEntregaAsync(entrega.CampanhaEntregaId, entrega.Id);
+
+        Assert.Equal(EntregaStatus.Cancelado, cancelada.Status);
+    }
 }
