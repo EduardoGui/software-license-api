@@ -883,4 +883,59 @@ public class CampanhaEntregaServiceTests
         Assert.Equal("Brindes", historico[0].CampanhaNome);
         Assert.Equal("Uniformes", historico[1].CampanhaNome);
     }
+
+    [Fact]
+    public async Task ReverterConfirmacaoAsync_DeveVoltarConfirmadaParaAguardandoConfirmacaoELimparARespostaERegistrarAuditoria()
+    {
+        var (service, context, token) = await CriarEntregaComEmailEnviadoAsync();
+        await service.ConfirmarPorTokenAsync(token, "9.9.9.9", "Mozilla/Teste");
+        var entrega = await context.Entregas.AsNoTracking().FirstAsync();
+
+        var resultado = await service.ReverterConfirmacaoAsync(entrega.CampanhaEntregaId, entrega.Id, "Confirmada por engano no teste", usuarioId: null);
+
+        Assert.Equal(EntregaStatus.EmailEnviado, resultado.Status);
+        var depois = await context.Entregas.AsNoTracking().FirstAsync();
+        Assert.Null(depois.DataConfirmacao);
+        Assert.Null(depois.IpConfirmacao);
+        Assert.Null(depois.UserAgentConfirmacao);
+        Assert.NotNull(depois.DataEnvioEmail); // o histórico do envio do e-mail é preservado
+        var log = await context.LogsAuditoria.AsNoTracking().SingleAsync(l => l.Acao == LogAuditoriaAcao.ConfirmacaoRevertida);
+        Assert.Equal(entrega.Id, log.EntidadeId);
+        Assert.Contains("Era Confirmado", log.Detalhe);
+        Assert.Contains("Confirmada por engano no teste", log.Detalhe);
+    }
+
+    [Fact]
+    public async Task ReverterConfirmacaoAsync_DeveReverterDivergenciaELimparOsCamposDeDivergencia()
+    {
+        var (service, context, token) = await CriarEntregaComEmailEnviadoAsync();
+        await service.RegistrarDivergenciaPorTokenAsync(
+            token, new RegistrarDivergenciaDto { TipoDivergencia = TipoDivergenciaEntrega.ItemDanificado, Observacao = "Veio rasgado" }, "1.1.1.1", "UA");
+        var entrega = await context.Entregas.AsNoTracking().FirstAsync();
+
+        var resultado = await service.ReverterConfirmacaoAsync(entrega.CampanhaEntregaId, entrega.Id, "Divergência registrada por engano", null);
+
+        Assert.Equal(EntregaStatus.EmailEnviado, resultado.Status);
+        var depois = await context.Entregas.AsNoTracking().FirstAsync();
+        Assert.Null(depois.TipoDivergencia);
+        Assert.Null(depois.ObservacaoDivergencia);
+    }
+
+    [Fact]
+    public async Task ReverterConfirmacaoAsync_DeveRejeitarEntregaQueNaoFoiRespondida_EPermitirCancelarDepoisDeReverter()
+    {
+        var (service, context, token) = await CriarEntregaComEmailEnviadoAsync();
+        var entrega = await context.Entregas.AsNoTracking().FirstAsync();
+
+        // Ainda aguardando confirmação: nada a reverter.
+        await Assert.ThrowsAsync<BusinessRuleException>(
+            () => service.ReverterConfirmacaoAsync(entrega.CampanhaEntregaId, entrega.Id, "motivo qualquer", null));
+
+        // Confirmada não pode ser cancelada; depois de revertida, pode.
+        await service.ConfirmarPorTokenAsync(token, "1.1.1.1", "UA");
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CancelarEntregaAsync(entrega.CampanhaEntregaId, entrega.Id));
+        await service.ReverterConfirmacaoAsync(entrega.CampanhaEntregaId, entrega.Id, "teste de confirmação", null);
+        var cancelada = await service.CancelarEntregaAsync(entrega.CampanhaEntregaId, entrega.Id);
+        Assert.Equal(EntregaStatus.Cancelado, cancelada.Status);
+    }
 }

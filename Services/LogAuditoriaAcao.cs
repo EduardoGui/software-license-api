@@ -16,4 +16,5 @@ public static class LogAuditoriaAcao
     public const string Confirmado = "Confirmado";
     public const string DivergenciaRegistrada = "DivergenciaRegistrada";
     public const string Cancelado = "Cancelado";
+    public const string ConfirmacaoRevertida = "ConfirmacaoRevertida";
 }

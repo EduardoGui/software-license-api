@@ -538,6 +538,38 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         return ParaEntregaDto(entrega);
     }
 
+    // Desfaz a resposta do colaborador (confirmação ou divergência) e devolve a entrega ao estado anterior à resposta
+    // (aguardando confirmação, ou Pendente se o e-mail nunca foi enviado). Uso administrativo, sem tela: serve para
+    // corrigir uma confirmação feita por engano/teste. Fica registrado em auditoria, com o motivo.
+    public async Task<EntregaDto> ReverterConfirmacaoAsync(int campanhaId, int entregaId, string motivo, int? usuarioId)
+    {
+        var entrega = await BuscarEntregaOuFalhar(campanhaId, entregaId);
+
+        if (entrega.Status is not (EntregaStatus.Confirmado or EntregaStatus.Divergencia))
+        {
+            throw new BusinessRuleException("Só é possível reverter a resposta de uma entrega Confirmada ou com Divergência registrada.");
+        }
+
+        var statusAnterior = entrega.Status;
+        var respondidaEm = entrega.DataConfirmacao;
+
+        entrega.Status = entrega.DataEnvioEmail is null ? EntregaStatus.Pendente : EntregaStatus.EmailEnviado;
+        entrega.DataConfirmacao = null;
+        entrega.IpConfirmacao = null;
+        entrega.UserAgentConfirmacao = null;
+        entrega.TipoDivergencia = null;
+        entrega.ObservacaoDivergencia = null;
+        entrega.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Resposta da Entrega {EntregaId} revertida (era {StatusAnterior})", entregaId, statusAnterior);
+        var detalhe = $"Era {statusAnterior}" + (respondidaEm is null ? string.Empty : $" (resposta em {respondidaEm:yyyy-MM-dd HH:mm} UTC)") + $". Motivo: {motivo.Trim()}";
+        await _auditoriaService.RegistrarAsync(usuarioId, LogAuditoriaEntidade.Entrega, entrega.Id, LogAuditoriaAcao.ConfirmacaoRevertida, detalhe);
+
+        return ParaEntregaDto(entrega);
+    }
+
     public async Task<EntregaDto> EnviarEmailAsync(int campanhaId, int entregaId)
     {
         var entrega = await BuscarEntregaOuFalhar(campanhaId, entregaId);

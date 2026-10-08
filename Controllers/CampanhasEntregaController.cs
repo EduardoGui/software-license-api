@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SoftwareLicense.Api.DTOs;
+using SoftwareLicense.Api.Extensions;
 using SoftwareLicense.Api.Services;
 
 namespace SoftwareLicense.Api.Controllers;
@@ -120,6 +121,14 @@ public class CampanhasEntregaController : ControllerBase
     public async Task<ActionResult<EntregaDto>> CancelarEntrega(int id, int entregaId)
     {
         return Ok(await _campanhaEntregaService.CancelarEntregaAsync(id, entregaId));
+    }
+
+    // Uso administrativo (sem tela): desfaz a confirmação/divergência do colaborador. Só Administrador.
+    [HttpPatch("{id:int}/entregas/{entregaId:int}/reverter-confirmacao")]
+    [Authorize(Roles = Roles.Administrador)]
+    public async Task<ActionResult<EntregaDto>> ReverterConfirmacao(int id, int entregaId, ReverterConfirmacaoDto dto)
+    {
+        return Ok(await _campanhaEntregaService.ReverterConfirmacaoAsync(id, entregaId, dto.Motivo, User.ObterUsuarioId()));
     }
 
     [HttpPost("{id:int}/entregas/{entregaId:int}/enviar-email")]
