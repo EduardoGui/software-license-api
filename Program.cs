@@ -122,6 +122,7 @@ builder.Services.AddScoped<IPeriodoFeriasService, PeriodoFeriasService>();
 builder.Services.AddScoped<IProgramacaoFeriasService, ProgramacaoFeriasService>();
 builder.Services.AddScoped<IRecessoCorporativoService, RecessoCorporativoService>();
 builder.Services.AddScoped<IFeriasConsolidadoService, FeriasConsolidadoService>();
+builder.Services.AddScoped<IFeriasAcompanhamentoService, FeriasAcompanhamentoService>();
 builder.Services.AddScoped<ITipoDespesaService, TipoDespesaService>();
 builder.Services.AddScoped<ILocalService, LocalService>();
 builder.Services.AddScoped<IReembolsoDespesaService, ReembolsoDespesaService>();
