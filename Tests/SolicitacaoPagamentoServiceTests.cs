@@ -171,6 +171,59 @@ public class SolicitacaoPagamentoServiceTests
         Assert.Contains("Documento Fiscal: (não informado)", dto.CorpoTexto);
     }
 
+    [Theory]
+    [InlineData("oc-021-assinada.pdf", "NF-987", false)]
+    [InlineData("confirmacao.pdf", "NF-987", false)]
+    [InlineData("cotacao 12.pdf", "000012", false)]
+    [InlineData("nf.pdf", null, true)]
+    [InlineData("NFe_4066.pdf", null, true)]
+    [InlineData("DANFE.pdf", null, true)]
+    [InlineData("Nota Fiscal 4066.pdf", null, true)]
+    [InlineData("987.pdf", "NF-987", true)]
+    [InlineData("doc_004066.pdf", "004066", true)]
+    public void AlgumAnexoPareceSerANota_DeveConferirPeloNomeDoArquivoOuPeloNumero(string arquivo, string? numeroNf, bool esperado)
+    {
+        Assert.Equal(esperado, SolicitacaoPagamentoService.AlgumAnexoPareceSerANota([arquivo], numeroNf));
+    }
+
+    [Fact]
+    public async Task GerarAsync_ComAnexoMasSemArquivoDeNota_DeveLembrarDaNotaFiscal()
+    {
+        var (service, context) = CriarService();
+        var obrigacao = CriarObrigacaoDeDespesa(context, vencimento: new DateOnly(2026, 10, 30));
+        AdicionarAnexo(context, obrigacao.DespesaAvulsaId!.Value, "oc-assinada.pdf");
+
+        var dto = await service.GerarAsync(obrigacao.Id, null);
+
+        Assert.Contains(dto.Avisos, a => a.StartsWith("Confira se o PDF da nota fiscal"));
+        Assert.DoesNotContain(dto.Avisos, a => a.StartsWith("Sem anexo"));
+    }
+
+    [Fact]
+    public async Task GerarAsync_ComArquivoDeNotaAnexado_NaoDeveLembrarDaNotaFiscal()
+    {
+        var (service, context) = CriarService();
+        var obrigacao = CriarObrigacaoDeDespesa(context, vencimento: new DateOnly(2026, 10, 30));
+        AdicionarAnexo(context, obrigacao.DespesaAvulsaId!.Value, "oc-assinada.pdf");
+        AdicionarAnexo(context, obrigacao.DespesaAvulsaId!.Value, "nota fiscal 987.pdf");
+
+        var dto = await service.GerarAsync(obrigacao.Id, null);
+
+        Assert.DoesNotContain(dto.Avisos, a => a.StartsWith("Confira se o PDF da nota fiscal"));
+    }
+
+    [Fact]
+    public async Task GerarAsync_SemAnexo_NaoDeveDuplicarOAvisoComOLembreteDaNota()
+    {
+        var (service, context) = CriarService();
+        var obrigacao = CriarObrigacaoDeDespesa(context, vencimento: new DateOnly(2026, 10, 30));
+
+        var dto = await service.GerarAsync(obrigacao.Id, null);
+
+        Assert.Contains(dto.Avisos, a => a.StartsWith("Sem anexo"));
+        Assert.DoesNotContain(dto.Avisos, a => a.StartsWith("Confira se o PDF da nota fiscal"));
+    }
+
     [Fact]
     public async Task GerarAsync_SemVencimento_DeveAvisarENaoCalcularData()
     {

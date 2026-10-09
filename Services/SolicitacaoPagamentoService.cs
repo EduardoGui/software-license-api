@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using SoftwareLicense.Api.Data;
 using SoftwareLicense.Api.DTOs;
@@ -43,7 +44,7 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
             ? null
             : DiasUteis.TercaOuQuintaAnterior(obrigacao.Vencimento.Value, feriadosSet);
 
-        var avisos = MontarAvisos(obrigacao, hoje, dataPagamento, feriadosSet, para.Count, anexos.Count);
+        var avisos = MontarAvisos(obrigacao, hoje, dataPagamento, feriadosSet, para.Count, anexos.Select(a => a.NomeArquivo).ToList());
         var descricao = Descrever(obrigacao);
         var fornecedor = obrigacao.Fornecedor.Nome;
         var saudacao = HorarioBrasilia.Saudacao(agora);
@@ -85,7 +86,7 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
     // --- Avisos ---
 
     private static List<string> MontarAvisos(
-        Obrigacao obrigacao, DateOnly hoje, DateOnly? dataPagamento, ISet<DateOnly> feriados, int quantidadePara, int quantidadeAnexos)
+        Obrigacao obrigacao, DateOnly hoje, DateOnly? dataPagamento, ISet<DateOnly> feriados, int quantidadePara, IReadOnlyList<string> nomesAnexos)
     {
         var avisos = new List<string>();
 
@@ -106,9 +107,13 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
             }
         }
 
-        if (quantidadeAnexos == 0)
+        if (nomesAnexos.Count == 0)
         {
             avisos.Add("Sem anexo: nenhum documento foi anexado na origem (despesa, OC ou medição).");
+        }
+        else if (!AlgumAnexoPareceSerANota(nomesAnexos, obrigacao.NumeroNf))
+        {
+            avisos.Add("Confira se o PDF da nota fiscal está anexado: nenhum dos arquivos parece ser a NF. Anexe-a na origem (despesa, OC ou medição) antes de enviar.");
         }
 
         if (string.IsNullOrWhiteSpace(obrigacao.NumeroNf) || obrigacao.DataNf is null || obrigacao.ValorNota is null)
@@ -122,6 +127,16 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
         }
 
         return avisos;
+    }
+
+    // O sistema não sabe qual anexo é a NF, então confere pelo nome do arquivo: "nf"/"nfe"/"danfe"/"nota"/"fiscal"
+    // ou o próprio número da nota (3+ dígitos, sem zeros à esquerda). É só um lembrete: nunca bloqueia nada.
+    public static bool AlgumAnexoPareceSerANota(IEnumerable<string> nomesArquivos, string? numeroNf)
+    {
+        var digitos = new string((numeroNf ?? string.Empty).Where(char.IsDigit).ToArray()).TrimStart('0');
+        var palavraDeNota = new Regex(@"(^|[^a-z])(nf[a-z]{0,2}|danfe)([^a-z]|$)|nota|fiscal", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        return nomesArquivos.Any(nome => palavraDeNota.IsMatch(nome) || (digitos.Length >= 3 && nome.Contains(digitos, StringComparison.Ordinal)));
     }
 
     // --- Descrição por tipo de obrigação ---
