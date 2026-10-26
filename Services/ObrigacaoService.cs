@@ -67,7 +67,8 @@ public class ObrigacaoService : IObrigacaoService
             .OrderBy(o => o.Vencimento ?? DateOnly.MaxValue)
             .ThenBy(o => o.FornecedorId)
             .ToListAsync();
-        var dtos = obrigacoes.Select(ParaDto).ToList();
+        var resumos = await CarregarResumosParcelasAsync(obrigacoes.Where(o => o.OrdemCompraId is not null).Select(o => o.OrdemCompraId!.Value).Distinct().ToList());
+        var dtos = obrigacoes.Select(o => ParaDto(o, ObterResumo(resumos, o))).ToList();
 
         if (!string.IsNullOrWhiteSpace(filtro.Etapa))
         {
@@ -80,12 +81,33 @@ public class ObrigacaoService : IObrigacaoService
     public async Task<ObrigacaoDto> GetByIdAsync(int id)
     {
         var obrigacao = await BuscarOuFalhar(id);
-        return ParaDto(obrigacao);
+        return await ParaDtoAsync(obrigacao);
     }
 
     public async Task<ObrigacaoDto> UpdateAsync(int id, UpdateObrigacaoDto dto)
     {
         var obrigacao = await BuscarOuFalhar(id);
+        var irmas = await BuscarParcelasIrmasAtivasAsync(obrigacao);
+
+        if (dto.ValorPrevisto is not null && dto.ValorPrevisto.Value != obrigacao.ValorPrevisto)
+        {
+            if (dto.ValorPrevisto.Value <= 0)
+            {
+                throw new BusinessRuleException("Valor previsto deve ser maior que zero.");
+            }
+
+            if (irmas.Count == 0)
+            {
+                throw new BusinessRuleException("O valor previsto só pode ser alterado em Ordem de Compra com mais de uma parcela.");
+            }
+
+            if (obrigacao.Pago)
+            {
+                throw new BusinessRuleException("Parcela já paga: não é possível alterar o valor previsto.");
+            }
+
+            obrigacao.ValorPrevisto = dto.ValorPrevisto.Value;
+        }
 
         obrigacao.DataNf = dto.DataNf;
         obrigacao.NumeroNf = dto.NumeroNf?.Trim();
@@ -98,11 +120,34 @@ public class ObrigacaoService : IObrigacaoService
         obrigacao.Observacoes = dto.Observacoes?.Trim();
         obrigacao.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
 
+        // Uma NF só para todos os boletos: nº, data e valor da nota vão para as demais parcelas, e a competência
+        // das parcelas segue o mês de emissão da NF.
+        if (irmas.Count > 0)
+        {
+            foreach (var irma in irmas)
+            {
+                irma.NumeroNf = obrigacao.NumeroNf;
+                irma.DataNf = obrigacao.DataNf;
+                irma.ValorNota = obrigacao.ValorNota;
+                irma.DataAtualizacao = obrigacao.DataAtualizacao;
+            }
+
+            if (obrigacao.DataNf is not null)
+            {
+                var competenciaNf = new DateOnly(obrigacao.DataNf.Value.Year, obrigacao.DataNf.Value.Month, 1);
+                obrigacao.Competencia = competenciaNf;
+                foreach (var irma in irmas)
+                {
+                    irma.Competencia = competenciaNf;
+                }
+            }
+        }
+
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Obrigação {ObrigacaoId} atualizada", obrigacao.Id);
 
-        return ParaDto(obrigacao);
+        return await ParaDtoAsync(obrigacao);
     }
 
     // Registra que o pedido de pagamento foi enviado ao financeiro (hoje) e a data de pagamento combinada.
@@ -131,7 +176,7 @@ public class ObrigacaoService : IObrigacaoService
 
         _logger.LogInformation("Obrigação {ObrigacaoId} marcada como enviada ao financeiro", obrigacao.Id);
 
-        return ParaDto(obrigacao);
+        return await ParaDtoAsync(obrigacao);
     }
 
     public async Task<ObrigacaoDto> MarcarPagaAsync(int id)
@@ -149,7 +194,7 @@ public class ObrigacaoService : IObrigacaoService
 
         _logger.LogInformation("Obrigação {ObrigacaoId} marcada como paga", obrigacao.Id);
 
-        return ParaDto(obrigacao);
+        return await ParaDtoAsync(obrigacao);
     }
 
     public async Task<ObrigacaoDto> DesmarcarPagaAsync(int id)
@@ -162,7 +207,7 @@ public class ObrigacaoService : IObrigacaoService
 
         _logger.LogInformation("Obrigação {ObrigacaoId} desmarcada como paga", obrigacao.Id);
 
-        return ParaDto(obrigacao);
+        return await ParaDtoAsync(obrigacao);
     }
 
     public async Task<ObrigacaoDto> CancelarAsync(int id)
@@ -175,7 +220,7 @@ public class ObrigacaoService : IObrigacaoService
 
         _logger.LogInformation("Obrigação {ObrigacaoId} cancelada", obrigacao.Id);
 
-        return ParaDto(obrigacao);
+        return await ParaDtoAsync(obrigacao);
     }
 
     public async Task<ObrigacaoDto> ReativarAsync(int id)
@@ -188,7 +233,111 @@ public class ObrigacaoService : IObrigacaoService
 
         _logger.LogInformation("Obrigação {ObrigacaoId} reativada (cancelamento desfeito)", obrigacao.Id);
 
-        return ParaDto(obrigacao);
+        return await ParaDtoAsync(obrigacao);
+    }
+
+    // Ordem de Compra paga em várias vezes: cria mais uma obrigação ligada à mesma OC. Copia só o que é do documento
+    // fiscal (único) e deixa em branco o que é de cada pagamento (vencimento, requisição, envio, pago).
+    public async Task<ObrigacaoDto> AdicionarParcelaAsync(int id, AdicionarParcelaObrigacaoDto dto)
+    {
+        var origem = await BuscarOuFalhar(id);
+
+        if (origem.OrdemCompraId is null)
+        {
+            throw new BusinessRuleException("Só é possível adicionar parcela em uma obrigação de Ordem de Compra.");
+        }
+
+        if (origem.Cancelada)
+        {
+            throw new BusinessRuleException("Não é possível adicionar parcela a partir de uma obrigação cancelada.");
+        }
+
+        var ordemCompraId = origem.OrdemCompraId.Value;
+        var proximoNumero = await _context.Obrigacoes.Where(o => o.OrdemCompraId == ordemCompraId).MaxAsync(o => o.NumeroParcela) + 1;
+
+        // O valor da nova parcela sai da original (que ainda não foi paga), para a soma continuar fechando.
+        if (!origem.Pago && dto.Valor < origem.ValorPrevisto)
+        {
+            origem.ValorPrevisto -= dto.Valor;
+        }
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        var competencia = origem.DataNf is null ? origem.Competencia : new DateOnly(origem.DataNf.Value.Year, origem.DataNf.Value.Month, 1);
+        origem.Competencia = competencia;
+        origem.DataAtualizacao = agora;
+
+        var nova = new Obrigacao
+        {
+            TipoMovimento = origem.TipoMovimento,
+            OrdemCompraId = ordemCompraId,
+            NumeroParcela = proximoNumero,
+            FornecedorId = origem.FornecedorId,
+            Competencia = competencia,
+            ValorPrevisto = dto.Valor,
+            DataNf = origem.DataNf,
+            NumeroNf = origem.NumeroNf,
+            ValorNota = origem.ValorNota,
+            DataCriacao = agora,
+            DataAtualizacao = agora,
+        };
+        _context.Obrigacoes.Add(nova);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Parcela {NumeroParcela} adicionada à Ordem de Compra {OrdemCompraId} (obrigação {ObrigacaoId})", proximoNumero, ordemCompraId, nova.Id);
+
+        return await ParaDtoAsync(await BuscarOuFalhar(nova.Id));
+    }
+
+    private async Task<List<Obrigacao>> BuscarParcelasIrmasAtivasAsync(Obrigacao obrigacao)
+    {
+        if (obrigacao.OrdemCompraId is null)
+        {
+            return [];
+        }
+
+        return await _context.Obrigacoes
+            .Where(o => o.OrdemCompraId == obrigacao.OrdemCompraId && o.Id != obrigacao.Id && !o.Cancelada)
+            .ToListAsync();
+    }
+
+    private readonly record struct ResumoParcelas(int Total, decimal Soma, decimal Referencia);
+
+    private async Task<Dictionary<int, ResumoParcelas>> CarregarResumosParcelasAsync(List<int> ordemCompraIds)
+    {
+        var resumos = new Dictionary<int, ResumoParcelas>();
+        if (ordemCompraIds.Count == 0)
+        {
+            return resumos;
+        }
+
+        var ativas = await _context.Obrigacoes.AsNoTracking()
+            .Where(o => o.OrdemCompraId != null && ordemCompraIds.Contains(o.OrdemCompraId.Value) && !o.Cancelada)
+            .Select(o => new { OrdemCompraId = o.OrdemCompraId!.Value, o.ValorPrevisto, o.ValorNota })
+            .ToListAsync();
+
+        var itens = await _context.OrdemCompraItens.AsNoTracking()
+            .Where(i => ordemCompraIds.Contains(i.OrdemCompraId))
+            .Select(i => new { i.OrdemCompraId, i.Quantidade, i.ValorUnitario })
+            .ToListAsync();
+        var totalItensPorOc = itens.GroupBy(i => i.OrdemCompraId).ToDictionary(g => g.Key, g => g.Sum(i => i.Quantidade * i.ValorUnitario));
+
+        foreach (var grupo in ativas.GroupBy(a => a.OrdemCompraId))
+        {
+            var valorNota = grupo.Max(a => a.ValorNota);
+            var referencia = valorNota ?? totalItensPorOc.GetValueOrDefault(grupo.Key);
+            resumos[grupo.Key] = new ResumoParcelas(grupo.Count(), grupo.Sum(a => a.ValorPrevisto), referencia);
+        }
+
+        return resumos;
+    }
+
+    private static ResumoParcelas? ObterResumo(Dictionary<int, ResumoParcelas> resumos, Obrigacao o) =>
+        o.OrdemCompraId is not null && resumos.TryGetValue(o.OrdemCompraId.Value, out var r) ? r : null;
+
+    private async Task<ObrigacaoDto> ParaDtoAsync(Obrigacao o)
+    {
+        var resumos = o.OrdemCompraId is null ? [] : await CarregarResumosParcelasAsync([o.OrdemCompraId.Value]);
+        return ParaDto(o, ObterResumo(resumos, o));
     }
 
     private IQueryable<Obrigacao> MontarConsultaBase() => _context.Obrigacoes
@@ -224,7 +373,7 @@ public class ObrigacaoService : IObrigacaoService
         return ObrigacaoEtapa.AguardarNf;
     }
 
-    private static ObrigacaoDto ParaDto(Obrigacao o) => new()
+    private static ObrigacaoDto ParaDto(Obrigacao o, ResumoParcelas? resumo) => new()
     {
         Id = o.Id,
         TipoMovimento = o.TipoMovimento,
@@ -241,6 +390,10 @@ public class ObrigacaoService : IObrigacaoService
         FornecedorNome = o.Fornecedor.Nome,
         Competencia = o.Competencia,
         ValorPrevisto = o.ValorPrevisto,
+        NumeroParcela = o.NumeroParcela,
+        TotalParcelas = Math.Max(1, resumo?.Total ?? 1),
+        SomaParcelas = resumo is { Total: > 1 } ? resumo.Value.Soma : null,
+        ValorReferenciaParcelas = resumo is { Total: > 1 } ? resumo.Value.Referencia : null,
         DataNf = o.DataNf,
         NumeroNf = o.NumeroNf,
         ValorNota = o.ValorNota,

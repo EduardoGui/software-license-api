@@ -17,6 +17,13 @@ public class ObrigacaoDto
     public string FornecedorNome { get; set; } = string.Empty;
     public DateOnly Competencia { get; set; }
     public decimal ValorPrevisto { get; set; }
+    // Ordem de Compra paga em várias parcelas (uma NF, vários boletos): nº desta parcela e quantas parcelas ativas a OC tem.
+    public int NumeroParcela { get; set; } = 1;
+    public int TotalParcelas { get; set; } = 1;
+    // Só quando a OC tem 2+ parcelas: soma dos valores previstos das parcelas ativas e o valor que ela deveria fechar
+    // (valor da NF, se já informado; senão o total dos itens da OC).
+    public decimal? SomaParcelas { get; set; }
+    public decimal? ValorReferenciaParcelas { get; set; }
     public DateOnly? DataNf { get; set; }
     public string? NumeroNf { get; set; }
     public decimal? ValorNota { get; set; }

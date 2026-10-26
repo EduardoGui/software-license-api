@@ -164,10 +164,13 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
             .ToListAsync();
 
         var ids = ordens.Select(o => o.Id).ToList();
-        // A NF da OC é a Obrigação ligada a ela; OCs antigas podem não ter obrigação (NF fica vazia).
-        var notas = await _context.Obrigacoes.AsNoTracking()
-            .Where(o => o.OrdemCompraId != null && ids.Contains(o.OrdemCompraId.Value) && !o.Cancelada)
-            .ToDictionaryAsync(o => o.OrdemCompraId!.Value);
+        // A NF da OC é a Obrigação ligada a ela; OCs antigas podem não ter obrigação (NF fica vazia). Uma OC paga em
+        // várias parcelas tem uma obrigação por parcela, todas com a mesma NF.
+        var notas = (await _context.Obrigacoes.AsNoTracking()
+                .Where(o => o.OrdemCompraId != null && ids.Contains(o.OrdemCompraId.Value) && !o.Cancelada)
+                .ToListAsync())
+            .GroupBy(o => o.OrdemCompraId!.Value)
+            .ToDictionary(g => g.Key, g => ResumirNota(g.OrderBy(o => o.NumeroParcela).ToList()));
 
         var linhas = new List<BaseDadosEngenhariaLinhaDto>();
         foreach (var ordem in ordens)
@@ -185,9 +188,9 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
                 FornecedorDocumento = DocumentoDoFornecedor(ordem.Fornecedor),
                 // O frete não entra: a obrigação da OC também considera só os itens.
                 ValorTotalBm = ordem.Itens.Sum(i => i.Quantidade * i.ValorUnitario),
-                NfDataEmissao = nota?.DataNf,
-                NfNumero = nota?.NumeroNf,
-                NfValorTotal = nota?.ValorNota,
+                NfDataEmissao = nota?.DataEmissao,
+                NfNumero = nota?.Numero,
+                NfValorTotal = nota?.Valor,
             };
 
             var itens = ordem.Itens
@@ -199,6 +202,22 @@ public class BaseDadosEngenhariaService : IBaseDadosEngenhariaService
         }
 
         return linhas;
+    }
+
+    private sealed record NotaResumo(DateOnly? DataEmissao, string? Numero, decimal? Valor);
+
+    // Parcelas da mesma OC compartilham a NF: mostra a nota uma vez (nunca soma o valor de cada parcela, que dobraria a NF).
+    // Com NFs diferentes, junta os números e soma uma vez cada NF.
+    private static NotaResumo ResumirNota(List<Obrigacao> obrigacoes)
+    {
+        var numeros = obrigacoes.Select(o => o.NumeroNf?.Trim()).Where(n => !string.IsNullOrEmpty(n)).Distinct().ToList();
+        var datas = obrigacoes.Where(o => o.DataNf is not null).Select(o => o.DataNf!.Value).ToList();
+        var valores = obrigacoes.Where(o => o.ValorNota is not null).GroupBy(o => o.NumeroNf?.Trim() ?? string.Empty).Select(g => g.Max(o => o.ValorNota!.Value)).ToList();
+
+        return new NotaResumo(
+            datas.Count == 0 ? null : datas.Min(),
+            numeros.Count == 0 ? null : string.Join(", ", numeros),
+            valores.Count == 0 ? null : valores.Sum());
     }
 
     private static string? DocumentoDoFornecedor(Fornecedor fornecedor) =>

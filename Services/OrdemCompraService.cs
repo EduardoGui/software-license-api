@@ -172,13 +172,19 @@ public class OrdemCompraService : IOrdemCompraService
 
         SincronizarItens(ordemCompra, dto.Itens, agora);
 
-        var obrigacao = await _context.Obrigacoes.FirstOrDefaultAsync(o => o.OrdemCompraId == id);
-        if (obrigacao is not null)
+        // Uma OC paga em várias parcelas tem várias obrigações: o fornecedor vale para todas, mas valor e competência
+        // só se sincronizam quando há uma obrigação só (senão apagaria o que foi dividido em parcelas).
+        var obrigacoes = await _context.Obrigacoes.Where(o => o.OrdemCompraId == id).ToListAsync();
+        foreach (var obrigacao in obrigacoes)
         {
             obrigacao.FornecedorId = ordemCompra.FornecedorId;
-            obrigacao.Competencia = new DateOnly(ordemCompra.Data.Year, ordemCompra.Data.Month, 1);
-            obrigacao.ValorPrevisto = ordemCompra.Itens.Sum(i => i.Quantidade * i.ValorUnitario);
             obrigacao.DataAtualizacao = agora;
+        }
+
+        if (obrigacoes.Count == 1)
+        {
+            obrigacoes[0].Competencia = new DateOnly(ordemCompra.Data.Year, ordemCompra.Data.Month, 1);
+            obrigacoes[0].ValorPrevisto = ordemCompra.Itens.Sum(i => i.Quantidade * i.ValorUnitario);
         }
 
         await _context.SaveChangesAsync();
@@ -224,8 +230,7 @@ public class OrdemCompraService : IOrdemCompraService
             throw new BusinessRuleException("Só é possível reabrir para edição uma Ordem de Compra emitida (não assinada).");
         }
 
-        var obrigacao = await _context.Obrigacoes.FirstOrDefaultAsync(o => o.OrdemCompraId == id);
-        if (obrigacao is { Pago: true })
+        if (await _context.Obrigacoes.AnyAsync(o => o.OrdemCompraId == id && o.Pago))
         {
             throw new BusinessRuleException("Não é possível reabrir uma Ordem de Compra cuja obrigação já foi paga.");
         }
@@ -275,8 +280,9 @@ public class OrdemCompraService : IOrdemCompraService
         ordemCompra.Status = OrdemCompraStatus.Cancelada;
         ordemCompra.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
 
-        var obrigacao = await _context.Obrigacoes.FirstOrDefaultAsync(o => o.OrdemCompraId == id);
-        if (obrigacao is not null)
+        // Cancela todas as parcelas (obrigações) da OC.
+        var obrigacoes = await _context.Obrigacoes.Where(o => o.OrdemCompraId == id).ToListAsync();
+        foreach (var obrigacao in obrigacoes)
         {
             obrigacao.Cancelada = true;
             obrigacao.DataAtualizacao = ordemCompra.DataAtualizacao;

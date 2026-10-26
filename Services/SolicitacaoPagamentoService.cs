@@ -44,8 +44,9 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
             ? null
             : DiasUteis.TercaOuQuintaAnterior(obrigacao.Vencimento.Value, feriadosSet);
 
-        var avisos = MontarAvisos(obrigacao, hoje, dataPagamento, feriadosSet, para.Count, anexos.Select(a => a.NomeArquivo).ToList());
-        var descricao = Descrever(obrigacao);
+        var (totalParcelas, somaParcelas) = await ResumirParcelasAsync(obrigacao);
+        var avisos = MontarAvisos(obrigacao, hoje, dataPagamento, feriadosSet, para.Count, anexos.Select(a => a.NomeArquivo).ToList(), totalParcelas, somaParcelas);
+        var descricao = Descrever(obrigacao, totalParcelas);
         var fornecedor = obrigacao.Fornecedor.Nome;
         var saudacao = HorarioBrasilia.Saudacao(agora);
 
@@ -58,10 +59,16 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
             ("Vencimento", FormatarData(obrigacao.Vencimento)),
         };
 
+        // Ordem de Compra em várias parcelas (uma NF, vários boletos): o e-mail diz qual parcela é e o valor dela.
+        if (totalParcelas > 1)
+        {
+            linhasDados.Insert(3, ("Valor desta parcela", FormatarMoeda(obrigacao.ValorPrevisto)));
+        }
+
         return new SolicitacaoPagamentoDto
         {
             ObrigacaoId = obrigacao.Id,
-            Assunto = $"Solicitação de Pagamento - {fornecedor}",
+            Assunto = $"Solicitação de Pagamento - {fornecedor}" + (totalParcelas > 1 ? $" (parcela {obrigacao.NumeroParcela}/{totalParcelas})" : string.Empty),
             CorpoTexto = MontarTexto(saudacao, fornecedor, descricao, linhasDados, assinatura),
             CorpoHtml = MontarHtml(saudacao, fornecedor, descricao, linhasDados, assinatura),
             Para = para,
@@ -79,14 +86,17 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
         var anexos = await CarregarAnexosComConteudoAsync(obrigacao);
 
         var eml = EmlBuilder.Montar(solicitacao.Para, solicitacao.Cc, solicitacao.Assunto, solicitacao.CorpoTexto, solicitacao.CorpoHtml, anexos);
-        var nome = $"solicitacao-pagamento-{NomeSeguro(obrigacao.Fornecedor.Nome)}.eml";
+        var (totalParcelas, _) = await ResumirParcelasAsync(obrigacao);
+        var sufixoParcela = totalParcelas > 1 ? $"-parcela-{obrigacao.NumeroParcela}" : string.Empty;
+        var nome = $"solicitacao-pagamento-{NomeSeguro(obrigacao.Fornecedor.Nome)}{sufixoParcela}.eml";
         return (eml, nome);
     }
 
     // --- Avisos ---
 
     private static List<string> MontarAvisos(
-        Obrigacao obrigacao, DateOnly hoje, DateOnly? dataPagamento, ISet<DateOnly> feriados, int quantidadePara, IReadOnlyList<string> nomesAnexos)
+        Obrigacao obrigacao, DateOnly hoje, DateOnly? dataPagamento, ISet<DateOnly> feriados, int quantidadePara, IReadOnlyList<string> nomesAnexos,
+        int totalParcelas, decimal somaParcelas)
     {
         var avisos = new List<string>();
 
@@ -121,6 +131,11 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
             avisos.Add("Dados da nota fiscal incompletos (número, data de emissão ou valor).");
         }
 
+        if (totalParcelas > 1 && obrigacao.ValorNota is not null && somaParcelas != obrigacao.ValorNota.Value)
+        {
+            avisos.Add($"A soma das parcelas ({FormatarMoeda(somaParcelas)}) difere do valor da nota fiscal ({FormatarMoeda(obrigacao.ValorNota.Value)}): ajuste o valor das parcelas.");
+        }
+
         if (quantidadePara == 0)
         {
             avisos.Add("Nenhum destinatário \"Para\" configurado: use \"Destinatários do financeiro\".");
@@ -141,7 +156,22 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
 
     // --- Descrição por tipo de obrigação ---
 
-    private static string Descrever(Obrigacao obrigacao)
+    // Quantas parcelas ativas a OC tem e quanto elas somam (fora de OC: 1 parcela).
+    private async Task<(int Total, decimal Soma)> ResumirParcelasAsync(Obrigacao obrigacao)
+    {
+        if (obrigacao.OrdemCompraId is null)
+        {
+            return (1, obrigacao.ValorPrevisto);
+        }
+
+        var valores = await _context.Obrigacoes.AsNoTracking()
+            .Where(o => o.OrdemCompraId == obrigacao.OrdemCompraId && !o.Cancelada)
+            .Select(o => o.ValorPrevisto)
+            .ToListAsync();
+        return (Math.Max(1, valores.Count), valores.Sum());
+    }
+
+    private static string Descrever(Obrigacao obrigacao, int totalParcelas)
     {
         if (obrigacao.DespesaAvulsa is not null)
         {
@@ -150,7 +180,8 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
 
         if (obrigacao.OrdemCompra is not null)
         {
-            return $"Ordem de Compra nº {obrigacao.OrdemCompra.Numero:D3} (obra {obrigacao.OrdemCompra.Local.Nome})";
+            var sufixoParcela = totalParcelas > 1 ? $" — parcela {obrigacao.NumeroParcela}/{totalParcelas}" : string.Empty;
+            return $"Ordem de Compra nº {obrigacao.OrdemCompra.Numero:D3} (obra {obrigacao.OrdemCompra.Local.Nome}){sufixoParcela}";
         }
 
         if (obrigacao.MedicaoBm is not null)

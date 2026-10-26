@@ -12,4 +12,5 @@ public interface IObrigacaoService
     Task<ObrigacaoDto> DesmarcarPagaAsync(int id);
     Task<ObrigacaoDto> CancelarAsync(int id);
     Task<ObrigacaoDto> ReativarAsync(int id);
+    Task<ObrigacaoDto> AdicionarParcelaAsync(int id, AdicionarParcelaObrigacaoDto dto);
 }

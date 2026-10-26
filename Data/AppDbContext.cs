@@ -542,7 +542,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(o => o.NumeroNf).HasMaxLength(50);
             entity.Property(o => o.ValorNota).HasPrecision(18, 2);
             entity.HasIndex(o => o.MedicaoBmId).IsUnique().HasFilter("\"MedicaoBmId\" IS NOT NULL");
-            entity.HasIndex(o => o.OrdemCompraId).IsUnique().HasFilter("\"OrdemCompraId\" IS NOT NULL");
+            entity.Property(o => o.NumeroParcela).HasDefaultValue(1);
+            entity.HasIndex(o => new { o.OrdemCompraId, o.NumeroParcela }).IsUnique().HasFilter("\"OrdemCompraId\" IS NOT NULL");
             entity.HasIndex(o => o.DespesaAvulsaId).IsUnique().HasFilter("\"DespesaAvulsaId\" IS NOT NULL");
             entity.HasIndex(o => o.Competencia);
             entity.HasOne(o => o.MedicaoBm).WithMany().HasForeignKey(o => o.MedicaoBmId).OnDelete(DeleteBehavior.Restrict);

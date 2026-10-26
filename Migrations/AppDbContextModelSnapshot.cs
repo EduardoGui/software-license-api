@@ -2356,6 +2356,11 @@ namespace SoftwareLicense.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<int>("NumeroParcela")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
+
                     b.Property<string>("Observacoes")
                         .HasColumnType("text");
 
@@ -2395,7 +2400,7 @@ namespace SoftwareLicense.Api.Migrations
                         .IsUnique()
                         .HasFilter("\"MedicaoBmId\" IS NOT NULL");
 
-                    b.HasIndex("OrdemCompraId")
+                    b.HasIndex("OrdemCompraId", "NumeroParcela")
                         .IsUnique()
                         .HasFilter("\"OrdemCompraId\" IS NOT NULL");
 

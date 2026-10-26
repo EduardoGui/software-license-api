@@ -41,6 +41,14 @@ public class ObrigacoesController : ControllerBase
         return Ok(obrigacao);
     }
 
+    // Ordem de Compra paga em várias vezes: cria mais uma obrigação (parcela) ligada à mesma OC, copiando a NF.
+    [HttpPost("{id:int}/parcelas")]
+    public async Task<ActionResult<ObrigacaoDto>> AdicionarParcela(int id, AdicionarParcelaObrigacaoDto dto)
+    {
+        var parcela = await _obrigacaoService.AdicionarParcelaAsync(id, dto);
+        return CreatedAtAction(nameof(GetById), new { id = parcela.Id }, parcela);
+    }
+
     [HttpGet("{id:int}/solicitacao-pagamento")]
     public async Task<ActionResult<SolicitacaoPagamentoDto>> SolicitacaoPagamento(int id)
     {

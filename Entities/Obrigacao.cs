@@ -7,6 +7,9 @@ public class Obrigacao
     public int? MedicaoBmId { get; set; }
     public MedicaoBm? MedicaoBm { get; set; }
     public int? OrdemCompraId { get; set; }
+    // Ordem de Compra paga em várias vezes (uma NF, vários boletos): uma Obrigação por parcela, numeradas a partir de 1.
+    // Fora de OC fica sempre 1.
+    public int NumeroParcela { get; set; } = 1;
     public OrdemCompra? OrdemCompra { get; set; }
     public int? DespesaAvulsaId { get; set; }
     public DespesaAvulsa? DespesaAvulsa { get; set; }
