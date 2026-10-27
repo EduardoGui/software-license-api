@@ -275,4 +275,47 @@ public class RecessoCorporativoServiceTests
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.ConfirmarAsync(recesso.Id, new SimularRecessoDto { UsuarioIds = [usuario.Id] }, null));
     }
+
+    [Fact]
+    public async Task GetByUsuarioAsync_DeveListarSoRecessosConfirmadosDoColaboradorComSituacaoPelasDatas()
+    {
+        var (service, _, context) = CriarServicos();
+        var usuario = CriarUsuarioPj(context);
+        var outro = CriarUsuarioPj(context, "Outro");
+
+        RecessoCorporativo NovoRecesso(string nome, DateOnly inicio, DateOnly fim, string status) => new()
+        {
+            Nome = nome, DataInicio = inicio, DataFim = fim, DiasCorridos = 5, DiasADescontar = 4, Status = status,
+            DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime,
+        };
+
+        var passado = NovoRecesso("Passado", new DateOnly(2027, 4, 1), new DateOnly(2027, 4, 5), RecessoCorporativoStatus.Confirmado);
+        var emAndamento = NovoRecesso("Agora", new DateOnly(2027, 6, 14), new DateOnly(2027, 6, 18), RecessoCorporativoStatus.Confirmado);
+        var futuro = NovoRecesso("Futuro", new DateOnly(2027, 12, 20), new DateOnly(2028, 1, 3), RecessoCorporativoStatus.Confirmado);
+        var rascunho = NovoRecesso("Rascunho", new DateOnly(2027, 9, 1), new DateOnly(2027, 9, 5), RecessoCorporativoStatus.Rascunho);
+        var cancelado = NovoRecesso("Cancelado", new DateOnly(2027, 10, 1), new DateOnly(2027, 10, 5), RecessoCorporativoStatus.Cancelado);
+        context.RecessosCorporativos.AddRange(passado, emAndamento, futuro, rascunho, cancelado);
+        context.SaveChanges();
+
+        foreach (var r in new[] { passado, emAndamento, futuro, rascunho, cancelado })
+        {
+            context.RecessosColaborador.Add(new RecessoColaborador
+            {
+                RecessoCorporativoId = r.Id, UsuarioId = usuario.Id, PeriodoFeriasId = 1, DiasAbatidos = 4,
+                Situacao = RecessoColaboradorSituacao.Normal, DataCriacao = Agora.UtcDateTime,
+            });
+        }
+        context.RecessosColaborador.Add(new RecessoColaborador
+        {
+            RecessoCorporativoId = futuro.Id, UsuarioId = outro.Id, PeriodoFeriasId = 2, DiasAbatidos = 4,
+            Situacao = RecessoColaboradorSituacao.Normal, DataCriacao = Agora.UtcDateTime,
+        });
+        context.SaveChanges();
+
+        var lista = await service.GetByUsuarioAsync(usuario.Id);
+
+        Assert.Equal(new[] { "Futuro", "Agora", "Passado" }, lista.Select(r => r.Nome));
+        Assert.Equal(new[] { "Programado", "EmAndamento", "Concluido" }, lista.Select(r => r.Situacao));
+        Assert.All(lista, r => Assert.Equal(4, r.DiasAbatidos));
+    }
 }

@@ -6,6 +6,7 @@ public interface IRecessoCorporativoService
 {
     Task<List<RecessoCorporativoDto>> GetAllAsync();
     Task<RecessoCorporativoDto> GetByIdAsync(int id);
+    Task<List<RecessoDoColaboradorDto>> GetByUsuarioAsync(int usuarioId);
     Task<RecessoCorporativoDto> CreateAsync(CreateRecessoCorporativoDto dto, int? usuarioResponsavelId);
     Task<RecessoCorporativoDto> UpdateAsync(int id, UpdateRecessoCorporativoDto dto, int? usuarioResponsavelId);
     Task<List<RecessoSimulacaoLinhaDto>> SimularAsync(int id, SimularRecessoDto dto);

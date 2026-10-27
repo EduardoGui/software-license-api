@@ -37,6 +37,33 @@ public class RecessoCorporativoService : IRecessoCorporativoService
         return ParaDto(recesso);
     }
 
+    // Só recessos Confirmados: antes disso (rascunho/simulação) nenhum colaborador está vinculado e as
+    // datas ainda podem mudar. Recessos cancelados não aparecem.
+    public async Task<List<RecessoDoColaboradorDto>> GetByUsuarioAsync(int usuarioId)
+    {
+        var hoje = DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
+        var linhas = await _context.RecessosColaborador
+            .Include(c => c.RecessoCorporativo)
+            .Where(c => c.UsuarioId == usuarioId && c.RecessoCorporativo.Status == RecessoCorporativoStatus.Confirmado)
+            .ToListAsync();
+
+        return linhas
+            .OrderByDescending(c => c.RecessoCorporativo.DataInicio)
+            .Select(c => new RecessoDoColaboradorDto
+            {
+                Id = c.Id,
+                RecessoCorporativoId = c.RecessoCorporativoId,
+                Nome = c.RecessoCorporativo.Nome,
+                DataInicio = c.RecessoCorporativo.DataInicio,
+                DataFim = c.RecessoCorporativo.DataFim,
+                DiasCorridos = c.RecessoCorporativo.DiasCorridos,
+                DiasAbatidos = c.DiasAbatidos,
+                Situacao = hoje < c.RecessoCorporativo.DataInicio ? "Programado"
+                    : hoje > c.RecessoCorporativo.DataFim ? "Concluido" : "EmAndamento",
+            })
+            .ToList();
+    }
+
     public async Task<RecessoCorporativoDto> CreateAsync(CreateRecessoCorporativoDto dto, int? usuarioResponsavelId)
     {
         if (dto.DataFim < dto.DataInicio)

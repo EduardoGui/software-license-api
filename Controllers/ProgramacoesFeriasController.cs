@@ -13,9 +13,13 @@ public class ProgramacoesFeriasController : ControllerBase
 {
     private readonly IProgramacaoFeriasService _programacaoFeriasService;
     private readonly IPeriodoFeriasService _periodoFeriasService;
+    private readonly IRecessoCorporativoService _recessoCorporativoService;
 
-    public ProgramacoesFeriasController(IProgramacaoFeriasService programacaoFeriasService, IPeriodoFeriasService periodoFeriasService)
+    public ProgramacoesFeriasController(
+        IProgramacaoFeriasService programacaoFeriasService, IPeriodoFeriasService periodoFeriasService,
+        IRecessoCorporativoService recessoCorporativoService)
     {
+        _recessoCorporativoService = recessoCorporativoService;
         _programacaoFeriasService = programacaoFeriasService;
         _periodoFeriasService = periodoFeriasService;
     }
@@ -41,6 +45,19 @@ public class ProgramacoesFeriasController : ControllerBase
 
         var programacoes = await _programacaoFeriasService.GetByUsuarioAsync(usuarioId);
         return Ok(programacoes);
+    }
+
+    // Usada pelo mobile - recessos coletivos confirmados em que o colaborador foi incluído.
+    [HttpGet]
+    [Route("/api/usuarios/{usuarioId:int}/recessos")]
+    public async Task<ActionResult<List<RecessoDoColaboradorDto>>> GetRecessosByUsuario(int usuarioId)
+    {
+        if (!User.EhAdminOuAdministrativo() && !User.TemUsuarioId(usuarioId))
+        {
+            return Forbid();
+        }
+
+        return Ok(await _recessoCorporativoService.GetByUsuarioAsync(usuarioId));
     }
 
     [HttpGet]
