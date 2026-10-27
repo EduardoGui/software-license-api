@@ -12,6 +12,7 @@ namespace SoftwareLicense.Api.Services;
 public class AuthService : IAuthService
 {
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly ContaAcessoValidador _contaAcessoValidador;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<AuthService> _logger;
     private readonly string _jwtSecret;
@@ -19,11 +20,13 @@ public class AuthService : IAuthService
 
     public AuthService(
         UserManager<ApplicationUser> userManager,
+        ContaAcessoValidador contaAcessoValidador,
         TimeProvider timeProvider,
         IConfiguration configuration,
         ILogger<AuthService> logger)
     {
         _userManager = userManager;
+        _contaAcessoValidador = contaAcessoValidador;
         _timeProvider = timeProvider;
         _logger = logger;
         _jwtSecret = configuration["Jwt:Secret"]
@@ -37,6 +40,14 @@ public class AuthService : IAuthService
         if (usuario is null || !await _userManager.CheckPasswordAsync(usuario, dto.Senha))
         {
             _logger.LogInformation("Tentativa de login inválida para {Email}", dto.Email);
+            return null;
+        }
+
+        // Senha correta, mas conta bloqueada ou colaborador desligado: mesma resposta do login
+        // inválido (não revela o motivo), só fica registrado no log.
+        if (!await _contaAcessoValidador.PodeAcessarAsync(usuario.Id))
+        {
+            _logger.LogWarning("Login recusado para {Email}: conta bloqueada ou colaborador desligado", dto.Email);
             return null;
         }
 

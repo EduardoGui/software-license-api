@@ -66,6 +66,22 @@ public class UsuariosController : ControllerBase
         return Ok(usuario);
     }
 
+    [HttpPatch("{id:int}/reativar")]
+    [Authorize(Roles = Roles.Administrador)]
+    public async Task<ActionResult<UsuarioDto>> Reativar(int id)
+    {
+        var usuario = await _usuarioService.ReativarAsync(id);
+        return Ok(usuario);
+    }
+
+    [HttpPost("{id:int}/conta-acesso")]
+    [Authorize(Roles = Roles.Administrador)]
+    public async Task<ActionResult<ContaAcessoCriadaDto>> CriarContaAcesso(int id)
+    {
+        var conviteEnviado = await _usuarioService.CriarContaAcessoAsync(id);
+        return Ok(new ContaAcessoCriadaDto { ConviteEnviado = conviteEnviado });
+    }
+
     [HttpPatch("{id:int}/perfil")]
     [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
     public async Task<ActionResult<UsuarioDto>> AtualizarPerfil(int id, AtualizarPerfilDto dto)

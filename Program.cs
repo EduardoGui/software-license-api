@@ -1,3 +1,5 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -6,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SoftwareLicense.Api.Data;
@@ -87,7 +90,38 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1),
         };
+
+        // O token dura 8h: sem esta checagem, quem foi desligado ou bloqueado continuaria
+        // entrando até ele expirar. O resultado fica em cache curto por conta (1 consulta/30s).
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var contaId = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier)
+                    ?? context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Sub);
+                if (string.IsNullOrEmpty(contaId))
+                {
+                    context.Fail("Token sem identificação da conta.");
+                    return;
+                }
+
+                var cache = context.HttpContext.RequestServices.GetRequiredService<IMemoryCache>();
+                var pode = await cache.GetOrCreateAsync($"conta-acesso:{contaId}", async entrada =>
+                {
+                    entrada.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
+                    var validador = context.HttpContext.RequestServices.GetRequiredService<ContaAcessoValidador>();
+                    return await validador.PodeAcessarAsync(contaId);
+                });
+
+                if (!pode)
+                {
+                    context.Fail("Conta bloqueada ou colaborador desligado.");
+                }
+            },
+        };
     });
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<ContaAcessoValidador>();
 builder.Services.AddAuthorization();
 
 builder.Services.AddSingleton(TimeProvider.System);
@@ -95,6 +129,7 @@ builder.Services.AddScoped<IUsuarioService, UsuarioService>();
 builder.Services.AddScoped<ILicencaService, LicencaService>();
 builder.Services.AddScoped<IMovimentacaoService, MovimentacaoService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IAcessoService, AcessoService>();
 if (!string.IsNullOrWhiteSpace(builder.Configuration["Brevo:ApiKey"]))
 {
     builder.Services.AddHttpClient<IEmailSender, BrevoApiEmailSender>();

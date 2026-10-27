@@ -137,23 +137,74 @@ public class UsuarioService : IUsuarioService
 
         await _userManager.AddToRoleAsync(contaAcesso, Roles.Colaborador);
 
-        try
+        var conviteEnviado = await TentarEnviarConviteAsync(usuario, contaAcesso);
+        if (conviteEnviado)
         {
-            await EnviarConviteAsync(usuario, contaAcesso);
             _logger.LogInformation(
                 "Usuário {UsuarioId} criado, conta de acesso provisionada (role {Role}) e convite de senha enviado",
                 usuario.Id, Roles.Colaborador);
         }
+
+        var criado = ParaDto(
+            usuario, Hoje(), licencasEmUso: 0, setorNome: null, await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId),
+            await ObterNomeGestorAsync(usuario.GestorImediatoId), dependentes: []);
+        criado.ConviteEnviado = conviteEnviado;
+        return criado;
+    }
+
+    // Cria a conta de acesso de um colaborador que ainda não tem uma (ex.: cadastrado antes do login
+    // existir, ou conta removida) e manda o convite. Devolve false se o e-mail do convite falhar.
+    public async Task<bool> CriarContaAcessoAsync(int id)
+    {
+        var usuario = await BuscarOuFalhar(id);
+
+        if (await _userManager.Users.AnyAsync(u => u.UsuarioId == id))
+        {
+            throw new BusinessRuleException("Este usuário já tem conta de acesso.");
+        }
+
+        if (await _userManager.FindByEmailAsync(usuario.Email) is not null)
+        {
+            throw new BusinessRuleException("Já existe uma conta de acesso com este email, vinculada a outro cadastro.");
+        }
+
+        var contaAcesso = new ApplicationUser
+        {
+            UserName = usuario.Email,
+            Email = usuario.Email,
+            EmailConfirmed = true,
+            UsuarioId = usuario.Id,
+        };
+
+        var resultado = await _userManager.CreateAsync(contaAcesso, GerarSenhaTemporaria());
+        if (!resultado.Succeeded)
+        {
+            throw new BusinessRuleException(
+                $"Não foi possível criar a conta de acesso: {string.Join(", ", resultado.Errors.Select(e => e.Description))}");
+        }
+
+        await _userManager.AddToRoleAsync(contaAcesso, Roles.Colaborador);
+
+        var conviteEnviado = await TentarEnviarConviteAsync(usuario, contaAcesso);
+        _logger.LogInformation(
+            "Conta de acesso criada para o usuário {UsuarioId} (convite enviado: {ConviteEnviado})", usuario.Id, conviteEnviado);
+        return conviteEnviado;
+    }
+
+    private async Task<bool> TentarEnviarConviteAsync(Usuario usuario, ApplicationUser contaAcesso)
+    {
+        try
+        {
+            await EnviarConviteAsync(usuario, contaAcesso);
+            return true;
+        }
         catch (Exception ex)
         {
             // A conta de acesso já foi criada — uma falha no envio do e-mail não deve reverter
-            // o cadastro do colaborador, só fica registrada para reenvio manual futuro.
-            _logger.LogError(ex, "Usuário {UsuarioId} criado, mas o envio do convite de senha falhou", usuario.Id);
+            // o cadastro; o admin é avisado (ConviteEnviado = false) para reenviar depois.
+            _logger.LogError(ex, "Conta de acesso do usuário {UsuarioId} criada, mas o envio do convite de senha falhou", usuario.Id);
+            return false;
         }
-
-        return ParaDto(
-            usuario, Hoje(), licencasEmUso: 0, setorNome: null, await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId),
-            await ObterNomeGestorAsync(usuario.GestorImediatoId), dependentes: []);
     }
 
     public async Task ReenviarConviteAsync(int id)
@@ -194,8 +245,14 @@ public class UsuarioService : IUsuarioService
         await ValidarTipoEEmpresaPj(dto.Tipo, dto.EmpresaPjId);
         await ValidarGestorImediato(dto.GestorImediatoId, usuarioIdAtual: id);
 
+        var novoEmail = dto.Email.Trim();
+        if (!string.Equals(novoEmail, usuario.Email, StringComparison.OrdinalIgnoreCase))
+        {
+            await SincronizarEmailContaAsync(id, novoEmail);
+        }
+
         usuario.Nome = dto.Nome.Trim();
-        usuario.Email = dto.Email.Trim();
+        usuario.Email = novoEmail;
         usuario.DataInicio = dto.DataInicio;
         usuario.DataFim = dto.DataFim;
         usuario.Observacao = dto.Observacao;
@@ -207,6 +264,60 @@ public class UsuarioService : IUsuarioService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Usuário {UsuarioId} atualizado", usuario.Id);
+
+        return ParaDto(
+            usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId),
+            await ObterNomeEmpresaPjAsync(usuario.EmpresaPjId), await ObterNomeGestorAsync(usuario.GestorImediatoId),
+            await BuscarDependentesAsync(usuario.Id));
+    }
+
+    // O login e o convite de senha usam o e-mail da conta de acesso: se o do colaborador mudar,
+    // a conta tem que acompanhar (senão o acesso e os convites ficam presos ao e-mail antigo).
+    private async Task SincronizarEmailContaAsync(int usuarioId, string novoEmail)
+    {
+        var conta = await _userManager.Users.FirstOrDefaultAsync(u => u.UsuarioId == usuarioId);
+        if (conta is null)
+        {
+            return;
+        }
+
+        var existente = await _userManager.FindByEmailAsync(novoEmail);
+        if (existente is not null && existente.Id != conta.Id)
+        {
+            throw new BusinessRuleException("Já existe uma conta de acesso cadastrada com este email.");
+        }
+
+        var resultado = await _userManager.SetEmailAsync(conta, novoEmail);
+        if (resultado.Succeeded)
+        {
+            resultado = await _userManager.SetUserNameAsync(conta, novoEmail);
+        }
+
+        if (!resultado.Succeeded)
+        {
+            throw new BusinessRuleException(
+                $"Não foi possível atualizar o email da conta de acesso: {string.Join(", ", resultado.Errors.Select(e => e.Description))}");
+        }
+
+        _logger.LogInformation("E-mail da conta de acesso do usuário {UsuarioId} atualizado", usuarioId);
+    }
+
+    // Desfaz a desativação: tira a data de fim. As licenças/equipamentos que foram encerrados
+    // na desativação continuam encerrados (precisam ser alocados de novo, se for o caso).
+    public async Task<UsuarioDto> ReativarAsync(int id)
+    {
+        var usuario = await BuscarOuFalhar(id);
+
+        if (usuario.DataFim is null)
+        {
+            throw new BusinessRuleException("Este usuário não está desativado.");
+        }
+
+        usuario.DataFim = null;
+        usuario.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Usuário {UsuarioId} reativado", usuario.Id);
 
         return ParaDto(
             usuario, Hoje(), await ContarEmUsoAsync(usuario.Id), await ObterNomeSetorAsync(usuario.SetorId),

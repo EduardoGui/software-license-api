@@ -42,7 +42,7 @@ public class AuthServiceTests
             })
             .Build();
 
-        var service = new AuthService(userManager, new FakeTimeProvider(Agora), configuracao, NullLogger<AuthService>.Instance);
+        var service = new AuthService(userManager, new ContaAcessoValidador(context, new FakeTimeProvider(Agora)), new FakeTimeProvider(Agora), configuracao, NullLogger<AuthService>.Instance);
         return (service, userManager);
     }
 

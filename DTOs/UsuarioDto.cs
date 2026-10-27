@@ -24,6 +24,9 @@ public class UsuarioDto
     public int? GestorImediatoId { get; set; }
     public string? GestorImediatoNome { get; set; }
     public List<DependenteDto> Dependentes { get; set; } = [];
+
+    // Só preenchido na criação: false = conta criada, mas o e-mail de convite falhou (reenviar depois).
+    public bool? ConviteEnviado { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
 }
