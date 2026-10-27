@@ -27,7 +27,7 @@ public class AuthServiceTests
         services.AddSingleton(context);
         services.AddLogging();
         services.AddDataProtection();
-        services.AddIdentityCore<ApplicationUser>()
+        services.AddIdentityCore<ApplicationUser>(o => AuthService.ConfigurarBloqueioPorTentativas(o.Lockout))
             .AddRoles<IdentityRole>()
             .AddEntityFrameworkStores<AppDbContext>()
             .AddDefaultTokenProviders();
@@ -42,7 +42,7 @@ public class AuthServiceTests
             })
             .Build();
 
-        var service = new AuthService(userManager, new ContaAcessoValidador(context, new FakeTimeProvider(Agora)), new FakeTimeProvider(Agora), configuracao, NullLogger<AuthService>.Instance);
+        var service = new AuthService(userManager, new ContaAcessoValidador(context, new FakeTimeProvider(Agora)), new FakeEmailSender(), new AuditoriaService(context, new FakeTimeProvider(Agora)), new FakeTimeProvider(Agora), configuracao, NullLogger<AuthService>.Instance);
         return (service, userManager);
     }
 

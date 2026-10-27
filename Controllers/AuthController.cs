@@ -31,6 +31,14 @@ public class AuthController : ControllerBase
         return Ok(resultado);
     }
 
+    // Responde sempre 204, exista o e-mail ou não (não revela quem tem conta).
+    [HttpPost("esqueci-senha")]
+    public async Task<IActionResult> EsqueciSenha(EsqueciSenhaDto dto)
+    {
+        await _authService.EsqueciSenhaAsync(dto);
+        return NoContent();
+    }
+
     [HttpPost("definir-senha")]
     public async Task<IActionResult> DefinirSenha(DefinirSenhaDto dto)
     {

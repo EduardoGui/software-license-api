@@ -12,6 +12,11 @@ public class AcessoContaDto
     public bool TemConta { get; set; }
     public List<string> Papeis { get; set; } = [];
     public bool Bloqueada { get; set; }
+
+    // Bloqueio automático por tentativas de senha (some sozinho em 15 min); false = bloqueio do administrador.
+    public bool BloqueioTemporario { get; set; }
+
+    public DateTime? UltimoAcessoEm { get; set; }
     public bool EhVoce { get; set; }
 }
 

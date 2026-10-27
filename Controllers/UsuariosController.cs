@@ -46,7 +46,7 @@ public class UsuariosController : ControllerBase
     [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<UsuarioDto>> Create(CreateUsuarioDto dto)
     {
-        var usuario = await _usuarioService.CreateAsync(dto);
+        var usuario = await _usuarioService.CreateAsync(dto, User.ObterUsuarioId());
         return CreatedAtAction(nameof(GetById), new { id = usuario.Id }, usuario);
     }
 
@@ -62,7 +62,7 @@ public class UsuariosController : ControllerBase
     [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<UsuarioDto>> Desativar(int id, DesativarUsuarioDto dto)
     {
-        var usuario = await _usuarioService.DesativarAsync(id, dto);
+        var usuario = await _usuarioService.DesativarAsync(id, dto, User.ObterUsuarioId());
         return Ok(usuario);
     }
 
@@ -70,7 +70,7 @@ public class UsuariosController : ControllerBase
     [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<UsuarioDto>> Reativar(int id)
     {
-        var usuario = await _usuarioService.ReativarAsync(id);
+        var usuario = await _usuarioService.ReativarAsync(id, User.ObterUsuarioId());
         return Ok(usuario);
     }
 
@@ -78,7 +78,7 @@ public class UsuariosController : ControllerBase
     [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<ContaAcessoCriadaDto>> CriarContaAcesso(int id)
     {
-        var conviteEnviado = await _usuarioService.CriarContaAcessoAsync(id);
+        var conviteEnviado = await _usuarioService.CriarContaAcessoAsync(id, User.ObterUsuarioId());
         return Ok(new ContaAcessoCriadaDto { ConviteEnviado = conviteEnviado });
     }
 
@@ -99,7 +99,7 @@ public class UsuariosController : ControllerBase
     [Authorize(Roles = Roles.Administrador)]
     public async Task<IActionResult> ReenviarConvite(int id)
     {
-        await _usuarioService.ReenviarConviteAsync(id);
+        await _usuarioService.ReenviarConviteAsync(id, User.ObterUsuarioId());
         return NoContent();
     }
 

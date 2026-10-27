@@ -5,7 +5,7 @@ namespace SoftwareLicense.Api.Services;
 public interface IAcessoService
 {
     Task<List<AcessoContaDto>> ListarAsync(string? contaIdSolicitante);
-    Task DefinirPapeisAsync(string contaId, List<string> papeis, string? contaIdSolicitante);
-    Task BloquearAsync(string contaId, string? contaIdSolicitante);
-    Task DesbloquearAsync(string contaId);
+    Task DefinirPapeisAsync(string contaId, List<string> papeis, string? contaIdSolicitante, int? usuarioIdAtor = null);
+    Task BloquearAsync(string contaId, string? contaIdSolicitante, int? usuarioIdAtor = null);
+    Task DesbloquearAsync(string contaId, int? usuarioIdAtor = null);
 }

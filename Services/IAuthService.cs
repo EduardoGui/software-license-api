@@ -6,4 +6,6 @@ public interface IAuthService
 {
     Task<LoginResponseDto?> LoginAsync(LoginDto dto);
     Task DefinirSenhaAsync(DefinirSenhaDto dto);
+    Task EsqueciSenhaAsync(EsqueciSenhaDto dto);
+    Task AlterarSenhaAsync(string contaId, AlterarSenhaDto dto);
 }

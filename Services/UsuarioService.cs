@@ -14,6 +14,7 @@ public class UsuarioService : IUsuarioService
     private readonly ILogger<UsuarioService> _logger;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IEmailSender _emailSender;
+    private readonly IAuditoriaService _auditoriaService;
     private readonly string _frontendBaseUrl;
 
     public UsuarioService(
@@ -22,6 +23,7 @@ public class UsuarioService : IUsuarioService
         ILogger<UsuarioService> logger,
         UserManager<ApplicationUser> userManager,
         IEmailSender emailSender,
+        IAuditoriaService auditoriaService,
         IConfiguration configuration)
     {
         _context = context;
@@ -29,6 +31,7 @@ public class UsuarioService : IUsuarioService
         _logger = logger;
         _userManager = userManager;
         _emailSender = emailSender;
+        _auditoriaService = auditoriaService;
         _frontendBaseUrl = configuration["Frontend:BaseUrl"] ?? "http://localhost:4200";
     }
 
@@ -87,7 +90,7 @@ public class UsuarioService : IUsuarioService
             await BuscarDependentesAsync(usuario.Id));
     }
 
-    public async Task<UsuarioDto> CreateAsync(CreateUsuarioDto dto)
+    public async Task<UsuarioDto> CreateAsync(CreateUsuarioDto dto, int? usuarioIdAtor = null)
     {
         await ValidarDatas(dto.DataInicio, dto.DataFim);
         await ValidarEmailUnico(dto.Email, usuarioIdAtual: null);
@@ -138,6 +141,9 @@ public class UsuarioService : IUsuarioService
         await _userManager.AddToRoleAsync(contaAcesso, Roles.Colaborador);
 
         var conviteEnviado = await TentarEnviarConviteAsync(usuario, contaAcesso);
+        await RegistrarAcessoAsync(
+            usuarioIdAtor, usuario, LogAuditoriaAcao.ContaCriada,
+            conviteEnviado ? "conta criada junto com o cadastro; convite enviado" : "conta criada junto com o cadastro; convite NÃO enviado");
         if (conviteEnviado)
         {
             _logger.LogInformation(
@@ -154,7 +160,7 @@ public class UsuarioService : IUsuarioService
 
     // Cria a conta de acesso de um colaborador que ainda não tem uma (ex.: cadastrado antes do login
     // existir, ou conta removida) e manda o convite. Devolve false se o e-mail do convite falhar.
-    public async Task<bool> CriarContaAcessoAsync(int id)
+    public async Task<bool> CriarContaAcessoAsync(int id, int? usuarioIdAtor = null)
     {
         var usuario = await BuscarOuFalhar(id);
 
@@ -186,6 +192,9 @@ public class UsuarioService : IUsuarioService
         await _userManager.AddToRoleAsync(contaAcesso, Roles.Colaborador);
 
         var conviteEnviado = await TentarEnviarConviteAsync(usuario, contaAcesso);
+        await RegistrarAcessoAsync(
+            usuarioIdAtor, usuario, LogAuditoriaAcao.ContaCriada,
+            conviteEnviado ? "conta criada pela tela de acessos; convite enviado" : "conta criada pela tela de acessos; convite NÃO enviado");
         _logger.LogInformation(
             "Conta de acesso criada para o usuário {UsuarioId} (convite enviado: {ConviteEnviado})", usuario.Id, conviteEnviado);
         return conviteEnviado;
@@ -207,7 +216,7 @@ public class UsuarioService : IUsuarioService
         }
     }
 
-    public async Task ReenviarConviteAsync(int id)
+    public async Task ReenviarConviteAsync(int id, int? usuarioIdAtor = null)
     {
         var usuario = await BuscarOuFalhar(id);
 
@@ -218,6 +227,7 @@ public class UsuarioService : IUsuarioService
         }
 
         await EnviarConviteAsync(usuario, contaAcesso);
+        await RegistrarAcessoAsync(usuarioIdAtor, usuario, LogAuditoriaAcao.ConviteReenviado, "convite de senha reenviado");
 
         _logger.LogInformation("Convite de senha reenviado para o usuário {UsuarioId}", usuario.Id);
     }
@@ -233,6 +243,9 @@ public class UsuarioService : IUsuarioService
             "Bem-vindo ao Adm Hope — defina sua senha",
             $"<p>Olá, {usuario.Nome}!</p><p>Sua conta de acesso ao Adm Hope foi criada. Clique no link abaixo para definir sua senha e fazer login:</p><p><a href=\"{linkDefinirSenha}\">Definir senha</a></p>");
     }
+
+    private Task RegistrarAcessoAsync(int? usuarioIdAtor, Usuario usuario, string acao, string detalhe) =>
+        _auditoriaService.RegistrarAsync(usuarioIdAtor, LogAuditoriaEntidade.AcessoUsuario, usuario.Id, acao, $"{usuario.Nome}: {detalhe}");
 
     private static string GerarSenhaTemporaria() => $"{Guid.NewGuid():N}Aa1!";
 
@@ -304,7 +317,7 @@ public class UsuarioService : IUsuarioService
 
     // Desfaz a desativação: tira a data de fim. As licenças/equipamentos que foram encerrados
     // na desativação continuam encerrados (precisam ser alocados de novo, se for o caso).
-    public async Task<UsuarioDto> ReativarAsync(int id)
+    public async Task<UsuarioDto> ReativarAsync(int id, int? usuarioIdAtor = null)
     {
         var usuario = await BuscarOuFalhar(id);
 
@@ -316,6 +329,7 @@ public class UsuarioService : IUsuarioService
         usuario.DataFim = null;
         usuario.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
         await _context.SaveChangesAsync();
+        await RegistrarAcessoAsync(usuarioIdAtor, usuario, LogAuditoriaAcao.UsuarioReativado, "data de fim removida; o acesso volta a funcionar");
 
         _logger.LogInformation("Usuário {UsuarioId} reativado", usuario.Id);
 
@@ -325,7 +339,7 @@ public class UsuarioService : IUsuarioService
             await BuscarDependentesAsync(usuario.Id));
     }
 
-    public async Task<UsuarioDto> DesativarAsync(int id, DesativarUsuarioDto dto)
+    public async Task<UsuarioDto> DesativarAsync(int id, DesativarUsuarioDto dto, int? usuarioIdAtor = null)
     {
         var usuario = await BuscarOuFalhar(id);
         var dataFim = dto.DataFim ?? Hoje();
@@ -363,6 +377,7 @@ public class UsuarioService : IUsuarioService
         }
 
         await _context.SaveChangesAsync();
+        await RegistrarAcessoAsync(usuarioIdAtor, usuario, LogAuditoriaAcao.UsuarioDesativado, $"data de fim {dataFim:dd/MM/yyyy}; acesso encerrado");
 
         _logger.LogInformation(
             "Usuário {UsuarioId} desativado, encerrando {QuantidadeMovimentacoes} movimentação(ões) e {QuantidadeAlocacoes} alocação(ões) de equipamento ativa(s)",

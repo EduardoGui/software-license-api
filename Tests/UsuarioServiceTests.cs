@@ -48,6 +48,7 @@ public class UsuarioServiceTests
             NullLogger<UsuarioService>.Instance,
             userManager,
             new LogEmailSender(NullLogger<LogEmailSender>.Instance),
+            new AuditoriaService(context, new FakeTimeProvider(Agora)),
             configuracao);
     }
 

@@ -6,13 +6,13 @@ public interface IUsuarioService
 {
     Task<List<UsuarioDto>> GetAllAsync(UsuarioFiltroDto filtro);
     Task<UsuarioDto> GetByIdAsync(int id);
-    Task<UsuarioDto> CreateAsync(CreateUsuarioDto dto);
+    Task<UsuarioDto> CreateAsync(CreateUsuarioDto dto, int? usuarioIdAtor = null);
     Task<UsuarioDto> UpdateAsync(int id, UpdateUsuarioDto dto);
-    Task<UsuarioDto> DesativarAsync(int id, DesativarUsuarioDto dto);
-    Task<UsuarioDto> ReativarAsync(int id);
+    Task<UsuarioDto> DesativarAsync(int id, DesativarUsuarioDto dto, int? usuarioIdAtor = null);
+    Task<UsuarioDto> ReativarAsync(int id, int? usuarioIdAtor = null);
     Task<UsuarioDto> AtualizarPerfilAsync(int id, AtualizarPerfilDto dto);
-    Task ReenviarConviteAsync(int id);
-    Task<bool> CriarContaAcessoAsync(int id);
+    Task ReenviarConviteAsync(int id, int? usuarioIdAtor = null);
+    Task<bool> CriarContaAcessoAsync(int id, int? usuarioIdAtor = null);
     Task<UsuarioDto> AdicionarDependenteAsync(int usuarioId, CreateDependenteDto dto);
     Task<UsuarioDto> AtualizarDependenteAsync(int usuarioId, int dependenteId, UpdateDependenteDto dto);
     Task<UsuarioDto> RemoverDependenteAsync(int usuarioId, int dependenteId);

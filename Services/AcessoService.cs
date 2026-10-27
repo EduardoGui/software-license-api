@@ -13,19 +13,25 @@ public class AcessoService : IAcessoService
 {
     private static readonly string[] PapeisValidos = [Roles.Colaborador, Roles.Administrativo, Roles.Administrador];
 
+    // O bloqueio do administrador usa DateTimeOffset.MaxValue; qualquer data antes disto é o bloqueio automático.
+    private static readonly DateTimeOffset LimiteBloqueioTemporario = new(9000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
     private readonly AppDbContext _context;
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IAuditoriaService _auditoriaService;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<AcessoService> _logger;
 
     public AcessoService(
         AppDbContext context,
         UserManager<ApplicationUser> userManager,
+        IAuditoriaService auditoriaService,
         TimeProvider timeProvider,
         ILogger<AcessoService> logger)
     {
         _context = context;
         _userManager = userManager;
+        _auditoriaService = auditoriaService;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -63,6 +69,8 @@ public class AcessoService : IAcessoService
                 TemConta = conta is not null,
                 Papeis = conta is not null ? papeisPorConta.GetValueOrDefault(conta.Id, []) : [],
                 Bloqueada = conta is not null && conta.LockoutEnd > agora,
+                BloqueioTemporario = conta is not null && conta.LockoutEnd > agora && conta.LockoutEnd < LimiteBloqueioTemporario,
+                UltimoAcessoEm = conta?.UltimoAcessoEm,
                 EhVoce = conta is not null && conta.Id == contaIdSolicitante,
             });
         }
@@ -80,6 +88,8 @@ public class AcessoService : IAcessoService
                 TemConta = true,
                 Papeis = papeisPorConta.GetValueOrDefault(conta.Id, []),
                 Bloqueada = conta.LockoutEnd > agora,
+                BloqueioTemporario = conta.LockoutEnd > agora && conta.LockoutEnd < LimiteBloqueioTemporario,
+                UltimoAcessoEm = conta.UltimoAcessoEm,
                 EhVoce = conta.Id == contaIdSolicitante,
             });
         }
@@ -87,7 +97,7 @@ public class AcessoService : IAcessoService
         return linhas;
     }
 
-    public async Task DefinirPapeisAsync(string contaId, List<string> papeis, string? contaIdSolicitante)
+    public async Task DefinirPapeisAsync(string contaId, List<string> papeis, string? contaIdSolicitante, int? usuarioIdAtor = null)
     {
         var conta = await BuscarContaOuFalhar(contaId);
 
@@ -137,12 +147,20 @@ public class AcessoService : IAcessoService
             await ExigirSucessoAsync(await _userManager.AddToRolesAsync(conta, adicionar));
         }
 
+        if (remover.Count > 0 || adicionar.Count > 0)
+        {
+            var partes = new List<string>();
+            if (adicionar.Count > 0) partes.Add($"adicionado(s): {string.Join(", ", adicionar)}");
+            if (remover.Count > 0) partes.Add($"removido(s): {string.Join(", ", remover)}");
+            await RegistrarAsync(conta, usuarioIdAtor, LogAuditoriaAcao.PapeisAlterados, string.Join("; ", partes));
+        }
+
         _logger.LogInformation(
             "Papéis da conta {ContaId} alterados por {Solicitante}: removidos [{Removidos}], adicionados [{Adicionados}]",
             conta.Id, contaIdSolicitante, string.Join(", ", remover), string.Join(", ", adicionar));
     }
 
-    public async Task BloquearAsync(string contaId, string? contaIdSolicitante)
+    public async Task BloquearAsync(string contaId, string? contaIdSolicitante, int? usuarioIdAtor = null)
     {
         var conta = await BuscarContaOuFalhar(contaId);
 
@@ -154,16 +172,28 @@ public class AcessoService : IAcessoService
         await ExigirSucessoAsync(await _userManager.SetLockoutEnabledAsync(conta, true));
         await ExigirSucessoAsync(await _userManager.SetLockoutEndDateAsync(conta, DateTimeOffset.MaxValue));
 
+        await RegistrarAsync(conta, usuarioIdAtor, LogAuditoriaAcao.ContaBloqueada, "acesso bloqueado pelo administrador");
         _logger.LogInformation("Conta {ContaId} bloqueada por {Solicitante}", conta.Id, contaIdSolicitante);
     }
 
-    public async Task DesbloquearAsync(string contaId)
+    public async Task DesbloquearAsync(string contaId, int? usuarioIdAtor = null)
     {
         var conta = await BuscarContaOuFalhar(contaId);
 
         await ExigirSucessoAsync(await _userManager.SetLockoutEndDateAsync(conta, null));
+        await ExigirSucessoAsync(await _userManager.ResetAccessFailedCountAsync(conta));
+        await RegistrarAsync(conta, usuarioIdAtor, LogAuditoriaAcao.ContaLiberada, "acesso liberado pelo administrador");
 
         _logger.LogInformation("Conta {ContaId} desbloqueada", conta.Id);
+    }
+
+    private async Task RegistrarAsync(ApplicationUser conta, int? usuarioIdAtor, string acao, string detalhe)
+    {
+        var nome = conta.UsuarioId is null
+            ? conta.Email
+            : await _context.Usuarios.Where(u => u.Id == conta.UsuarioId).Select(u => u.Nome).FirstOrDefaultAsync() ?? conta.Email;
+        await _auditoriaService.RegistrarAsync(
+            usuarioIdAtor, LogAuditoriaEntidade.AcessoUsuario, conta.UsuarioId ?? 0, acao, $"{nome}: {detalhe}");
     }
 
     private async Task<ApplicationUser> BuscarContaOuFalhar(string contaId) =>

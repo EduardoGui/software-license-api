@@ -35,10 +35,12 @@ public class AcessoServiceTests
         public required UsuarioService Usuarios { get; init; }
         public required ContaAcessoValidador Validador { get; init; }
         public required AuthService Auth { get; init; }
+        public required FakeEmailSender Emails { get; init; }
     }
 
     private static Ambiente Criar(IEmailSender? emailSender = null)
     {
+        var emails = new FakeEmailSender();
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
@@ -48,7 +50,7 @@ public class AcessoServiceTests
         services.AddSingleton(context);
         services.AddLogging();
         services.AddDataProtection();
-        services.AddIdentityCore<ApplicationUser>()
+        services.AddIdentityCore<ApplicationUser>(o => AuthService.ConfigurarBloqueioPorTentativas(o.Lockout))
             .AddRoles<IdentityRole>()
             .AddEntityFrameworkStores<AppDbContext>()
             .AddDefaultTokenProviders();
@@ -68,17 +70,19 @@ public class AcessoServiceTests
             })
             .Build();
         var validador = new ContaAcessoValidador(context, tempo);
+        var auditoria = new AuditoriaService(context, tempo);
 
         return new Ambiente
         {
             Context = context,
             UserManager = userManager,
             Validador = validador,
-            Acesso = new AcessoService(context, userManager, tempo, NullLogger<AcessoService>.Instance),
+            Acesso = new AcessoService(context, userManager, auditoria, tempo, NullLogger<AcessoService>.Instance),
             Usuarios = new UsuarioService(
                 context, tempo, NullLogger<UsuarioService>.Instance, userManager,
-                emailSender ?? new FakeEmailSender(), configuracao),
-            Auth = new AuthService(userManager, validador, tempo, configuracao, NullLogger<AuthService>.Instance),
+                emailSender ?? emails, auditoria, configuracao),
+            Auth = new AuthService(userManager, validador, emails, auditoria, tempo, configuracao, NullLogger<AuthService>.Instance),
+            Emails = emails,
         };
     }
 
@@ -367,5 +371,232 @@ public class AcessoServiceTests
         Assert.True(convite);
         Assert.Equal([Roles.Colaborador], await a.UserManager.GetRolesAsync(await ContaDe(a, id)));
         await Assert.ThrowsAsync<BusinessRuleException>(() => a.Usuarios.CriarContaAcessoAsync(id));
+    }
+
+    // ----- esqueci minha senha -----
+
+    [Fact]
+    public async Task EsqueciSenha_DeveEnviarLinkParaContaQuePodeEntrar()
+    {
+        var a = Criar();
+        await a.Usuarios.CreateAsync(NovoColaborador());
+        var antes = a.Emails.ChamadasSimples;
+
+        await a.Auth.EsqueciSenhaAsync(new EsqueciSenhaDto { Email = "ana@empresa.com" });
+
+        Assert.Equal(antes + 1, a.Emails.ChamadasSimples);
+        Assert.Equal("ana@empresa.com", a.Emails.UltimoDestinatarioSimples);
+        Assert.Contains("redefinição de senha", a.Emails.UltimoAssuntoSimples);
+        Assert.Contains("/definir-senha?email=ana%40empresa.com&token=", a.Emails.UltimoCorpoSimples);
+    }
+
+    [Fact]
+    public async Task EsqueciSenha_NaoDeveEnviarParaEmailInexistente_NemLancarErro()
+    {
+        var a = Criar();
+
+        await a.Auth.EsqueciSenhaAsync(new EsqueciSenhaDto { Email = "ninguem@empresa.com" });
+
+        Assert.Equal(0, a.Emails.ChamadasSimples);
+    }
+
+    [Fact]
+    public async Task EsqueciSenha_NaoDeveEnviarParaContaBloqueadaOuDesligada()
+    {
+        var a = Criar();
+        var bloqueada = await a.Usuarios.CreateAsync(NovoColaborador("bloqueada@empresa.com"));
+        var desligada = await a.Usuarios.CreateAsync(NovoColaborador("desligada@empresa.com"));
+        await a.Acesso.BloquearAsync((await ContaDe(a, bloqueada.Id)).Id, "admin");
+        await a.Usuarios.DesativarAsync(desligada.Id, new DesativarUsuarioDto { DataFim = new DateOnly(2026, 8, 12) });
+        var antes = a.Emails.ChamadasSimples;
+
+        await a.Auth.EsqueciSenhaAsync(new EsqueciSenhaDto { Email = "bloqueada@empresa.com" });
+        await a.Auth.EsqueciSenhaAsync(new EsqueciSenhaDto { Email = "desligada@empresa.com" });
+
+        Assert.Equal(antes, a.Emails.ChamadasSimples);
+    }
+
+    [Fact]
+    public async Task EsqueciSenha_DeveEngolirFalhaNoEnvioDoEmail()
+    {
+        var a = Criar(new EmailSenderQuebrado());
+        await a.Usuarios.CreateAsync(NovoColaborador());
+
+        await a.Auth.EsqueciSenhaAsync(new EsqueciSenhaDto { Email = "ana@empresa.com" });
+    }
+
+    [Fact]
+    public async Task DefinirSenha_NaoDeveLiberarContaBloqueadaPeloAdministrador()
+    {
+        var a = Criar();
+        var criado = await a.Usuarios.CreateAsync(NovoColaborador());
+        var conta = await ContaDe(a, criado.Id);
+        await a.Acesso.BloquearAsync(conta.Id, "admin");
+
+        await DefinirSenha(a, conta, "Senha@Forte123");
+
+        Assert.False(await a.Validador.PodeAcessarAsync(conta.Id));
+        Assert.Null(await a.Auth.LoginAsync(new LoginDto { Email = "ana@empresa.com", Senha = "Senha@Forte123" }));
+    }
+
+    // ----- alterar a própria senha -----
+
+    [Fact]
+    public async Task AlterarSenha_DeveTrocarERegistrarNaAuditoria()
+    {
+        var a = Criar();
+        var criado = await a.Usuarios.CreateAsync(NovoColaborador());
+        var conta = await ContaDe(a, criado.Id);
+        await DefinirSenha(a, conta, "Senha@Forte123");
+
+        await a.Auth.AlterarSenhaAsync(conta.Id, new AlterarSenhaDto { SenhaAtual = "Senha@Forte123", NovaSenha = "Outra@Senha456" });
+
+        Assert.Null(await a.Auth.LoginAsync(new LoginDto { Email = "ana@empresa.com", Senha = "Senha@Forte123" }));
+        Assert.NotNull(await a.Auth.LoginAsync(new LoginDto { Email = "ana@empresa.com", Senha = "Outra@Senha456" }));
+        Assert.Single(a.Context.LogsAuditoria.Where(l => l.Acao == LogAuditoriaAcao.SenhaAlterada && l.EntidadeId == criado.Id));
+    }
+
+    [Fact]
+    public async Task AlterarSenha_DeveRejeitarSenhaAtualErrada_ESenhaFraca()
+    {
+        var a = Criar();
+        var criado = await a.Usuarios.CreateAsync(NovoColaborador());
+        var conta = await ContaDe(a, criado.Id);
+        await DefinirSenha(a, conta, "Senha@Forte123");
+
+        var erro = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            a.Auth.AlterarSenhaAsync(conta.Id, new AlterarSenhaDto { SenhaAtual = "errada", NovaSenha = "Outra@Senha456" }));
+        Assert.Equal("Senha atual incorreta.", erro.Message);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            a.Auth.AlterarSenhaAsync(conta.Id, new AlterarSenhaDto { SenhaAtual = "Senha@Forte123", NovaSenha = "123" }));
+        Assert.NotNull(await a.Auth.LoginAsync(new LoginDto { Email = "ana@empresa.com", Senha = "Senha@Forte123" }));
+    }
+
+    // ----- bloqueio por tentativas -----
+
+    private static async Task ErrarSenha(Ambiente a, int vezes)
+    {
+        for (var i = 0; i < vezes; i++)
+        {
+            Assert.Null(await a.Auth.LoginAsync(new LoginDto { Email = "ana@empresa.com", Senha = "errada" }));
+        }
+    }
+
+    [Fact]
+    public async Task Login_DeveBloquearAposDezSenhasErradas_MesmoComASenhaCertaDepois()
+    {
+        var a = Criar();
+        var criado = await a.Usuarios.CreateAsync(NovoColaborador());
+        await DefinirSenha(a, await ContaDe(a, criado.Id), "Senha@Forte123");
+
+        await ErrarSenha(a, 10);
+
+        Assert.Null(await a.Auth.LoginAsync(new LoginDto { Email = "ana@empresa.com", Senha = "Senha@Forte123" }));
+        var linha = (await a.Acesso.ListarAsync(null)).Single(l => l.UsuarioId == criado.Id);
+        Assert.True(linha.Bloqueada);
+        Assert.True(linha.BloqueioTemporario);
+        Assert.Single(a.Context.LogsAuditoria.Where(l => l.Acao == LogAuditoriaAcao.BloqueioPorTentativas && l.EntidadeId == criado.Id));
+    }
+
+    [Fact]
+    public async Task Login_NaoDeveBloquearComNoveErros_ESucessoZeraOContador()
+    {
+        var a = Criar();
+        var criado = await a.Usuarios.CreateAsync(NovoColaborador());
+        await DefinirSenha(a, await ContaDe(a, criado.Id), "Senha@Forte123");
+
+        await ErrarSenha(a, 9);
+        Assert.NotNull(await a.Auth.LoginAsync(new LoginDto { Email = "ana@empresa.com", Senha = "Senha@Forte123" }));
+        await ErrarSenha(a, 9);
+
+        Assert.NotNull(await a.Auth.LoginAsync(new LoginDto { Email = "ana@empresa.com", Senha = "Senha@Forte123" }));
+    }
+
+    [Fact]
+    public async Task Desbloquear_DeveLiberarContaTravadaPorTentativas()
+    {
+        var a = Criar();
+        var criado = await a.Usuarios.CreateAsync(NovoColaborador());
+        var conta = await ContaDe(a, criado.Id);
+        await DefinirSenha(a, conta, "Senha@Forte123");
+        await ErrarSenha(a, 10);
+
+        await a.Acesso.DesbloquearAsync(conta.Id);
+
+        Assert.NotNull(await a.Auth.LoginAsync(new LoginDto { Email = "ana@empresa.com", Senha = "Senha@Forte123" }));
+    }
+
+    [Fact]
+    public async Task Listar_BloqueioDoAdministradorNaoEhTemporario()
+    {
+        var a = Criar();
+        var criado = await a.Usuarios.CreateAsync(NovoColaborador());
+        await a.Acesso.BloquearAsync((await ContaDe(a, criado.Id)).Id, "admin");
+
+        var linha = (await a.Acesso.ListarAsync(null)).Single(l => l.UsuarioId == criado.Id);
+
+        Assert.True(linha.Bloqueada);
+        Assert.False(linha.BloqueioTemporario);
+    }
+
+    // ----- último acesso -----
+
+    [Fact]
+    public async Task Login_DeveGravarUltimoAcesso_AntesDissoEhNulo()
+    {
+        var a = Criar();
+        var criado = await a.Usuarios.CreateAsync(NovoColaborador());
+        await DefinirSenha(a, await ContaDe(a, criado.Id), "Senha@Forte123");
+        Assert.Null((await a.Acesso.ListarAsync(null)).Single(l => l.UsuarioId == criado.Id).UltimoAcessoEm);
+
+        await a.Auth.LoginAsync(new LoginDto { Email = "ana@empresa.com", Senha = "Senha@Forte123" });
+
+        Assert.Equal(Agora.UtcDateTime, (await a.Acesso.ListarAsync(null)).Single(l => l.UsuarioId == criado.Id).UltimoAcessoEm);
+    }
+
+    // ----- auditoria dos acessos -----
+
+    [Fact]
+    public async Task Acoes_DevemFicarNaAuditoriaComOAtor()
+    {
+        var a = Criar();
+        var ator = await a.Usuarios.CreateAsync(NovoColaborador("admin.pessoa@empresa.com"));
+        var criado = await a.Usuarios.CreateAsync(NovoColaborador(), ator.Id);
+        var conta = await ContaDe(a, criado.Id);
+
+        await a.Acesso.DefinirPapeisAsync(conta.Id, [Roles.Administrativo], "admin", ator.Id);
+        await a.Acesso.BloquearAsync(conta.Id, "admin", ator.Id);
+        await a.Acesso.DesbloquearAsync(conta.Id, ator.Id);
+        await a.Usuarios.ReenviarConviteAsync(criado.Id, ator.Id);
+        await a.Usuarios.DesativarAsync(criado.Id, new DesativarUsuarioDto { DataFim = new DateOnly(2026, 8, 12) }, ator.Id);
+        await a.Usuarios.ReativarAsync(criado.Id, ator.Id);
+
+        var logs = a.Context.LogsAuditoria
+            .Where(l => l.Entidade == LogAuditoriaEntidade.AcessoUsuario && l.EntidadeId == criado.Id)
+            .ToList();
+        Assert.Equal(
+            new[]
+            {
+                LogAuditoriaAcao.ConviteReenviado, LogAuditoriaAcao.ContaBloqueada, LogAuditoriaAcao.ContaCriada,
+                LogAuditoriaAcao.ContaLiberada, LogAuditoriaAcao.PapeisAlterados, LogAuditoriaAcao.UsuarioDesativado,
+                LogAuditoriaAcao.UsuarioReativado,
+            }.Order(),
+            logs.Select(l => l.Acao).Order());
+        Assert.All(logs, l => Assert.Equal(ator.Id, l.UsuarioId));
+        Assert.Contains(logs, l => l.Acao == LogAuditoriaAcao.PapeisAlterados && l.Detalhe!.Contains("adicionado(s): Administrativo"));
+    }
+
+    [Fact]
+    public async Task DefinirSenha_DeveFicarNaAuditoria()
+    {
+        var a = Criar();
+        var criado = await a.Usuarios.CreateAsync(NovoColaborador());
+        var conta = await ContaDe(a, criado.Id);
+        var token = await a.UserManager.GeneratePasswordResetTokenAsync(conta);
+
+        await a.Auth.DefinirSenhaAsync(new DefinirSenhaDto { Email = "ana@empresa.com", Token = token, NovaSenha = "Senha@Forte123" });
+
+        Assert.Single(a.Context.LogsAuditoria.Where(l => l.Acao == LogAuditoriaAcao.SenhaDefinida && l.EntidadeId == criado.Id));
     }
 }

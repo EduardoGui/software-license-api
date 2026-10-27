@@ -13,6 +13,16 @@ public static class LogAuditoriaAcao
     public const string AnexoExcluido = "AnexoExcluido";
     public const string EmailNaoEnviado = "EmailNaoEnviado";
     public const string AcessoLink = "AcessoLink";
+    public const string PapeisAlterados = "PapeisAlterados";
+    public const string ContaBloqueada = "ContaBloqueada";
+    public const string ContaLiberada = "ContaLiberada";
+    public const string ContaCriada = "ContaCriada";
+    public const string ConviteReenviado = "ConviteReenviado";
+    public const string UsuarioDesativado = "UsuarioDesativado";
+    public const string UsuarioReativado = "UsuarioReativado";
+    public const string SenhaDefinida = "SenhaDefinida";
+    public const string SenhaAlterada = "SenhaAlterada";
+    public const string BloqueioPorTentativas = "BloqueioPorTentativas";
     public const string Confirmado = "Confirmado";
     public const string DivergenciaRegistrada = "DivergenciaRegistrada";
     public const string Cancelado = "Cancelado";

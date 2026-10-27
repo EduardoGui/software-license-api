@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SoftwareLicense.Api.DTOs;
+using SoftwareLicense.Api.Extensions;
 using SoftwareLicense.Api.Services;
 
 namespace SoftwareLicense.Api.Controllers;
@@ -27,21 +28,21 @@ public class AcessoController : ControllerBase
     [HttpPut("contas/{contaId}/papeis")]
     public async Task<IActionResult> DefinirPapeis(string contaId, DefinirPapeisDto dto)
     {
-        await _acessoService.DefinirPapeisAsync(contaId, dto.Papeis, ContaIdLogada);
+        await _acessoService.DefinirPapeisAsync(contaId, dto.Papeis, ContaIdLogada, User.ObterUsuarioId());
         return NoContent();
     }
 
     [HttpPatch("contas/{contaId}/bloquear")]
     public async Task<IActionResult> Bloquear(string contaId)
     {
-        await _acessoService.BloquearAsync(contaId, ContaIdLogada);
+        await _acessoService.BloquearAsync(contaId, ContaIdLogada, User.ObterUsuarioId());
         return NoContent();
     }
 
     [HttpPatch("contas/{contaId}/desbloquear")]
     public async Task<IActionResult> Desbloquear(string contaId)
     {
-        await _acessoService.DesbloquearAsync(contaId);
+        await _acessoService.DesbloquearAsync(contaId, User.ObterUsuarioId());
         return NoContent();
     }
 }
