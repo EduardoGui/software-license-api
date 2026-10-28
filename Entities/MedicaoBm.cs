@@ -10,6 +10,10 @@ public class MedicaoBm
     public DateOnly PeriodoInicio { get; set; }
     public DateOnly PeriodoFim { get; set; }
     public DateOnly? DataEnvio { get; set; }
+    // Andamento documental (informativo). DataEnvio acima é a data de emissão do BM, não o envio para assinatura.
+    public DateOnly? DataSolicitacaoEspelho { get; set; }
+    public DateOnly? DataEnvioAssinatura { get; set; }
+    public DateOnly? DataLiberacaoNf { get; set; }
     public string Status { get; set; } = string.Empty;
     public int? AprovadorId { get; set; }
     public Usuario? Aprovador { get; set; }

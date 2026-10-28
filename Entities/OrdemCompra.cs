@@ -20,6 +20,10 @@ public class OrdemCompra
     public string? ContatoAprovacaoNome { get; set; }
     public string? ContatoAprovacaoEmail { get; set; }
     public string Status { get; set; } = string.Empty;
+    // Andamento documental (informativo - não muda o status nem a etapa da obrigação).
+    public DateOnly? DataEnvioAssinatura { get; set; }
+    public DateOnly? DataEnvioFornecedor { get; set; }
+    public DateOnly? DataChegadaMaterial { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
 

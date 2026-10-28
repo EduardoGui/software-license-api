@@ -69,6 +69,7 @@ public class ObrigacaoService : IObrigacaoService
             .ToListAsync();
         var resumos = await CarregarResumosParcelasAsync(obrigacoes.Where(o => o.OrdemCompraId is not null).Select(o => o.OrdemCompraId!.Value).Distinct().ToList());
         var dtos = obrigacoes.Select(o => ParaDto(o, ObterResumo(resumos, o))).ToList();
+        await PreencherExigeAssinaturaMedicoesAsync(dtos);
 
         if (!string.IsNullOrWhiteSpace(filtro.Etapa))
         {
@@ -151,6 +152,66 @@ public class ObrigacaoService : IObrigacaoService
     }
 
     // Registra que o pedido de pagamento foi enviado ao financeiro (hoje) e a data de pagamento combinada.
+    // Grava as datas de andamento na origem (OC ou BM): as parcelas de uma mesma OC compartilham as datas.
+    public async Task<ObrigacaoDto> AtualizarAndamentoAsync(int id, AtualizarAndamentoObrigacaoDto dto)
+    {
+        var obrigacao = await BuscarOuFalhar(id);
+
+        if (obrigacao.Cancelada)
+        {
+            throw new BusinessRuleException("Não é possível alterar o andamento de uma obrigação cancelada.");
+        }
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+
+        if (obrigacao.TipoMovimento == ObrigacaoTipoMovimento.OrdemCompra && obrigacao.OrdemCompra is not null)
+        {
+            if (dto.DataSolicitacaoEspelho is not null || dto.DataLiberacaoNf is not null)
+            {
+                throw new BusinessRuleException("Solicitação de espelho e liberação para NF só valem para medições.");
+            }
+
+            var oc = obrigacao.OrdemCompra;
+            oc.DataEnvioAssinatura = dto.DataEnvioAssinatura;
+            oc.DataEnvioFornecedor = dto.DataEnvioFornecedor;
+            oc.DataChegadaMaterial = dto.DataChegadaMaterial;
+            oc.DataAtualizacao = agora;
+        }
+        else if (obrigacao.TipoMovimento == ObrigacaoTipoMovimento.Medicao && obrigacao.MedicaoBm is not null)
+        {
+            if (dto.DataEnvioFornecedor is not null || dto.DataChegadaMaterial is not null)
+            {
+                throw new BusinessRuleException("Envio ao fornecedor e chegada do material só valem para ordens de compra.");
+            }
+
+            if (dto.DataEnvioAssinatura is not null)
+            {
+                var exigeAssinatura = await _context.ContratoMedicaoConfigs
+                    .AnyAsync(c => c.ContratoId == obrigacao.MedicaoBm.ContratoId && c.ExigeAssinatura);
+                if (!exigeAssinatura)
+                {
+                    throw new BusinessRuleException("O contrato desta medição não exige assinatura.");
+                }
+            }
+
+            var bm = obrigacao.MedicaoBm;
+            bm.DataSolicitacaoEspelho = dto.DataSolicitacaoEspelho;
+            bm.DataEnvioAssinatura = dto.DataEnvioAssinatura;
+            bm.DataLiberacaoNf = dto.DataLiberacaoNf;
+            bm.DataAtualizacao = agora;
+        }
+        else
+        {
+            throw new BusinessRuleException("Este tipo de obrigação não tem andamento documental.");
+        }
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Andamento documental da obrigação {ObrigacaoId} atualizado", obrigacao.Id);
+
+        return await ParaDtoAsync(obrigacao);
+    }
+
     public async Task<ObrigacaoDto> MarcarEnviadaFinanceiroAsync(int id, MarcarEnviadaFinanceiroDto dto)
     {
         var obrigacao = await BuscarOuFalhar(id);
@@ -337,7 +398,29 @@ public class ObrigacaoService : IObrigacaoService
     private async Task<ObrigacaoDto> ParaDtoAsync(Obrigacao o)
     {
         var resumos = o.OrdemCompraId is null ? [] : await CarregarResumosParcelasAsync([o.OrdemCompraId.Value]);
-        return ParaDto(o, ObterResumo(resumos, o));
+        var dto = ParaDto(o, ObterResumo(resumos, o));
+        await PreencherExigeAssinaturaMedicoesAsync([dto]);
+        return dto;
+    }
+
+    // Na medição, exigir assinatura depende da configuração do contrato (sem configuração = não exige).
+    private async Task PreencherExigeAssinaturaMedicoesAsync(List<ObrigacaoDto> dtos)
+    {
+        var contratoIds = dtos.Where(d => d.ContratoId is not null).Select(d => d.ContratoId!.Value).Distinct().ToList();
+        if (contratoIds.Count == 0)
+        {
+            return;
+        }
+
+        var exigem = await _context.ContratoMedicaoConfigs
+            .Where(c => contratoIds.Contains(c.ContratoId) && c.ExigeAssinatura)
+            .Select(c => c.ContratoId)
+            .ToListAsync();
+
+        foreach (var dto in dtos.Where(d => d.ContratoId is not null))
+        {
+            dto.ExigeAssinatura = exigem.Contains(dto.ContratoId!.Value);
+        }
     }
 
     private IQueryable<Obrigacao> MontarConsultaBase() => _context.Obrigacoes
@@ -405,6 +488,13 @@ public class ObrigacaoService : IObrigacaoService
         Pago = o.Pago,
         Cancelada = o.Cancelada,
         Etapa = CalcularEtapa(o),
+        DataSolicitacaoEspelho = o.MedicaoBm?.DataSolicitacaoEspelho,
+        DataEnvioAssinatura = o.OrdemCompra?.DataEnvioAssinatura ?? o.MedicaoBm?.DataEnvioAssinatura,
+        DataEnvioFornecedor = o.OrdemCompra?.DataEnvioFornecedor,
+        DataChegadaMaterial = o.OrdemCompra?.DataChegadaMaterial,
+        DataLiberacaoNf = o.MedicaoBm?.DataLiberacaoNf,
+        ExigeAssinatura = o.TipoMovimento == ObrigacaoTipoMovimento.OrdemCompra,
+        OrdemCompraAssinada = o.OrdemCompra?.Status == OrdemCompraStatus.Assinada,
         Observacoes = o.Observacoes,
         DataCriacao = o.DataCriacao,
         DataAtualizacao = o.DataAtualizacao,

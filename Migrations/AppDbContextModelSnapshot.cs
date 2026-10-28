@@ -1618,6 +1618,15 @@ namespace SoftwareLicense.Api.Migrations
                     b.Property<DateOnly?>("DataEnvio")
                         .HasColumnType("date");
 
+                    b.Property<DateOnly?>("DataEnvioAssinatura")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("DataLiberacaoNf")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("DataSolicitacaoEspelho")
+                        .HasColumnType("date");
+
                     b.Property<int>("Numero")
                         .HasColumnType("integer");
 
@@ -2437,8 +2446,17 @@ namespace SoftwareLicense.Api.Migrations
                     b.Property<DateTime>("DataAtualizacao")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateOnly?>("DataChegadaMaterial")
+                        .HasColumnType("date");
+
                     b.Property<DateTime>("DataCriacao")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("DataEnvioAssinatura")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("DataEnvioFornecedor")
+                        .HasColumnType("date");
 
                     b.Property<int>("FornecedorId")
                         .HasColumnType("integer");

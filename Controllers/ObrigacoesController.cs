@@ -63,6 +63,13 @@ public class ObrigacoesController : ControllerBase
         return File(arquivo, "message/rfc822", nome);
     }
 
+    [HttpPatch("{id:int}/andamento")]
+    public async Task<ActionResult<ObrigacaoDto>> AtualizarAndamento(int id, AtualizarAndamentoObrigacaoDto dto)
+    {
+        var obrigacao = await _obrigacaoService.AtualizarAndamentoAsync(id, dto);
+        return Ok(obrigacao);
+    }
+
     [HttpPatch("{id:int}/marcar-enviada-financeiro")]
     public async Task<ActionResult<ObrigacaoDto>> MarcarEnviadaFinanceiro(int id, MarcarEnviadaFinanceiroDto dto)
     {
