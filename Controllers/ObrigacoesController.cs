@@ -8,7 +8,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/obrigacoes")]
-[Authorize(Roles = Roles.Administrador)]
+[Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
 public class ObrigacoesController : ControllerBase
 {
     private readonly IObrigacaoService _obrigacaoService;

@@ -7,7 +7,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/despesas-avulsas")]
-[Authorize(Roles = Roles.Administrador)]
+[Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
 public class DespesasAvulsasController : ControllerBase
 {
     private readonly IDespesaAvulsaService _despesaAvulsaService;

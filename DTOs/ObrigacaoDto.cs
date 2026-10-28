@@ -44,6 +44,8 @@ public class ObrigacaoDto
     // OC: sempre true. Medição: vem da configuração do contrato. Despesa avulsa: false.
     public bool ExigeAssinatura { get; set; }
     public bool OrdemCompraAssinada { get; set; }
+    // Quem criou a OC/despesa de origem (nulo em medição e em registros antigos).
+    public string? CriadoPorNome { get; set; }
     public string? Observacoes { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }

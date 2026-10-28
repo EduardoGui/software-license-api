@@ -20,8 +20,11 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
     private readonly AppDbContext _context;
     private readonly TimeProvider _timeProvider;
 
-    public SolicitacaoPagamentoService(AppDbContext context, TimeProvider timeProvider)
+    private readonly IEscopoAcesso? _escopo;
+
+    public SolicitacaoPagamentoService(AppDbContext context, TimeProvider timeProvider, IEscopoAcesso? escopo = null)
     {
+        _escopo = escopo;
         _context = context;
         _timeProvider = timeProvider;
     }
@@ -269,6 +272,14 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
             .Include(o => o.DespesaAvulsa)
             .FirstOrDefaultAsync(o => o.Id == id)
             ?? throw new NotFoundException($"Obrigação {id} não encontrada.");
+
+        // Perfil Administrativo só acessa obrigações da administração (mesma regra do ObrigacaoService).
+        if (_escopo?.RestritoAAdministracao == true
+            && obrigacao.OrdemCompra?.CriadaPelaAdministracao != true
+            && obrigacao.DespesaAvulsa?.CriadaPelaAdministracao != true)
+        {
+            throw new NotFoundException($"Obrigação {id} não encontrada.");
+        }
 
         if (obrigacao.Cancelada)
         {

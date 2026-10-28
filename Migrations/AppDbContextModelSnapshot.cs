@@ -693,6 +693,12 @@ namespace SoftwareLicense.Api.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
 
+                    b.Property<bool>("CriadaPelaAdministracao")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("CriadoPorUsuarioId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("DataAtualizacao")
                         .HasColumnType("timestamp with time zone");
 
@@ -728,6 +734,8 @@ namespace SoftwareLicense.Api.Migrations
                         .HasColumnType("date");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CriadoPorUsuarioId");
 
                     b.HasIndex("FornecedorId");
 
@@ -2440,6 +2448,12 @@ namespace SoftwareLicense.Api.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)");
 
+                    b.Property<bool>("CriadaPelaAdministracao")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("CriadoPorUsuarioId")
+                        .HasColumnType("integer");
+
                     b.Property<DateOnly>("Data")
                         .HasColumnType("date");
 
@@ -2500,6 +2514,8 @@ namespace SoftwareLicense.Api.Migrations
                         .HasColumnType("numeric(18,2)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CriadoPorUsuarioId");
 
                     b.HasIndex("FornecedorId");
 
@@ -3785,11 +3801,18 @@ namespace SoftwareLicense.Api.Migrations
 
             modelBuilder.Entity("SoftwareLicense.Api.Entities.DespesaAvulsa", b =>
                 {
+                    b.HasOne("SoftwareLicense.Api.Entities.Usuario", "CriadoPorUsuario")
+                        .WithMany()
+                        .HasForeignKey("CriadoPorUsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SoftwareLicense.Api.Entities.Fornecedor", "Fornecedor")
                         .WithMany()
                         .HasForeignKey("FornecedorId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("CriadoPorUsuario");
 
                     b.Navigation("Fornecedor");
                 });
@@ -4242,6 +4265,11 @@ namespace SoftwareLicense.Api.Migrations
 
             modelBuilder.Entity("SoftwareLicense.Api.Entities.OrdemCompra", b =>
                 {
+                    b.HasOne("SoftwareLicense.Api.Entities.Usuario", "CriadoPorUsuario")
+                        .WithMany()
+                        .HasForeignKey("CriadoPorUsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SoftwareLicense.Api.Entities.Fornecedor", "Fornecedor")
                         .WithMany()
                         .HasForeignKey("FornecedorId")
@@ -4253,6 +4281,8 @@ namespace SoftwareLicense.Api.Migrations
                         .HasForeignKey("LocalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("CriadoPorUsuario");
 
                     b.Navigation("Fornecedor");
 

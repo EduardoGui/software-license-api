@@ -459,6 +459,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<OrdemCompra>(entity =>
         {
             entity.Property(o => o.Solicitante).IsRequired().HasMaxLength(150);
+            entity.HasOne(o => o.CriadoPorUsuario).WithMany().HasForeignKey(o => o.CriadoPorUsuarioId).OnDelete(DeleteBehavior.Restrict);
             entity.Property(o => o.CondicaoPagamento).IsRequired().HasMaxLength(200);
             entity.Property(o => o.TipoFrete).HasMaxLength(100);
             entity.Property(o => o.ValorFrete).HasPrecision(18, 2);
@@ -520,6 +521,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<DespesaAvulsa>(entity =>
         {
             entity.Property(d => d.Categoria).IsRequired().HasMaxLength(30);
+            entity.HasOne(d => d.CriadoPorUsuario).WithMany().HasForeignKey(d => d.CriadoPorUsuarioId).OnDelete(DeleteBehavior.Restrict);
             entity.Property(d => d.Descricao).IsRequired().HasMaxLength(300);
             entity.Property(d => d.NumeroNf).HasMaxLength(50);
             entity.Property(d => d.Valor).HasPrecision(18, 2);

@@ -11,9 +11,11 @@ public class ObrigacaoService : IObrigacaoService
     private readonly AppDbContext _context;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ObrigacaoService> _logger;
+    private readonly IEscopoAcesso? _escopo;
 
-    public ObrigacaoService(AppDbContext context, TimeProvider timeProvider, ILogger<ObrigacaoService> logger)
+    public ObrigacaoService(AppDbContext context, TimeProvider timeProvider, ILogger<ObrigacaoService> logger, IEscopoAcesso? escopo = null)
     {
+        _escopo = escopo;
         _context = context;
         _timeProvider = timeProvider;
         _logger = logger;
@@ -423,12 +425,22 @@ public class ObrigacaoService : IObrigacaoService
         }
     }
 
-    private IQueryable<Obrigacao> MontarConsultaBase() => _context.Obrigacoes
-        .Include(o => o.Fornecedor)
-        .Include(o => o.MedicaoBm!).ThenInclude(m => m.Contrato)
-        .Include(o => o.OrdemCompra)
-        .Include(o => o.DespesaAvulsa)
-        .AsQueryable();
+    // Perfil Administrativo só enxerga obrigações cuja OC/despesa de origem foi criada pela administração
+    // (medições e registros antigos ficam de fora); as demais respondem como inexistentes.
+    private IQueryable<Obrigacao> MontarConsultaBase()
+    {
+        var query = _context.Obrigacoes
+            .Include(o => o.Fornecedor)
+            .Include(o => o.MedicaoBm!).ThenInclude(m => m.Contrato)
+            .Include(o => o.OrdemCompra!).ThenInclude(oc => oc.CriadoPorUsuario)
+            .Include(o => o.DespesaAvulsa!).ThenInclude(d => d.CriadoPorUsuario)
+            .AsQueryable();
+
+        return _escopo?.RestritoAAdministracao == true
+            ? query.Where(o => (o.OrdemCompra != null && o.OrdemCompra.CriadaPelaAdministracao)
+                || (o.DespesaAvulsa != null && o.DespesaAvulsa.CriadaPelaAdministracao))
+            : query;
+    }
 
     private async Task<Obrigacao> BuscarOuFalhar(int id)
     {
@@ -488,6 +500,7 @@ public class ObrigacaoService : IObrigacaoService
         Pago = o.Pago,
         Cancelada = o.Cancelada,
         Etapa = CalcularEtapa(o),
+        CriadoPorNome = o.OrdemCompra?.CriadoPorUsuario?.Nome ?? o.DespesaAvulsa?.CriadoPorUsuario?.Nome,
         DataSolicitacaoEspelho = o.MedicaoBm?.DataSolicitacaoEspelho,
         DataEnvioAssinatura = o.OrdemCompra?.DataEnvioAssinatura ?? o.MedicaoBm?.DataEnvioAssinatura,
         DataEnvioFornecedor = o.OrdemCompra?.DataEnvioFornecedor,

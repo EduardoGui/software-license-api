@@ -15,14 +15,16 @@ public class OrdemCompraService : IOrdemCompraService
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<OrdemCompraService> _logger;
     private readonly IConfiguration _configuration;
+    private readonly IEscopoAcesso? _escopo;
 
     static OrdemCompraService()
     {
         GlobalFontSettings.FontResolver ??= new PdfFontResolver();
     }
 
-    public OrdemCompraService(AppDbContext context, TimeProvider timeProvider, ILogger<OrdemCompraService> logger, IConfiguration configuration)
+    public OrdemCompraService(AppDbContext context, TimeProvider timeProvider, ILogger<OrdemCompraService> logger, IConfiguration configuration, IEscopoAcesso? escopo = null)
     {
+        _escopo = escopo;
         _context = context;
         _timeProvider = timeProvider;
         _logger = logger;
@@ -31,7 +33,7 @@ public class OrdemCompraService : IOrdemCompraService
 
     public async Task<List<OrdemCompraDto>> GetAllAsync(OrdemCompraFiltroDto filtro)
     {
-        var query = _context.OrdensCompra.Include(o => o.Fornecedor).Include(o => o.Local).Include(o => o.Itens).AsQueryable();
+        var query = OrdensVisiveis().Include(o => o.Fornecedor).Include(o => o.Local).Include(o => o.Itens).Include(o => o.CriadoPorUsuario).AsQueryable();
 
         if (filtro.Numero is not null)
         {
@@ -96,6 +98,8 @@ public class OrdemCompraService : IOrdemCompraService
             ContatoAprovacaoNome = dto.ContatoAprovacaoNome?.Trim(),
             ContatoAprovacaoEmail = dto.ContatoAprovacaoEmail?.Trim(),
             Status = OrdemCompraStatus.Rascunho,
+            CriadoPorUsuarioId = _escopo?.UsuarioId,
+            CriadaPelaAdministracao = _escopo?.RestritoAAdministracao == true,
             DataCriacao = agora,
             DataAtualizacao = agora,
             Itens = dto.Itens.Select(i => new OrdemCompraItem
@@ -387,6 +391,7 @@ public class OrdemCompraService : IOrdemCompraService
 
     public async Task<AnexoArquivoDto> ObterAnexoAsync(int ordemCompraId, int anexoId)
     {
+        await BuscarOuFalhar(ordemCompraId);
         var anexo = await _context.OrdemCompraAnexos
             .FirstOrDefaultAsync(a => a.Id == anexoId && a.OrdemCompraId == ordemCompraId)
             ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
@@ -401,6 +406,7 @@ public class OrdemCompraService : IOrdemCompraService
 
     public async Task ExcluirAnexoAsync(int ordemCompraId, int anexoId)
     {
+        await BuscarOuFalhar(ordemCompraId);
         var anexo = await _context.OrdemCompraAnexos
             .FirstOrDefaultAsync(a => a.Id == anexoId && a.OrdemCompraId == ordemCompraId)
             ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
@@ -411,9 +417,13 @@ public class OrdemCompraService : IOrdemCompraService
         _logger.LogInformation("Anexo {AnexoId} excluído da Ordem de Compra {OrdemCompraId}", anexoId, ordemCompraId);
     }
 
+    // Perfil Administrativo só enxerga as OCs criadas pela administração; as demais respondem como inexistentes.
+    private IQueryable<OrdemCompra> OrdensVisiveis() =>
+        _escopo?.RestritoAAdministracao == true ? _context.OrdensCompra.Where(o => o.CriadaPelaAdministracao) : _context.OrdensCompra;
+
     private async Task<OrdemCompra> BuscarOuFalhar(int id)
     {
-        var ordemCompra = await _context.OrdensCompra.FindAsync(id);
+        var ordemCompra = await OrdensVisiveis().FirstOrDefaultAsync(o => o.Id == id);
         if (ordemCompra is null)
         {
             throw new NotFoundException($"Ordem de Compra {id} não encontrada.");
@@ -424,9 +434,10 @@ public class OrdemCompraService : IOrdemCompraService
 
     private async Task<OrdemCompra> BuscarComItensOuFalhar(int id)
     {
-        var ordemCompra = await _context.OrdensCompra
+        var ordemCompra = await OrdensVisiveis()
             .Include(o => o.Fornecedor)
             .Include(o => o.Local)
+            .Include(o => o.CriadoPorUsuario)
             .Include(o => o.Itens).ThenInclude(i => i.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
             .FirstOrDefaultAsync(o => o.Id == id);
 
@@ -450,6 +461,7 @@ public class OrdemCompraService : IOrdemCompraService
         FornecedorNome = o.Fornecedor.Nome,
         CondicaoPagamento = o.CondicaoPagamento,
         Status = o.Status,
+        CriadoPorNome = o.CriadoPorUsuario?.Nome,
         ValorTotal = o.Itens.Sum(i => i.Quantidade * i.ValorUnitario),
         QuantidadeItens = o.Itens.Count,
         DataCriacao = o.DataCriacao,
@@ -476,6 +488,7 @@ public class OrdemCompraService : IOrdemCompraService
         ContatoAprovacaoNome = o.ContatoAprovacaoNome,
         ContatoAprovacaoEmail = o.ContatoAprovacaoEmail,
         Status = o.Status,
+        CriadoPorNome = o.CriadoPorUsuario?.Nome,
         ValorTotal = o.Itens.Sum(i => i.Quantidade * i.ValorUnitario),
         DataCriacao = o.DataCriacao,
         DataAtualizacao = o.DataAtualizacao,

@@ -7,7 +7,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/fornecedores")]
-[Authorize(Roles = Roles.Administrador)]
+[Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
 public class FornecedoresController : ControllerBase
 {
     private readonly IFornecedorService _fornecedorService;
@@ -32,6 +32,7 @@ public class FornecedoresController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<FornecedorDto>> Create(CreateFornecedorDto dto)
     {
         var fornecedor = await _fornecedorService.CreateAsync(dto);
@@ -39,6 +40,7 @@ public class FornecedoresController : ControllerBase
     }
 
     [HttpPut("{id:int}")]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<FornecedorDto>> Update(int id, UpdateFornecedorDto dto)
     {
         var fornecedor = await _fornecedorService.UpdateAsync(id, dto);

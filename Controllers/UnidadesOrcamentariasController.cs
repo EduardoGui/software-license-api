@@ -7,7 +7,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/unidades-orcamentarias")]
-[Authorize(Roles = Roles.Administrador)]
+[Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
 public class UnidadesOrcamentariasController : ControllerBase
 {
     private readonly IUnidadeOrcamentariaService _unidadeOrcamentariaService;
@@ -39,6 +39,7 @@ public class UnidadesOrcamentariasController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<UnidadeOrcamentariaDto>> Create(CreateUnidadeOrcamentariaDto dto)
     {
         var unidade = await _unidadeOrcamentariaService.CreateAsync(dto);
@@ -46,6 +47,7 @@ public class UnidadesOrcamentariasController : ControllerBase
     }
 
     [HttpPut("{id:int}")]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<UnidadeOrcamentariaDto>> Update(int id, UpdateUnidadeOrcamentariaDto dto)
     {
         var unidade = await _unidadeOrcamentariaService.UpdateAsync(id, dto);

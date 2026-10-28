@@ -7,7 +7,7 @@ namespace SoftwareLicense.Api.Controllers;
 
 [ApiController]
 [Route("api/ordens-compra")]
-[Authorize(Roles = Roles.Administrador)]
+[Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo}")]
 public class OrdensCompraController : ControllerBase
 {
     private readonly IOrdemCompraService _ordemCompraService;

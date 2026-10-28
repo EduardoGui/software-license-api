@@ -16,4 +16,5 @@ public class DespesaAvulsaDto
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
     public List<DespesaAvulsaRateioUaDto> RateioUa { get; set; } = [];
+    public string? CriadoPorNome { get; set; }
 }

@@ -16,4 +16,5 @@ public class OrdemCompraDto
     public int QuantidadeItens { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
+    public string? CriadoPorNome { get; set; }
 }

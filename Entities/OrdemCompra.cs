@@ -20,6 +20,10 @@ public class OrdemCompra
     public string? ContatoAprovacaoNome { get; set; }
     public string? ContatoAprovacaoEmail { get; set; }
     public string Status { get; set; } = string.Empty;
+    // Quem criou e se foi o perfil Administrativo (decide o que o Administrativo enxerga). Fixo na criação.
+    public int? CriadoPorUsuarioId { get; set; }
+    public Usuario? CriadoPorUsuario { get; set; }
+    public bool CriadaPelaAdministracao { get; set; }
     // Andamento documental (informativo - não muda o status nem a etapa da obrigação).
     public DateOnly? DataEnvioAssinatura { get; set; }
     public DateOnly? DataEnvioFornecedor { get; set; }

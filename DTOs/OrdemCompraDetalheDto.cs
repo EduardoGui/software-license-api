@@ -24,4 +24,5 @@ public class OrdemCompraDetalheDto
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
     public List<OrdemCompraItemDto> Itens { get; set; } = [];
+    public string? CriadoPorNome { get; set; }
 }

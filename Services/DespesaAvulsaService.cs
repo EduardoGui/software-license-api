@@ -18,9 +18,11 @@ public class DespesaAvulsaService : IDespesaAvulsaService
     private readonly AppDbContext _context;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<DespesaAvulsaService> _logger;
+    private readonly IEscopoAcesso? _escopo;
 
-    public DespesaAvulsaService(AppDbContext context, TimeProvider timeProvider, ILogger<DespesaAvulsaService> logger)
+    public DespesaAvulsaService(AppDbContext context, TimeProvider timeProvider, ILogger<DespesaAvulsaService> logger, IEscopoAcesso? escopo = null)
     {
+        _escopo = escopo;
         _context = context;
         _timeProvider = timeProvider;
         _logger = logger;
@@ -28,8 +30,9 @@ public class DespesaAvulsaService : IDespesaAvulsaService
 
     public async Task<List<DespesaAvulsaDto>> GetAllAsync(DespesaAvulsaFiltroDto filtro)
     {
-        var query = _context.DespesasAvulsas
+        var query = DespesasVisiveis()
             .Include(d => d.Fornecedor)
+            .Include(d => d.CriadoPorUsuario)
             .Include(d => d.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
             .AsQueryable();
 
@@ -102,6 +105,8 @@ public class DespesaAvulsaService : IDespesaAvulsaService
             Valor = dto.Valor,
             Recorrente = dto.Recorrente,
             Observacoes = dto.Observacoes?.Trim(),
+            CriadoPorUsuarioId = _escopo?.UsuarioId,
+            CriadaPelaAdministracao = _escopo?.RestritoAAdministracao == true,
             DataCriacao = agora,
             DataAtualizacao = agora,
         };
@@ -290,6 +295,7 @@ public class DespesaAvulsaService : IDespesaAvulsaService
 
     public async Task<AnexoArquivoDto> ObterAnexoAsync(int despesaAvulsaId, int anexoId)
     {
+        await BuscarOuFalhar(despesaAvulsaId);
         var anexo = await _context.DespesaAvulsaAnexos
             .FirstOrDefaultAsync(a => a.Id == anexoId && a.DespesaAvulsaId == despesaAvulsaId)
             ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
@@ -304,6 +310,7 @@ public class DespesaAvulsaService : IDespesaAvulsaService
 
     public async Task ExcluirAnexoAsync(int despesaAvulsaId, int anexoId)
     {
+        await BuscarOuFalhar(despesaAvulsaId);
         var anexo = await _context.DespesaAvulsaAnexos
             .FirstOrDefaultAsync(a => a.Id == anexoId && a.DespesaAvulsaId == despesaAvulsaId)
             ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
@@ -353,10 +360,15 @@ public class DespesaAvulsaService : IDespesaAvulsaService
         }
     }
 
+    // Perfil Administrativo só enxerga as despesas criadas pela administração; as demais respondem como inexistentes.
+    private IQueryable<DespesaAvulsa> DespesasVisiveis() =>
+        _escopo?.RestritoAAdministracao == true ? _context.DespesasAvulsas.Where(d => d.CriadaPelaAdministracao) : _context.DespesasAvulsas;
+
     private async Task<DespesaAvulsa> BuscarOuFalhar(int id)
     {
-        var despesa = await _context.DespesasAvulsas
+        var despesa = await DespesasVisiveis()
             .Include(d => d.Fornecedor)
+            .Include(d => d.CriadoPorUsuario)
             .Include(d => d.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
             .FirstOrDefaultAsync(d => d.Id == id);
         if (despesa is null)
@@ -380,6 +392,7 @@ public class DespesaAvulsaService : IDespesaAvulsaService
         Valor = d.Valor,
         Recorrente = d.Recorrente,
         Observacoes = d.Observacoes,
+        CriadoPorNome = d.CriadoPorUsuario?.Nome,
         DataCriacao = d.DataCriacao,
         DataAtualizacao = d.DataAtualizacao,
         RateioUa = d.RateiosUa.Select(r => new DespesaAvulsaRateioUaDto
