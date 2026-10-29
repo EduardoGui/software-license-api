@@ -48,6 +48,7 @@ public class FornecedorService : IFornecedorService
         await ValidarNomeUnico(dto.Nome, idAtual: null);
         ValidarCnpjOuCpfInformado(dto.Cnpj, dto.Cpf);
         ValidarCnpjFormato(dto.Cnpj);
+        ValidarCpfFormato(dto.Cpf);
         await ValidarCnpjUnico(dto.Cnpj, idAtual: null);
         await ValidarCpfUnico(dto.Cpf, idAtual: null);
 
@@ -86,6 +87,12 @@ public class FornecedorService : IFornecedorService
         // bloqueado por uma exigência que não existia quando o registro foi criado.
         await ValidarNomeUnico(dto.Nome, idAtual: id);
         ValidarCnpjFormato(dto.Cnpj);
+        // Só revalida o CPF quando ele muda: CPFs gravados antes da validação não podem travar a edição de outros campos.
+        if (dto.Cpf?.Trim() != fornecedor.Cpf)
+        {
+            ValidarCpfFormato(dto.Cpf);
+        }
+
         await ValidarCnpjUnico(dto.Cnpj, idAtual: id);
         await ValidarCpfUnico(dto.Cpf, idAtual: id);
 
@@ -154,6 +161,19 @@ public class FornecedorService : IFornecedorService
         if (string.IsNullOrWhiteSpace(cnpj) && string.IsNullOrWhiteSpace(cpf))
         {
             throw new BusinessRuleException("Informe o CNPJ (pessoa jurídica) ou o CPF (pessoa física) do fornecedor.");
+        }
+    }
+
+    private static void ValidarCpfFormato(string? cpf)
+    {
+        if (string.IsNullOrWhiteSpace(cpf))
+        {
+            return;
+        }
+
+        if (!CpfValidator.EhValido(cpf))
+        {
+            throw new BusinessRuleException("CPF inválido.");
         }
     }
 

@@ -104,6 +104,46 @@ public class FornecedorServiceTests
             service.CreateAsync(new CreateFornecedorDto { Nome = "Outra Pessoa", Cpf = "529.982.247-25" }));
     }
 
+    [Theory]
+    [InlineData("123.456.789-00")]
+    [InlineData("111.111.111-11")]
+    [InlineData("529.982.247")]
+    public async Task CreateAsync_DeveRejeitarCpfInvalido(string cpf)
+    {
+        var service = CriarService(out _);
+
+        var excecao = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.CreateAsync(new CreateFornecedorDto { Nome = "Maria Estagiária", Cpf = cpf }));
+
+        Assert.Equal("CPF inválido.", excecao.Message);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DeveRejeitarCpfInvalidoAlterado()
+    {
+        var service = CriarService(out _);
+        var criado = await service.CreateAsync(new CreateFornecedorDto { Nome = "Maria Estagiária", Cpf = "529.982.247-25" });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.UpdateAsync(criado.Id, new UpdateFornecedorDto { Nome = "Maria Estagiária", Cpf = "123.456.789-00" }));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DevePermitirEditarOutrosCamposComCpfAntigoInvalido()
+    {
+        var service = CriarService(out var context);
+        context.Fornecedores.Add(new SoftwareLicense.Api.Entities.Fornecedor
+        {
+            Nome = "Antigo", Cpf = "123.456.789-00", Ativo = true, DataCriacao = DateTime.UtcNow, DataAtualizacao = DateTime.UtcNow,
+        });
+        await context.SaveChangesAsync();
+        var id = context.Fornecedores.Single().Id;
+
+        var atualizado = await service.UpdateAsync(id, new UpdateFornecedorDto { Nome = "Antigo", Cpf = "123.456.789-00", Telefone = "11 99999-0000", Ativo = true });
+
+        Assert.Equal("11 99999-0000", atualizado.Telefone);
+    }
+
     [Fact]
     public async Task UpdateAsync_DevePermitirSalvarSemCnpj()
     {
