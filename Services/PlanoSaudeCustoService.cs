@@ -47,12 +47,17 @@ public class PlanoSaudeCustoService : IPlanoSaudeCustoService
         var lancamentos = await _context.PlanoSaudeCustos
             .Where(p => usuarioIds.Contains(p.UsuarioId) && p.Ano == filtro.Ano && p.Mes == filtro.Mes)
             .ToListAsync();
+        var coparticipacaoPorUsuario = lancamentos.GroupBy(l => l.UsuarioId).ToDictionary(g => g.Key, g => g.Sum(l => l.ValorCoparticipacao));
+        var notasDebito = await _context.NotasDebitoPj
+            .Where(n => usuarioIds.Contains(n.UsuarioId) && n.Ano == filtro.Ano && n.Mes == filtro.Mes)
+            .ToDictionaryAsync(n => n.UsuarioId);
         var lancamentoTitular = lancamentos.Where(l => l.DependenteId == null).ToDictionary(l => l.UsuarioId);
         var lancamentoDependente = lancamentos.Where(l => l.DependenteId != null).ToDictionary(l => l.DependenteId!.Value);
 
         var itensUsuario = usuarios.Select(usuario =>
         {
             var lancamentoUsuario = lancamentoTitular.GetValueOrDefault(usuario.Id);
+            var notaDebito = notasDebito.GetValueOrDefault(usuario.Id);
 
             return new PlanoSaudeUsuarioMesDto
             {
@@ -63,6 +68,10 @@ public class PlanoSaudeCustoService : IPlanoSaudeCustoService
                 LancamentoId = lancamentoUsuario?.Id,
                 ValorMensal = lancamentoUsuario?.ValorMensal,
                 ValorCoparticipacao = lancamentoUsuario?.ValorCoparticipacao,
+                CoparticipacaoTotal = coparticipacaoPorUsuario.GetValueOrDefault(usuario.Id),
+                NotaDebitoId = notaDebito?.Id,
+                NotaDebitoStatus = notaDebito?.Status,
+                NotaDebitoValor = notaDebito?.ValorBruto,
                 Dependentes = dependentesPorUsuario.GetValueOrDefault(usuario.Id, [])
                     .Select(dependente =>
                     {
