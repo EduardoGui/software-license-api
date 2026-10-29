@@ -32,7 +32,6 @@ public class FornecedoresController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<FornecedorDto>> Create(CreateFornecedorDto dto)
     {
         var fornecedor = await _fornecedorService.CreateAsync(dto);
