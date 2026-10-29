@@ -174,15 +174,36 @@ public partial class PlanoSaudeImportacaoService : IPlanoSaudeImportacaoService
             throw new BusinessRuleException("Não encontrei beneficiários no arquivo. Envie o demonstrativo analítico de faturamento da operadora (xlsx).");
         }
 
-        if (competencias.Count == 0)
-        {
-            throw new BusinessRuleException("Não consegui identificar a competência (mês/ano) no arquivo.");
-        }
+        // O lançamento mensal usa o mês de EMISSÃO da fatura (fatura emitida em 21/09 com mensalidade de 10/2026 = Setembro),
+        // o mesmo critério das faturas e notas de débito cadastradas. Sem data de emissão no arquivo, cai na competência.
+        var emissoes = faturas.Values
+            .Where(f => f.Emissao.HasValue)
+            .Select(f => (Year: f.Emissao!.Value.Year, Month: f.Emissao.Value.Month))
+            .Distinct()
+            .ToList();
+        var competenciaTexto = string.Join(", ", competencias.OrderBy(c => c).Select(c => $"{c.Mes:00}/{c.Ano}"));
 
-        if (competencias.Count > 1 || !competencias.Contains((ano, mes)))
+        if (emissoes.Count > 0)
         {
-            var doArquivo = string.Join(", ", competencias.OrderBy(c => c).Select(c => $"{c.Mes:00}/{c.Ano}"));
-            throw new BusinessRuleException($"O arquivo é da competência {doArquivo}, mas o mês selecionado é {mes:00}/{ano}.");
+            if (emissoes.Count > 1 || !emissoes.Contains((ano, mes)))
+            {
+                var emitidas = string.Join(", ", emissoes.OrderBy(e => e).Select(e => $"{e.Month:00}/{e.Year}"));
+                throw new BusinessRuleException(
+                    $"O arquivo tem faturas emitidas em {emitidas}, mas o mês selecionado é {mes:00}/{ano}. " +
+                    "O lançamento mensal usa o mês de emissão da fatura (ex.: fatura emitida em 21/09 é lançada em Setembro).");
+            }
+        }
+        else
+        {
+            if (competencias.Count == 0)
+            {
+                throw new BusinessRuleException("Não consegui identificar a competência (mês/ano) no arquivo.");
+            }
+
+            if (competencias.Count > 1 || !competencias.Contains((ano, mes)))
+            {
+                throw new BusinessRuleException($"O arquivo é da competência {competenciaTexto}, mas o mês selecionado é {mes:00}/{ano}.");
+            }
         }
 
         // --- agrupa por titular (CPF) e por dependente (nome dentro do titular) ---
@@ -340,6 +361,27 @@ public partial class PlanoSaudeImportacaoService : IPlanoSaudeImportacaoService
             });
         }
 
+        // --- notas de débito já emitidas no mês: o valor da nota é um retrato congelado e não muda com a importação ---
+        var novaCoparticipacaoPorUsuario = plano.Itens.GroupBy(i => i.Usuario.Id).ToDictionary(g => g.Key, g => g.Sum(i => i.Coparticipacao));
+        var notasDoMes = await _context.NotasDebitoPj
+            .Where(n => idsUsuarios.Contains(n.UsuarioId) && n.Ano == ano && n.Mes == mes)
+            .ToListAsync();
+        var divergentes = notasDoMes
+            .Where(n => n.ValorBruto != novaCoparticipacaoPorUsuario.GetValueOrDefault(n.UsuarioId))
+            .ToList();
+        foreach (var porStatus in divergentes.GroupBy(n => n.Status).OrderBy(g => g.Key))
+        {
+            var nomes = string.Join("; ", porStatus.Select(n =>
+                $"{plano.Itens.First(i => i.Usuario.Id == n.UsuarioId).Usuario.Nome} (nota R$ {n.ValorBruto:N2} x coparticipação do arquivo R$ {novaCoparticipacaoPorUsuario[n.UsuarioId]:N2})"));
+            var orientacao = porStatus.Key switch
+            {
+                NotaDebitoPjStatus.Recebida => "já recebida(s): continua(m) como está(ão), sem alteração — confira a diferença manualmente",
+                NotaDebitoPjStatus.Enviada => "já enviada(s) ao colaborador: continua(m) como está(ão) — confira a diferença manualmente",
+                _ => "em rascunho: se o valor novo estiver certo, exclua a nota e crie de novo depois da importação",
+            };
+            previa.Avisos.Add($"{porStatus.Count()} nota(s) de débito {orientacao}: {nomes}.");
+        }
+
         // --- totais e faturas ---
         previa.Arquivo = new ImportacaoTotaisDto
         {
@@ -367,6 +409,11 @@ public partial class PlanoSaudeImportacaoService : IPlanoSaudeImportacaoService
                 ValorTotal = Arredondar(grupo.Sum(l => l.Mensalidade + l.Outros + l.Coparticipacao)),
                 CadastradaNoSistema = numerosCadastrados.Contains(grupo.Key),
             });
+        }
+
+        if (emissoes.Count > 0 && competencias.Count > 0 && !competencias.Contains((ano, mes)))
+        {
+            previa.Avisos.Add($"Fatura emitida em {mes:00}/{ano}, com mensalidade da competência {competenciaTexto}: os valores serão lançados em {mes:00}/{ano}.");
         }
 
         if (previa.TitularesNaoEncontrados.Count > 0)

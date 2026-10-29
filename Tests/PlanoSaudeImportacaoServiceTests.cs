@@ -43,17 +43,24 @@ public class PlanoSaudeImportacaoServiceTests
     }
 
     // Planilha no formato do "Demonstrativo Analítico Faturamento" + uma aba "unificada" repetida que deve ser ignorada.
-    private static MemoryStream Planilha(string competencia, params Linha[] linhas) => PlanilhaComAjustes(competencia, [], linhas);
+    private static MemoryStream Planilha(string competencia, params Linha[] linhas) => PlanilhaComAjustes(competencia, [], "21/10/2026", linhas);
+
+    // Mesmo demonstrativo, mas com a data de emissão da fatura escolhida (null = sem data de emissão no arquivo).
+    private static MemoryStream PlanilhaEmitida(string? emissao, string competencia, params Linha[] linhas) => PlanilhaComAjustes(competencia, [], emissao, linhas);
 
     // "ajustes" = linhas da fatura sem beneficiário (rubrica completa, copart, outros).
-    private static MemoryStream PlanilhaComAjustes(string competencia, (string Rubrica, decimal Copart, decimal Outros)[] ajustes, params Linha[] linhas)
+    private static MemoryStream PlanilhaComAjustes(string competencia, (string Rubrica, decimal Copart, decimal Outros)[] ajustes, string? emissao, params Linha[] linhas)
     {
         using var wb = new XLWorkbook();
         var aba = wb.Worksheets.Add("SPE SAÚDE");
         aba.Cell(1, 1).Value = "Demonstrativo Analítico Faturamento";
         aba.Cell(3, 1).Value = "Contrato: 2393710000 - EMPRESA TESTE";
         aba.Cell(3, 2).Value = "Fatura: 72977600";
-        aba.Cell(3, 3).Value = "Emissão: 21/09/2026";
+        if (emissao is not null)
+        {
+            aba.Cell(3, 3).Value = $"Emissão: {emissao}";
+        }
+
         aba.Cell(3, 4).Value = "Vencimento: 05/10/2026";
         aba.Cell(4, 1).Value = "Empresa:  00.000.000/0001-00 - EMPRESA TESTE";
         aba.Cell(5, 1).Value = "Código";
@@ -146,14 +153,91 @@ public class PlanoSaudeImportacaoServiceTests
     }
 
     [Fact]
-    public async Task PreviaAsync_DeveRecusarArquivoDeOutraCompetencia()
+    public async Task PreviaAsync_DeveRecusarArquivoEmitidoEmOutroMes()
     {
-        var (service, _) = CriarService();
-        var arquivo = Planilha("09/2026", new Linha("T", "ANA SOUZA", "111.222.333-44", "100", Mens, Mensalidade: 500m));
+        // Fatura emitida em setembro (mensalidade de 10/2026) já pertence ao lançamento de setembro: em outubro duplicaria os valores.
+        var (service, context) = CriarService();
+        CriarUsuario(context, "Ana Souza", "111.222.333-44");
+        var arquivo = PlanilhaEmitida("21/09/2026", "10/2026", new Linha("T", "ANA SOUZA", "111.222.333-44", "100", Mens, Mensalidade: 500m));
 
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => service.PreviaAsync(arquivo, 2026, 10));
         Assert.Contains("09/2026", ex.Message);
         Assert.Contains("10/2026", ex.Message);
+    }
+
+    [Fact]
+    public async Task PreviaAsync_DeveLancarNoMesDeEmissaoEAvisarQuandoCompetenciaDifere()
+    {
+        var (service, context) = CriarService();
+        CriarUsuario(context, "Ana Souza", "111.222.333-44");
+        var arquivo = PlanilhaEmitida("21/09/2026", "10/2026", new Linha("T", "ANA SOUZA", "111.222.333-44", "100", Mens, Mensalidade: 500m));
+
+        var previa = await service.PreviaAsync(arquivo, 2026, 9);
+
+        Assert.True(previa.PodeConfirmar);
+        Assert.Equal(500m, previa.Importavel.ValorMensal);
+        Assert.Contains(previa.Avisos, a => a.Contains("emitida em 09/2026") && a.Contains("10/2026"));
+    }
+
+    private static void CriarNota(AppDbContext context, int usuarioId, int mes, decimal valorBruto, string status)
+    {
+        context.NotasDebitoPj.Add(new NotaDebitoPj
+        {
+            UsuarioId = usuarioId, Ano = 2026, Mes = mes, ValorBruto = valorBruto, Status = status, OperadoraSaude = "AMIL",
+            DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime,
+        });
+        context.SaveChanges();
+    }
+
+    [Fact]
+    public async Task PreviaAsync_DeveAvisarNotasDeDebitoDoMesComValorDiferenteSemAlterarAsNotas()
+    {
+        var (service, context) = CriarService();
+        var ana = CriarUsuario(context, "Ana Souza", "111.222.333-44");
+        var bia = CriarUsuario(context, "Bia Lima", "222.333.444-55");
+        var caio = CriarUsuario(context, "Caio Reis", "333.444.555-66");
+        CriarNota(context, ana.Id, 10, 40m, NotaDebitoPjStatus.Recebida); // copart do arquivo = 50 -> diverge
+        CriarNota(context, bia.Id, 10, 20m, NotaDebitoPjStatus.Rascunho); // copart do arquivo = 30 -> diverge
+        CriarNota(context, caio.Id, 10, 10m, NotaDebitoPjStatus.Enviada); // copart do arquivo = 10 -> confere
+        CriarNota(context, ana.Id, 9, 99m, NotaDebitoPjStatus.Recebida); // outro mês: ignorada
+        var arquivo = Planilha("10/2026",
+            new Linha("T", "ANA SOUZA", "111.222.333-44", "1", Mens, Mensalidade: 500m),
+            new Linha("T", "ANA SOUZA", "111.222.333-44", "1", Cop, Copart: 50m),
+            new Linha("T", "BIA LIMA", "222.333.444-55", "2", Mens, Mensalidade: 500m),
+            new Linha("T", "BIA LIMA", "222.333.444-55", "2", Cop, Copart: 30m),
+            new Linha("T", "CAIO REIS", "333.444.555-66", "3", Mens, Mensalidade: 500m),
+            new Linha("T", "CAIO REIS", "333.444.555-66", "3", Cop, Copart: 10m));
+
+        var previa = await service.PreviaAsync(arquivo, 2026, 10);
+
+        Assert.Contains(previa.Avisos, a => a.Contains("1 nota(s) de débito já recebida(s)") && a.Contains("Ana Souza"));
+        Assert.Contains(previa.Avisos, a => a.Contains("em rascunho") && a.Contains("Bia Lima"));
+        Assert.DoesNotContain(previa.Avisos, a => a.Contains("Caio Reis"));
+
+        await service.ConfirmarAsync(Planilha("10/2026",
+            new Linha("T", "ANA SOUZA", "111.222.333-44", "1", Mens, Mensalidade: 500m),
+            new Linha("T", "ANA SOUZA", "111.222.333-44", "1", Cop, Copart: 50m),
+            new Linha("T", "BIA LIMA", "222.333.444-55", "2", Mens, Mensalidade: 500m),
+            new Linha("T", "BIA LIMA", "222.333.444-55", "2", Cop, Copart: 30m),
+            new Linha("T", "CAIO REIS", "333.444.555-66", "3", Mens, Mensalidade: 500m),
+            new Linha("T", "CAIO REIS", "333.444.555-66", "3", Cop, Copart: 10m)), 2026, 10, previa.Assinatura);
+
+        // A importação nunca mexe nas notas: continuam com o valor e o status de antes.
+        var notas = await context.NotasDebitoPj.OrderBy(n => n.Id).ToListAsync();
+        Assert.Equal([40m, 20m, 10m, 99m], notas.Select(n => n.ValorBruto).ToArray());
+        Assert.Equal([NotaDebitoPjStatus.Recebida, NotaDebitoPjStatus.Rascunho, NotaDebitoPjStatus.Enviada, NotaDebitoPjStatus.Recebida], notas.Select(n => n.Status).ToArray());
+    }
+
+    [Fact]
+    public async Task PreviaAsync_SemDataDeEmissaoUsaACompetenciaDoArquivo()
+    {
+        var (service, context) = CriarService();
+        CriarUsuario(context, "Ana Souza", "111.222.333-44");
+        var arquivo = PlanilhaEmitida(null, "09/2026", new Linha("T", "ANA SOUZA", "111.222.333-44", "100", Mens, Mensalidade: 500m));
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => service.PreviaAsync(arquivo, 2026, 10));
+        Assert.Contains("competência 09/2026", ex.Message);
+        Assert.True((await service.PreviaAsync(PlanilhaEmitida(null, "10/2026", new Linha("T", "ANA SOUZA", "111.222.333-44", "100", Mens, Mensalidade: 500m)), 2026, 10)).PodeConfirmar);
     }
 
     [Fact]
@@ -272,6 +356,7 @@ public class PlanoSaudeImportacaoServiceTests
         CriarUsuario(context, "Ana Souza", "111.222.333-44");
         var arquivo = PlanilhaComAjustes("10/2026",
             [("- 10/2026Correção Co-participação", 618.89m, 0m), ("- 10/2026Correção Imposto", 0m, -57.72m)],
+            "21/10/2026",
             new Linha("T", "ANA SOUZA", "111.222.333-44", "100", Mens, Mensalidade: 500m));
 
         var previa = await service.PreviaAsync(arquivo, 2026, 10);
