@@ -166,6 +166,7 @@ builder.Services.AddScoped<IEmailPagamentoFinanceiroService, EmailPagamentoFinan
 builder.Services.AddScoped<IAuditoriaService, AuditoriaService>();
 builder.Services.AddScoped<IEmpresaPjService, EmpresaPjService>();
 builder.Services.AddScoped<IPlanoSaudeCustoService, PlanoSaudeCustoService>();
+builder.Services.AddScoped<IPlanoSaudeImportacaoService, PlanoSaudeImportacaoService>();
 builder.Services.AddScoped<IRelatorioMensalPlanoSaudeService, RelatorioMensalPlanoSaudeService>();
 builder.Services.AddScoped<INotaDebitoPjService, NotaDebitoPjService>();
 builder.Services.AddScoped<IFaturaOperadoraSaudeService, FaturaOperadoraSaudeService>();

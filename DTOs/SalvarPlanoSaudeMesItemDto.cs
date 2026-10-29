@@ -8,7 +8,8 @@ public class SalvarPlanoSaudeMesItemDto
     public int UsuarioId { get; set; }
     public int? DependenteId { get; set; }
 
-    [Range(0, double.MaxValue)]
+    // Pode ser negativo: devolução retroativa de mensalidade (ex.: exclusão de beneficiário).
+    [Range(-1_000_000, 1_000_000)]
     public decimal ValorMensal { get; set; }
 
     [Range(0, double.MaxValue)]
