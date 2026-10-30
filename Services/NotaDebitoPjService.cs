@@ -97,22 +97,6 @@ public class NotaDebitoPjService : INotaDebitoPjService
             throw new BusinessRuleException("Já existe uma nota de débito para este usuário neste mês.");
         }
 
-        FaturaOperadoraSaude? fatura = null;
-        if (dto.FaturaOperadoraSaudeId is not null)
-        {
-            fatura = await _context.FaturasOperadoraSaude.FirstOrDefaultAsync(f => f.Id == dto.FaturaOperadoraSaudeId)
-                ?? throw new NotFoundException($"Fatura {dto.FaturaOperadoraSaudeId} não encontrada.");
-
-            if (fatura.Ano != dto.Ano || fatura.Mes != dto.Mes)
-            {
-                throw new BusinessRuleException("A fatura selecionada não é do mesmo mês/ano desta nota de débito.");
-            }
-        }
-        else if (string.IsNullOrWhiteSpace(dto.OperadoraSaude))
-        {
-            throw new BusinessRuleException("Operadora de Saúde é obrigatória quando não há fatura vinculada.");
-        }
-
         var lancamentos = await _context.PlanoSaudeCustos
             .Include(p => p.Dependente)
             .Where(p => p.UsuarioId == dto.UsuarioId && p.Ano == dto.Ano && p.Mes == dto.Mes)
@@ -144,12 +128,11 @@ public class NotaDebitoPjService : INotaDebitoPjService
             Itens = itens,
             Desconto = dto.Desconto,
             RetencaoTributaria = dto.RetencaoTributaria,
-            FaturaOperadoraSaudeId = fatura?.Id,
-            OperadoraSaude = fatura?.OperadoraSaude ?? dto.OperadoraSaude!.Trim(),
-            NumeroFatura = fatura?.NumeroFatura ?? dto.NumeroFatura?.Trim(),
+            OperadoraSaude = NomeOperadora(dto.OperadoraSaude),
+            NumeroFatura = dto.NumeroFatura?.Trim(),
             Descricao = dto.Descricao?.Trim(),
-            DataEmissao = fatura?.DataEmissao ?? dto.DataEmissao,
-            DataVencimento = fatura?.DataVencimento ?? dto.DataVencimento,
+            DataEmissao = dto.DataEmissao,
+            DataVencimento = dto.DataVencimento,
             FormaPagamento = dto.FormaPagamento?.Trim(),
             CentroCusto = dto.CentroCusto?.Trim(),
             Area = dto.Area?.Trim(),
@@ -169,6 +152,13 @@ public class NotaDebitoPjService : INotaDebitoPjService
         return ParaDto(nota);
     }
 
+    // A operadora é um texto livre e opcional; a coluna é obrigatória, então vazio vira o nome genérico
+    // (aparece no assunto do e-mail, no PDF e nas listas).
+    private const string OperadoraPadrao = "Plano de Saúde";
+
+    private static string NomeOperadora(string? informada) =>
+        string.IsNullOrWhiteSpace(informada) ? OperadoraPadrao : informada.Trim();
+
     public async Task<NotaDebitoPjDto> UpdateAsync(int id, UpdateNotaDebitoPjDto dto)
     {
         var nota = await BuscarOuFalhar(id);
@@ -178,7 +168,7 @@ public class NotaDebitoPjService : INotaDebitoPjService
         // continuam sempre uma cópia da fatura (corrigir lá, via FaturaOperadoraSaudeService.UpdateAsync).
         if (nota.FaturaOperadoraSaudeId is null)
         {
-            nota.OperadoraSaude = dto.OperadoraSaude.Trim();
+            nota.OperadoraSaude = NomeOperadora(dto.OperadoraSaude);
             nota.NumeroFatura = dto.NumeroFatura?.Trim();
             nota.DataEmissao = dto.DataEmissao;
             nota.DataVencimento = dto.DataVencimento;
@@ -244,6 +234,10 @@ public class NotaDebitoPjService : INotaDebitoPjService
         var nota = await BuscarOuFalhar(id);
         ValidarEditavel(nota);
 
+        // O vínculo do anexo com a nota é Restrict (não apaga em cascata): sem remover antes, excluir um
+        // rascunho com anexo (ex.: o recorte de tela) falharia com erro de chave estrangeira.
+        var anexos = await _context.NotasDebitoPjAnexos.Where(a => a.NotaDebitoPjId == id).ToListAsync();
+        _context.NotasDebitoPjAnexos.RemoveRange(anexos);
         _context.NotasDebitoPj.Remove(nota);
         await _context.SaveChangesAsync();
 
@@ -292,18 +286,31 @@ public class NotaDebitoPjService : INotaDebitoPjService
             var numero = nota.Id.ToString("D4");
             var valorLiquido = nota.ValorBruto - nota.Desconto - nota.RetencaoTributaria;
             var assunto = $"Nota de Débito Nº {numero} — Coparticipação {nota.OperadoraSaude} ({nota.Mes:D2}/{nota.Ano})";
+
+            // Os anexos da nota (ex.: recorte de tela que explica os valores) vão junto no e-mail, até o limite de tamanho.
+            var (extras, ficaramDeFora) = await CarregarAnexosParaEmailAsync(nota.Id, pdf.Length);
+            var linhaAnexos = extras.Count > 0
+                ? $"<p>Seguem também {extras.Count} anexo(s) para acompanhar a nota.</p>"
+                : string.Empty;
+
             var corpo = $"""
                 <p>Olá, {nota.Usuario.Nome}!</p>
                 <p>Segue em anexo a Nota de Débito referente à coparticipação do plano de saúde ({nota.Mes:D2}/{nota.Ano}).</p>
                 <p>Valor líquido: <strong>R$ {valorLiquido:N2}</strong></p>
                 <p>O documento em anexo traz um QR code Pix para pagamento direto à Hope.</p>
+                {linhaAnexos}
                 """;
 
-            await _emailSender.EnviarAsync(
-                [nota.Usuario.Email], assunto, corpo, anexos: [new EmailAnexo($"nota-debito-{numero}.pdf", pdf, "application/pdf")]);
+            var anexos = new List<EmailAnexo> { new($"nota-debito-{numero}.pdf", pdf, "application/pdf") };
+            anexos.AddRange(extras);
+            await _emailSender.EnviarAsync([nota.Usuario.Email], assunto, corpo, anexos: anexos);
 
-            _logger.LogInformation("E-mail da nota de débito PJ {NotaId} enviado ao colaborador {Email}", nota.Id, nota.Usuario.Email);
-            return null;
+            _logger.LogInformation(
+                "E-mail da nota de débito PJ {NotaId} enviado ao colaborador {Email} com {Anexos} anexo(s) extra(s)", nota.Id, nota.Usuario.Email, extras.Count);
+
+            return ficaramDeFora > 0
+                ? $"O e-mail foi enviado, mas {ficaramDeFora} anexo(s) ficaram de fora por excederem o limite de tamanho do e-mail. Reenvie-os manualmente."
+                : null;
         }
         catch (Exception ex)
         {
@@ -313,6 +320,35 @@ public class NotaDebitoPjService : INotaDebitoPjService
 
             return "A nota foi marcada como enviada, mas o e-mail não pôde ser entregue ao colaborador. Tente reenviar.";
         }
+    }
+
+    // Limite somado (PDF + anexos) para o e-mail não ser recusado pelo provedor; os que passarem do limite
+    // ficam de fora (continuam anexados à nota) e o usuário é avisado.
+    private const long LimiteBytesEmail = 4 * 1024 * 1024;
+
+    private async Task<(List<EmailAnexo> Anexos, int FicaramDeFora)> CarregarAnexosParaEmailAsync(int notaId, long bytesDoPdf)
+    {
+        var anexos = await _context.NotasDebitoPjAnexos
+            .Where(a => a.NotaDebitoPjId == notaId)
+            .OrderBy(a => a.DataUpload).ThenBy(a => a.Id)
+            .ToListAsync();
+
+        var incluidos = new List<EmailAnexo>();
+        var total = bytesDoPdf;
+        var deFora = 0;
+        foreach (var anexo in anexos)
+        {
+            if (total + anexo.Conteudo.Length > LimiteBytesEmail)
+            {
+                deFora++;
+                continue;
+            }
+
+            total += anexo.Conteudo.Length;
+            incluidos.Add(new EmailAnexo(anexo.NomeArquivo, anexo.Conteudo, anexo.TipoConteudo));
+        }
+
+        return (incluidos, deFora);
     }
 
     public async Task<NotaDebitoPjDto> PagarAsync(int id, PagarNotaDebitoPjDto dto)

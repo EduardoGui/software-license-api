@@ -195,74 +195,62 @@ public class NotaDebitoPjServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_DeveHerdarCamposDaFaturaVinculada()
+    public async Task CreateAsync_DeveAceitarOperadoraEFaturaComoTextoLivre()
     {
         var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
-        var fatura = CriarFatura(context, "AMIL ONE S2500", 2026, 8);
 
         var nota = await service.CreateAsync(new CreateNotaDebitoPjDto
         {
-            UsuarioId = usuario.Id,
-            Ano = 2026,
-            Mes = 8,
-            FaturaOperadoraSaudeId = fatura.Id,
+            UsuarioId = usuario.Id, Ano = 2026, Mes = 8, OperadoraSaude = "  Amil One  ", NumeroFatura = " 71264082 ",
         });
 
-        Assert.Equal(fatura.Id, nota.FaturaOperadoraSaudeId);
-        Assert.Equal("AMIL ONE S2500", nota.OperadoraSaude);
+        Assert.Equal("Amil One", nota.OperadoraSaude);
         Assert.Equal("71264082", nota.NumeroFatura);
-        Assert.Equal(new DateOnly(2026, 8, 20), nota.DataEmissao);
-        Assert.Equal(new DateOnly(2026, 8, 28), nota.DataVencimento);
+        Assert.Null(nota.FaturaOperadoraSaudeId);
     }
 
     [Fact]
-    public async Task CreateAsync_DeveRejeitarFaturaDeMesDiferente()
-    {
-        var (service, context, _) = CriarService();
-        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
-        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
-        var fatura = CriarFatura(context, "AMIL", 2026, 7);
-
-        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(new CreateNotaDebitoPjDto
-        {
-            UsuarioId = usuario.Id,
-            Ano = 2026,
-            Mes = 8,
-            FaturaOperadoraSaudeId = fatura.Id,
-        }));
-    }
-
-    [Fact]
-    public async Task CreateAsync_DeveRejeitarSemOperadoraQuandoNaoTemFaturaVinculada()
+    public async Task CreateAsync_SemOperadoraNemFatura_UsaNomeGenerico()
     {
         var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
 
-        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(new CreateNotaDebitoPjDto
-        {
-            UsuarioId = usuario.Id,
-            Ano = 2026,
-            Mes = 8,
-        }));
+        var nota = await service.CreateAsync(new CreateNotaDebitoPjDto { UsuarioId = usuario.Id, Ano = 2026, Mes = 8 });
+
+        Assert.Equal("Plano de Saúde", nota.OperadoraSaude);
+        Assert.Null(nota.NumeroFatura);
+        Assert.Null(nota.FaturaOperadoraSaudeId);
     }
 
     [Fact]
-    public async Task UpdateAsync_NaoDeveAlterarCamposDaFaturaQuandoVinculada()
+    public async Task UpdateAsync_PermiteLimparAOperadoraEVoltaAoNomeGenerico()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+        var criada = await service.CreateAsync(CriarDto(usuario.Id));
+
+        var atualizada = await service.UpdateAsync(criada.Id, new UpdateNotaDebitoPjDto { OperadoraSaude = "  " });
+
+        Assert.Equal("Plano de Saúde", atualizada.OperadoraSaude);
+    }
+
+    // Notas antigas vinculadas a uma fatura continuam herdando os dados dela na edição.
+    [Fact]
+    public async Task UpdateAsync_NaoDeveAlterarCamposDaFaturaQuandoNotaAntigaEstaVinculada()
     {
         var (service, context, _) = CriarService();
         var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
         CriarLancamento(context, usuario.Id, 2026, 8, 300m);
         var fatura = CriarFatura(context, "AMIL", 2026, 8);
-        var criada = await service.CreateAsync(new CreateNotaDebitoPjDto
-        {
-            UsuarioId = usuario.Id,
-            Ano = 2026,
-            Mes = 8,
-            FaturaOperadoraSaudeId = fatura.Id,
-        });
+        var criada = await service.CreateAsync(CriarDto(usuario.Id));
+        var entidade = await context.NotasDebitoPj.SingleAsync(n => n.Id == criada.Id);
+        entidade.FaturaOperadoraSaudeId = fatura.Id;
+        entidade.NumeroFatura = fatura.NumeroFatura;
+        await context.SaveChangesAsync();
 
         var atualizada = await service.UpdateAsync(criada.Id, new UpdateNotaDebitoPjDto
         {
@@ -421,6 +409,68 @@ public class NotaDebitoPjServiceTests
         Assert.Equal(1, emailSender.ChamadasComAnexo);
         Assert.Equal(usuario.Email, Assert.Single(emailSender.UltimosDestinatarios!));
         Assert.Equal("application/pdf", Assert.Single(emailSender.UltimosAnexos!).TipoConteudo);
+    }
+
+    private static void AnexarImagem(AppDbContext context, int notaId, string nome, int bytes, int segundos)
+    {
+        context.NotasDebitoPjAnexos.Add(new NotaDebitoPjAnexo
+        {
+            NotaDebitoPjId = notaId, NomeArquivo = nome, TipoConteudo = "image/png", Tamanho = bytes, Conteudo = new byte[bytes],
+            DataUpload = Agora.UtcDateTime.AddSeconds(segundos),
+        });
+        context.SaveChanges();
+    }
+
+    [Fact]
+    public async Task DeleteAsync_ApagaOsAnexosDoRascunhoJunto()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+        var criada = await service.CreateAsync(CriarDto(usuario.Id));
+        AnexarImagem(context, criada.Id, "captura.png", 2_000, 1);
+
+        await service.DeleteAsync(criada.Id);
+
+        Assert.Empty(await context.NotasDebitoPj.ToListAsync());
+        Assert.Empty(await context.NotasDebitoPjAnexos.ToListAsync());
+    }
+
+    [Fact]
+    public async Task EnviarAsync_DeveLevarOsAnexosDaNotaNoEmail()
+    {
+        var (service, context, emailSender) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+        var criada = await service.CreateAsync(CriarDto(usuario.Id));
+        AnexarImagem(context, criada.Id, "captura-1.png", 2_000, 1);
+        AnexarImagem(context, criada.Id, "captura-2.png", 3_000, 2);
+
+        var enviada = await service.EnviarAsync(criada.Id);
+
+        Assert.Null(enviada.AvisoEmail);
+        var anexos = emailSender.UltimosAnexos!;
+        Assert.Equal(3, anexos.Count);
+        Assert.Equal("application/pdf", anexos[0].TipoConteudo);
+        Assert.Equal(["captura-1.png", "captura-2.png"], anexos.Skip(1).Select(a => a.NomeArquivo).ToArray());
+    }
+
+    [Fact]
+    public async Task EnviarAsync_DeixaDeForaAnexoQueEstouraOLimiteEAvisa()
+    {
+        var (service, context, emailSender) = CriarService();
+        var usuario = CriarUsuario(context, "João Pj", UsuarioTipo.Pj);
+        CriarLancamento(context, usuario.Id, 2026, 8, 300m);
+        var criada = await service.CreateAsync(CriarDto(usuario.Id));
+        AnexarImagem(context, criada.Id, "pequena.png", 10_000, 1);
+        AnexarImagem(context, criada.Id, "enorme.png", 5 * 1024 * 1024, 2);
+
+        var enviada = await service.EnviarAsync(criada.Id);
+
+        Assert.NotNull(enviada.AvisoEmail);
+        Assert.Contains("1 anexo", enviada.AvisoEmail);
+        Assert.Equal(["application/pdf", "image/png"], emailSender.UltimosAnexos!.Select(a => a.TipoConteudo).ToArray());
+        Assert.Equal(NotaDebitoPjStatus.Enviada, enviada.Status);
     }
 
     [Fact]

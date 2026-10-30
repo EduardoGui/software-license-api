@@ -13,15 +13,13 @@ public class CreateNotaDebitoPjDto
     [Required]
     public int Mes { get; set; }
 
-    // Obrigatório só quando não há FaturaOperadoraSaudeId (validado no service) - com fatura
-    // vinculada, Operadora/Nº Fatura/Data Emissão/Vencimento vêm sempre dela.
+    // Campos livres, todos opcionais: a nota não se vincula a uma fatura cadastrada. Sem operadora
+    // informada, o service grava "Plano de Saúde".
     [MaxLength(100)]
     public string? OperadoraSaude { get; set; }
 
     [MaxLength(50)]
     public string? NumeroFatura { get; set; }
-
-    public int? FaturaOperadoraSaudeId { get; set; }
 
     [MaxLength(500)]
     public string? Descricao { get; set; }

@@ -4,8 +4,8 @@ namespace SoftwareLicense.Api.DTOs;
 
 public class UpdateNotaDebitoPjDto
 {
-    [Required, MaxLength(100)]
-    public string OperadoraSaude { get; set; } = string.Empty;
+    [MaxLength(100)]
+    public string? OperadoraSaude { get; set; }
 
     [MaxLength(50)]
     public string? NumeroFatura { get; set; }
