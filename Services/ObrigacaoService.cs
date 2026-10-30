@@ -12,10 +12,13 @@ public class ObrigacaoService : IObrigacaoService
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ObrigacaoService> _logger;
     private readonly IEscopoAcesso? _escopo;
+    private readonly IAuditoriaService? _auditoria;
 
-    public ObrigacaoService(AppDbContext context, TimeProvider timeProvider, ILogger<ObrigacaoService> logger, IEscopoAcesso? escopo = null)
+    public ObrigacaoService(
+        AppDbContext context, TimeProvider timeProvider, ILogger<ObrigacaoService> logger, IEscopoAcesso? escopo = null, IAuditoriaService? auditoria = null)
     {
         _escopo = escopo;
+        _auditoria = auditoria;
         _context = context;
         _timeProvider = timeProvider;
         _logger = logger;
@@ -53,6 +56,11 @@ public class ObrigacaoService : IObrigacaoService
         if (filtro.OrdemCompraId is not null)
         {
             query = query.Where(o => o.OrdemCompraId == filtro.OrdemCompraId);
+        }
+
+        if (filtro.ResponsavelUsuarioId is not null)
+        {
+            query = query.Where(o => o.ResponsavelUsuarioId == filtro.ResponsavelUsuarioId);
         }
 
         if (filtro.Pago is not null)
@@ -340,6 +348,9 @@ public class ObrigacaoService : IObrigacaoService
             DataNf = origem.DataNf,
             NumeroNf = origem.NumeroNf,
             ValorNota = origem.ValorNota,
+            // A parcela continua com quem acompanha a OC (senão sumiria para o responsável que acabou de criá-la).
+            ResponsavelUsuarioId = origem.ResponsavelUsuarioId,
+            DataAtribuicao = origem.DataAtribuicao,
             DataCriacao = agora,
             DataAtualizacao = agora,
         };
@@ -349,6 +360,204 @@ public class ObrigacaoService : IObrigacaoService
         _logger.LogInformation("Parcela {NumeroParcela} adicionada à Ordem de Compra {OrdemCompraId} (obrigação {ObrigacaoId})", proximoNumero, ordemCompraId, nova.Id);
 
         return await ParaDtoAsync(await BuscarOuFalhar(nova.Id));
+    }
+
+    // --- responsável (Administrador atribui a um usuário Administrativo, que passa a ver e operar a obrigação) ---
+
+    public async Task<List<ResponsavelObrigacaoDto>> ListarResponsaveisAsync()
+    {
+        var hoje = DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
+        var usuarioIds = await IdsDeUsuariosAdministrativosAsync();
+        var usuarios = await _context.Usuarios.AsNoTracking().Where(u => usuarioIds.Contains(u.Id)).OrderBy(u => u.Nome).ToListAsync();
+
+        return usuarios
+            .Where(u => UsuarioStatus.Calcular(u, hoje) != UsuarioStatus.Inativo)
+            .Select(u => new ResponsavelObrigacaoDto { UsuarioId = u.Id, Nome = u.Nome })
+            .ToList();
+    }
+
+    public async Task<ObrigacaoDto> AtribuirResponsavelAsync(int id, AtribuirResponsavelObrigacaoDto dto, int? usuarioIdAtor)
+    {
+        var obrigacao = await BuscarOuFalhar(id);
+        var anterior = obrigacao.Responsavel?.Nome;
+
+        if (dto.UsuarioId is null)
+        {
+            obrigacao.ResponsavelUsuarioId = null;
+            obrigacao.Responsavel = null;
+            obrigacao.DataAtribuicao = null;
+        }
+        else
+        {
+            var usuarioId = dto.UsuarioId.Value;
+            var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Id == usuarioId)
+                ?? throw new NotFoundException($"Usuário {usuarioId} não encontrado.");
+
+            var hoje = DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
+            if (UsuarioStatus.Calcular(usuario, hoje) == UsuarioStatus.Inativo)
+            {
+                throw new BusinessRuleException("O usuário escolhido está inativo.");
+            }
+
+            if (!(await IdsDeUsuariosAdministrativosAsync()).Contains(usuarioId))
+            {
+                throw new BusinessRuleException("O responsável precisa ser um usuário com perfil Administrativo.");
+            }
+
+            obrigacao.ResponsavelUsuarioId = usuarioId;
+            obrigacao.Responsavel = usuario;
+            obrigacao.DataAtribuicao = _timeProvider.GetUtcNow().UtcDateTime;
+        }
+
+        obrigacao.DataAtualizacao = _timeProvider.GetUtcNow().UtcDateTime;
+        await _context.SaveChangesAsync();
+
+        var novo = obrigacao.Responsavel?.Nome;
+        _logger.LogInformation("Responsável da obrigação {ObrigacaoId} alterado de {Anterior} para {Novo}", id, anterior ?? "(ninguém)", novo ?? "(ninguém)");
+        if (_auditoria is not null)
+        {
+            await _auditoria.RegistrarAsync(
+                usuarioIdAtor, LogAuditoriaEntidade.Obrigacao, id, novo is null ? "ResponsavelRemovido" : "ResponsavelAtribuido",
+                $"{anterior ?? "(ninguém)"} → {novo ?? "(ninguém)"}");
+        }
+
+        return await ParaDtoAsync(obrigacao);
+    }
+
+    // Colaboradores (Usuario) cuja conta de acesso tem o papel Administrativo.
+    private async Task<List<int>> IdsDeUsuariosAdministrativosAsync() =>
+        await (from c in _context.Users
+               join ur in _context.UserRoles on c.Id equals ur.UserId
+               join r in _context.Roles on ur.RoleId equals r.Id
+               where r.Name == Roles.Administrativo && c.UsuarioId != null
+               select c.UsuarioId!.Value)
+            .Distinct()
+            .ToListAsync();
+
+    // --- anexos do documento de origem (medição, OC ou despesa avulsa), acessíveis a quem enxerga a obrigação ---
+
+    public async Task<List<AnexoDto>> ListarAnexosAsync(int id)
+    {
+        var o = await BuscarOuFalhar(id);
+
+        if (o.MedicaoBmId is { } medicaoId)
+        {
+            return await _context.MedicaoBmAnexos.AsNoTracking().Where(a => a.MedicaoBmId == medicaoId)
+                .OrderByDescending(a => a.DataUpload)
+                .Select(a => new AnexoDto { Id = a.Id, NomeArquivo = a.NomeArquivo, TipoConteudo = a.TipoConteudo, Tamanho = a.Tamanho, DataUpload = a.DataUpload })
+                .ToListAsync();
+        }
+
+        if (o.OrdemCompraId is { } ordemId)
+        {
+            return await _context.OrdemCompraAnexos.AsNoTracking().Where(a => a.OrdemCompraId == ordemId)
+                .OrderByDescending(a => a.DataUpload)
+                .Select(a => new AnexoDto { Id = a.Id, NomeArquivo = a.NomeArquivo, TipoConteudo = a.TipoConteudo, Tamanho = a.Tamanho, DataUpload = a.DataUpload })
+                .ToListAsync();
+        }
+
+        var despesaId = o.DespesaAvulsaId ?? throw new BusinessRuleException("A obrigação não tem documento de origem.");
+        return await _context.DespesaAvulsaAnexos.AsNoTracking().Where(a => a.DespesaAvulsaId == despesaId)
+            .OrderByDescending(a => a.DataUpload)
+            .Select(a => new AnexoDto { Id = a.Id, NomeArquivo = a.NomeArquivo, TipoConteudo = a.TipoConteudo, Tamanho = a.Tamanho, DataUpload = a.DataUpload })
+            .ToListAsync();
+    }
+
+    public async Task<AnexoDto> AdicionarAnexoAsync(int id, AdicionarAnexoDto dto)
+    {
+        var o = await BuscarOuFalhar(id);
+        AnexoValidator.Validar(dto.TipoConteudo, dto.Conteudo.Length);
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+
+        AnexoDto Resultado(int anexoId) => new()
+        {
+            Id = anexoId, NomeArquivo = dto.NomeArquivo, TipoConteudo = dto.TipoConteudo, Tamanho = dto.Conteudo.Length, DataUpload = agora,
+        };
+
+        if (o.MedicaoBmId is { } medicaoId)
+        {
+            var anexo = new MedicaoBmAnexo
+            {
+                MedicaoBmId = medicaoId, NomeArquivo = dto.NomeArquivo, TipoConteudo = dto.TipoConteudo, Tamanho = dto.Conteudo.Length,
+                Conteudo = dto.Conteudo, DataUpload = agora,
+            };
+            _context.MedicaoBmAnexos.Add(anexo);
+            await _context.SaveChangesAsync();
+            return Resultado(anexo.Id);
+        }
+
+        if (o.OrdemCompraId is { } ordemId)
+        {
+            var anexo = new OrdemCompraAnexo
+            {
+                OrdemCompraId = ordemId, NomeArquivo = dto.NomeArquivo, TipoConteudo = dto.TipoConteudo, Tamanho = dto.Conteudo.Length,
+                Conteudo = dto.Conteudo, DataUpload = agora,
+            };
+            _context.OrdemCompraAnexos.Add(anexo);
+            await _context.SaveChangesAsync();
+            return Resultado(anexo.Id);
+        }
+
+        var despesaId = o.DespesaAvulsaId ?? throw new BusinessRuleException("A obrigação não tem documento de origem.");
+        var anexoDespesa = new DespesaAvulsaAnexo
+        {
+            DespesaAvulsaId = despesaId, NomeArquivo = dto.NomeArquivo, TipoConteudo = dto.TipoConteudo, Tamanho = dto.Conteudo.Length,
+            Conteudo = dto.Conteudo, DataUpload = agora,
+        };
+        _context.DespesaAvulsaAnexos.Add(anexoDespesa);
+        await _context.SaveChangesAsync();
+        return Resultado(anexoDespesa.Id);
+    }
+
+    public async Task<AnexoArquivoDto> ObterAnexoAsync(int id, int anexoId)
+    {
+        var o = await BuscarOuFalhar(id);
+
+        if (o.MedicaoBmId is { } medicaoId)
+        {
+            var a = await _context.MedicaoBmAnexos.AsNoTracking().FirstOrDefaultAsync(x => x.Id == anexoId && x.MedicaoBmId == medicaoId)
+                ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
+            return new AnexoArquivoDto { NomeArquivo = a.NomeArquivo, TipoConteudo = a.TipoConteudo, Conteudo = a.Conteudo };
+        }
+
+        if (o.OrdemCompraId is { } ordemId)
+        {
+            var a = await _context.OrdemCompraAnexos.AsNoTracking().FirstOrDefaultAsync(x => x.Id == anexoId && x.OrdemCompraId == ordemId)
+                ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
+            return new AnexoArquivoDto { NomeArquivo = a.NomeArquivo, TipoConteudo = a.TipoConteudo, Conteudo = a.Conteudo };
+        }
+
+        var despesaId = o.DespesaAvulsaId ?? throw new BusinessRuleException("A obrigação não tem documento de origem.");
+        var d = await _context.DespesaAvulsaAnexos.AsNoTracking().FirstOrDefaultAsync(x => x.Id == anexoId && x.DespesaAvulsaId == despesaId)
+            ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
+        return new AnexoArquivoDto { NomeArquivo = d.NomeArquivo, TipoConteudo = d.TipoConteudo, Conteudo = d.Conteudo };
+    }
+
+    public async Task ExcluirAnexoAsync(int id, int anexoId)
+    {
+        var o = await BuscarOuFalhar(id);
+
+        if (o.MedicaoBmId is { } medicaoId)
+        {
+            var a = await _context.MedicaoBmAnexos.FirstOrDefaultAsync(x => x.Id == anexoId && x.MedicaoBmId == medicaoId)
+                ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
+            _context.MedicaoBmAnexos.Remove(a);
+        }
+        else if (o.OrdemCompraId is { } ordemId)
+        {
+            var a = await _context.OrdemCompraAnexos.FirstOrDefaultAsync(x => x.Id == anexoId && x.OrdemCompraId == ordemId)
+                ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
+            _context.OrdemCompraAnexos.Remove(a);
+        }
+        else
+        {
+            var despesaId = o.DespesaAvulsaId ?? throw new BusinessRuleException("A obrigação não tem documento de origem.");
+            var a = await _context.DespesaAvulsaAnexos.FirstOrDefaultAsync(x => x.Id == anexoId && x.DespesaAvulsaId == despesaId)
+                ?? throw new NotFoundException($"Anexo {anexoId} não encontrado.");
+            _context.DespesaAvulsaAnexos.Remove(a);
+        }
+
+        await _context.SaveChangesAsync();
     }
 
     private async Task<List<Obrigacao>> BuscarParcelasIrmasAtivasAsync(Obrigacao obrigacao)
@@ -425,21 +634,27 @@ public class ObrigacaoService : IObrigacaoService
         }
     }
 
-    // Perfil Administrativo só enxerga obrigações cuja OC/despesa de origem foi criada pela administração
-    // (medições e registros antigos ficam de fora); as demais respondem como inexistentes.
+    // Perfil Administrativo só enxerga obrigações cuja OC/despesa de origem foi criada pela administração ou que o
+    // Administrador atribuiu a ele (medições e registros antigos ficam de fora); as demais respondem como inexistentes.
     private IQueryable<Obrigacao> MontarConsultaBase()
     {
         var query = _context.Obrigacoes
             .Include(o => o.Fornecedor)
+            .Include(o => o.Responsavel)
             .Include(o => o.MedicaoBm!).ThenInclude(m => m.Contrato)
             .Include(o => o.OrdemCompra!).ThenInclude(oc => oc.CriadoPorUsuario)
             .Include(o => o.DespesaAvulsa!).ThenInclude(d => d.CriadoPorUsuario)
             .AsQueryable();
 
-        return _escopo?.RestritoAAdministracao == true
-            ? query.Where(o => (o.OrdemCompra != null && o.OrdemCompra.CriadaPelaAdministracao)
-                || (o.DespesaAvulsa != null && o.DespesaAvulsa.CriadaPelaAdministracao))
-            : query;
+        if (_escopo?.RestritoAAdministracao != true)
+        {
+            return query;
+        }
+
+        var meuId = _escopo.UsuarioId;
+        return query.Where(o => (o.OrdemCompra != null && o.OrdemCompra.CriadaPelaAdministracao)
+            || (o.DespesaAvulsa != null && o.DespesaAvulsa.CriadaPelaAdministracao)
+            || (meuId != null && o.ResponsavelUsuarioId == meuId));
     }
 
     private async Task<Obrigacao> BuscarOuFalhar(int id)
@@ -501,6 +716,9 @@ public class ObrigacaoService : IObrigacaoService
         Cancelada = o.Cancelada,
         Etapa = CalcularEtapa(o),
         CriadoPorNome = o.OrdemCompra?.CriadoPorUsuario?.Nome ?? o.DespesaAvulsa?.CriadoPorUsuario?.Nome,
+        ResponsavelUsuarioId = o.ResponsavelUsuarioId,
+        ResponsavelNome = o.Responsavel?.Nome,
+        DataAtribuicao = o.DataAtribuicao,
         DataSolicitacaoEspelho = o.MedicaoBm?.DataSolicitacaoEspelho,
         DataEnvioAssinatura = o.OrdemCompra?.DataEnvioAssinatura ?? o.MedicaoBm?.DataEnvioAssinatura,
         DataEnvioFornecedor = o.OrdemCompra?.DataEnvioFornecedor,

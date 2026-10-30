@@ -46,6 +46,10 @@ public class ObrigacaoDto
     public bool OrdemCompraAssinada { get; set; }
     // Quem criou a OC/despesa de origem (nulo em medição e em registros antigos).
     public string? CriadoPorNome { get; set; }
+    // Usuário Administrativo a quem o Administrador atribuiu a obrigação (nulo = sem responsável).
+    public int? ResponsavelUsuarioId { get; set; }
+    public string? ResponsavelNome { get; set; }
+    public DateTime? DataAtribuicao { get; set; }
     public string? Observacoes { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }

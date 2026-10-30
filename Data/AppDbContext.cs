@@ -552,6 +552,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasOne(o => o.OrdemCompra).WithMany().HasForeignKey(o => o.OrdemCompraId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(o => o.DespesaAvulsa).WithMany().HasForeignKey(o => o.DespesaAvulsaId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(o => o.Fornecedor).WithMany().HasForeignKey(o => o.FornecedorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(o => o.ResponsavelUsuarioId);
+            entity.HasOne(o => o.Responsavel).WithMany().HasForeignKey(o => o.ResponsavelUsuarioId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Aditivo>(entity =>

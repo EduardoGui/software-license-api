@@ -2345,6 +2345,9 @@ namespace SoftwareLicense.Api.Migrations
                     b.Property<DateOnly?>("DataAssistPgto")
                         .HasColumnType("date");
 
+                    b.Property<DateTime?>("DataAtribuicao")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("DataAtualizacao")
                         .HasColumnType("timestamp with time zone");
 
@@ -2390,6 +2393,9 @@ namespace SoftwareLicense.Api.Migrations
                     b.Property<bool>("Pago")
                         .HasColumnType("boolean");
 
+                    b.Property<int?>("ResponsavelUsuarioId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("TipoMovimento")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -2419,6 +2425,8 @@ namespace SoftwareLicense.Api.Migrations
                     b.HasIndex("MedicaoBmId")
                         .IsUnique()
                         .HasFilter("\"MedicaoBmId\" IS NOT NULL");
+
+                    b.HasIndex("ResponsavelUsuarioId");
 
                     b.HasIndex("OrdemCompraId", "NumeroParcela")
                         .IsUnique()
@@ -4254,6 +4262,11 @@ namespace SoftwareLicense.Api.Migrations
                         .HasForeignKey("OrdemCompraId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("SoftwareLicense.Api.Entities.Usuario", "Responsavel")
+                        .WithMany()
+                        .HasForeignKey("ResponsavelUsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("DespesaAvulsa");
 
                     b.Navigation("Fornecedor");
@@ -4261,6 +4274,8 @@ namespace SoftwareLicense.Api.Migrations
                     b.Navigation("MedicaoBm");
 
                     b.Navigation("OrdemCompra");
+
+                    b.Navigation("Responsavel");
                 });
 
             modelBuilder.Entity("SoftwareLicense.Api.Entities.OrdemCompra", b =>

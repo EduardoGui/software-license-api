@@ -28,6 +28,10 @@ public class Obrigacao
     public bool Pago { get; set; }
     public bool Cancelada { get; set; }
     public string? Observacoes { get; set; }
+    // Usuário (perfil Administrativo) a quem o Administrador atribuiu a obrigação para acompanhar e agir nela.
+    public int? ResponsavelUsuarioId { get; set; }
+    public Usuario? Responsavel { get; set; }
+    public DateTime? DataAtribuicao { get; set; }
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }
 }

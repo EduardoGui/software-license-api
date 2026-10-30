@@ -10,4 +10,6 @@ public static class LogAuditoriaEntidade
     public const string RecessoCorporativo = "RecessoCorporativo";
     // EntidadeId = Id do colaborador (Usuario); 0 para contas sem colaborador (ex.: administrador inicial).
     public const string AcessoUsuario = "AcessoUsuario";
+    // EntidadeId = Id da obrigação; usada na atribuição de responsável.
+    public const string Obrigacao = "Obrigacao";
 }

@@ -273,10 +273,11 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
             .FirstOrDefaultAsync(o => o.Id == id)
             ?? throw new NotFoundException($"Obrigação {id} não encontrada.");
 
-        // Perfil Administrativo só acessa obrigações da administração (mesma regra do ObrigacaoService).
+        // Perfil Administrativo só acessa obrigações da administração ou atribuídas a ele (mesma regra do ObrigacaoService).
         if (_escopo?.RestritoAAdministracao == true
             && obrigacao.OrdemCompra?.CriadaPelaAdministracao != true
-            && obrigacao.DespesaAvulsa?.CriadaPelaAdministracao != true)
+            && obrigacao.DespesaAvulsa?.CriadaPelaAdministracao != true
+            && (_escopo.UsuarioId is null || obrigacao.ResponsavelUsuarioId != _escopo.UsuarioId))
         {
             throw new NotFoundException($"Obrigação {id} não encontrada.");
         }
@@ -318,7 +319,7 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
                 .Select(a => new SolicitacaoPagamentoAnexoDto
                 {
                     Id = a.Id, NomeArquivo = a.NomeArquivo, TipoConteudo = a.TipoConteudo, Tamanho = a.Tamanho,
-                    Recurso = "despesas-avulsas", EntidadeId = id,
+                    Recurso = "obrigacoes", EntidadeId = obrigacao.Id,
                 }).ToListAsync();
         }
 
@@ -329,19 +330,18 @@ public class SolicitacaoPagamentoService : ISolicitacaoPagamentoService
                 .Select(a => new SolicitacaoPagamentoAnexoDto
                 {
                     Id = a.Id, NomeArquivo = a.NomeArquivo, TipoConteudo = a.TipoConteudo, Tamanho = a.Tamanho,
-                    Recurso = "ordens-compra", EntidadeId = id,
+                    Recurso = "obrigacoes", EntidadeId = obrigacao.Id,
                 }).ToListAsync();
         }
 
         if (obrigacao.MedicaoBmId is not null && obrigacao.MedicaoBm is not null)
         {
             var id = obrigacao.MedicaoBmId.Value;
-            var recurso = $"contratos/{obrigacao.MedicaoBm.ContratoId}/medicoes";
             return await _context.MedicaoBmAnexos.AsNoTracking().Where(a => a.MedicaoBmId == id).OrderBy(a => a.DataUpload)
                 .Select(a => new SolicitacaoPagamentoAnexoDto
                 {
                     Id = a.Id, NomeArquivo = a.NomeArquivo, TipoConteudo = a.TipoConteudo, Tamanho = a.Tamanho,
-                    Recurso = recurso, EntidadeId = id,
+                    Recurso = "obrigacoes", EntidadeId = obrigacao.Id,
                 }).ToListAsync();
         }
 

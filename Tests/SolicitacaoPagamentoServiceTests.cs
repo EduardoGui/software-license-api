@@ -148,7 +148,7 @@ public class SolicitacaoPagamentoServiceTests
         Assert.EndsWith("Atenciosamente," + Environment.NewLine + "Eduardo Andrade" + Environment.NewLine, dto.CorpoTexto);
         Assert.Contains("<b>Papelaria Central</b>", dto.CorpoHtml);
         var anexo = Assert.Single(dto.Anexos);
-        Assert.Equal("despesas-avulsas", anexo.Recurso);
+        Assert.Equal("obrigacoes", anexo.Recurso);
         Assert.Equal("nf.pdf", anexo.NomeArquivo);
     }
 

@@ -91,6 +91,67 @@ public class ObrigacoesController : ControllerBase
         return Ok(obrigacao);
     }
 
+    // Usuários Administrativos que podem receber obrigações (lista do seletor de responsável).
+    [HttpGet("responsaveis")]
+    [Authorize(Roles = Roles.Administrador)]
+    public async Task<ActionResult<List<ResponsavelObrigacaoDto>>> ListarResponsaveis()
+    {
+        var responsaveis = await _obrigacaoService.ListarResponsaveisAsync();
+        return Ok(responsaveis);
+    }
+
+    // Só o Administrador atribui; o responsável (perfil Administrativo) passa a ver e operar a obrigação.
+    [HttpPatch("{id:int}/responsavel")]
+    [Authorize(Roles = Roles.Administrador)]
+    public async Task<ActionResult<ObrigacaoDto>> AtribuirResponsavel(int id, AtribuirResponsavelObrigacaoDto dto)
+    {
+        var obrigacao = await _obrigacaoService.AtribuirResponsavelAsync(id, dto, User.ObterUsuarioId());
+        return Ok(obrigacao);
+    }
+
+    // Anexos do documento de origem (medição, OC ou despesa), por obrigação: respeitam o escopo de quem consulta.
+    [HttpGet("{id:int}/anexos")]
+    public async Task<ActionResult<List<AnexoDto>>> ListarAnexos(int id)
+    {
+        var anexos = await _obrigacaoService.ListarAnexosAsync(id);
+        return Ok(anexos);
+    }
+
+    [HttpPost("{id:int}/anexos")]
+    public async Task<ActionResult<AnexoDto>> AdicionarAnexo(int id, IFormFile arquivo)
+    {
+        if (arquivo is null || arquivo.Length == 0)
+        {
+            return BadRequest(new { message = "Nenhum arquivo enviado." });
+        }
+
+        using var stream = new MemoryStream();
+        await arquivo.CopyToAsync(stream);
+
+        var anexo = await _obrigacaoService.AdicionarAnexoAsync(id, new AdicionarAnexoDto
+        {
+            NomeArquivo = arquivo.FileName,
+            TipoConteudo = arquivo.ContentType,
+            Conteudo = stream.ToArray(),
+        });
+
+        return Ok(anexo);
+    }
+
+    [HttpGet("{id:int}/anexos/{anexoId:int}")]
+    public async Task<IActionResult> BaixarAnexo(int id, int anexoId)
+    {
+        var arquivo = await _obrigacaoService.ObterAnexoAsync(id, anexoId);
+        return File(arquivo.Conteudo, arquivo.TipoConteudo, arquivo.NomeArquivo);
+    }
+
+    [HttpDelete("{id:int}/anexos/{anexoId:int}")]
+    public async Task<IActionResult> ExcluirAnexo(int id, int anexoId)
+    {
+        await _obrigacaoService.ExcluirAnexoAsync(id, anexoId);
+        return NoContent();
+    }
+
     [HttpPatch("{id:int}/cancelar")]
     public async Task<ActionResult<ObrigacaoDto>> Cancelar(int id)
     {
