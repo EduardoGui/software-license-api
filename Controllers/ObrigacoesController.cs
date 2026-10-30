@@ -109,6 +109,21 @@ public class ObrigacoesController : ControllerBase
         return Ok(obrigacao);
     }
 
+    // UAs (rateio) do documento de origem; quem enxerga a obrigação pode consultar e, até o pagamento, alterar.
+    [HttpGet("{id:int}/unidades-orcamentarias")]
+    public async Task<ActionResult<ObrigacaoUaDto>> ObterUnidadesOrcamentarias(int id)
+    {
+        var uas = await _obrigacaoService.ObterUnidadesOrcamentariasAsync(id);
+        return Ok(uas);
+    }
+
+    [HttpPut("{id:int}/unidades-orcamentarias")]
+    public async Task<ActionResult<ObrigacaoUaDto>> DefinirUnidadesOrcamentarias(int id, DefinirUaObrigacaoDto dto)
+    {
+        var uas = await _obrigacaoService.DefinirUnidadesOrcamentariasAsync(id, dto, User.ObterUsuarioId());
+        return Ok(uas);
+    }
+
     // Anexos do documento de origem (medição, OC ou despesa), por obrigação: respeitam o escopo de quem consulta.
     [HttpGet("{id:int}/anexos")]
     public async Task<ActionResult<List<AnexoDto>>> ListarAnexos(int id)

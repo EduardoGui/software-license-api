@@ -434,6 +434,236 @@ public class ObrigacaoService : IObrigacaoService
             .Distinct()
             .ToListAsync();
 
+    // --- UAs (rateio) do documento de origem: exibidas e editáveis pela obrigação até ela ser paga ou cancelada ---
+
+    public async Task<ObrigacaoUaDto> ObterUnidadesOrcamentariasAsync(int id)
+    {
+        var obrigacao = await BuscarOuFalhar(id);
+        return await MontarUaDtoAsync(obrigacao);
+    }
+
+    public async Task<ObrigacaoUaDto> DefinirUnidadesOrcamentariasAsync(int id, DefinirUaObrigacaoDto dto, int? usuarioIdAtor)
+    {
+        var obrigacao = await BuscarOuFalhar(id);
+
+        var bloqueio = MotivoBloqueioUa(obrigacao);
+        if (bloqueio is not null)
+        {
+            throw new BusinessRuleException(bloqueio);
+        }
+
+        var antes = await MontarUaDtoAsync(obrigacao);
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        string descricaoItem;
+
+        if (obrigacao.DespesaAvulsaId is not null)
+        {
+            var despesa = await _context.DespesasAvulsas
+                .Include(d => d.RateiosUa)
+                .FirstAsync(d => d.Id == obrigacao.DespesaAvulsaId);
+
+            var linhasValor = dto.Linhas.Select(l => new ItemRateioUaValorInputDto { UnidadeOrcamentariaId = l.UnidadeOrcamentariaId, Valor = l.Quantidade }).ToList();
+            await RateioUaValidador.ValidarPorValorAsync(_context, linhasValor, despesa.Valor);
+
+            _context.DespesaAvulsaRateiosUa.RemoveRange(despesa.RateiosUa);
+            despesa.RateiosUa = linhasValor.Select(l => new DespesaAvulsaRateioUa
+            {
+                UnidadeOrcamentariaId = l.UnidadeOrcamentariaId,
+                Valor = l.Valor,
+                DataCriacao = agora,
+            }).ToList();
+            descricaoItem = despesa.Descricao;
+        }
+        else if (obrigacao.OrdemCompraId is not null)
+        {
+            var itemId = dto.ItemId ?? throw new BusinessRuleException("Informe o item da Ordem de Compra.");
+            var item = await _context.OrdemCompraItens
+                .Include(i => i.RateiosUa)
+                .FirstOrDefaultAsync(i => i.Id == itemId && i.OrdemCompraId == obrigacao.OrdemCompraId)
+                ?? throw new BusinessRuleException($"Item {itemId} não pertence a esta Ordem de Compra.");
+
+            await RateioUaValidador.ValidarPorQuantidadeAsync(_context, dto.Linhas, item.Quantidade, "quantidade do item");
+
+            _context.OrdemCompraItemRateiosUa.RemoveRange(item.RateiosUa);
+            item.MetodoRateioUa = MetodoRateioUa.Quantidade;
+            item.RateiosUa = dto.Linhas.Select(l => new OrdemCompraItemRateioUa
+            {
+                UnidadeOrcamentariaId = l.UnidadeOrcamentariaId,
+                Quantidade = l.Quantidade,
+                DataCriacao = agora,
+            }).ToList();
+            descricaoItem = item.Descricao;
+        }
+        else
+        {
+            var itemId = dto.ItemId ?? throw new BusinessRuleException("Informe o item da medição.");
+            var item = await _context.MedicaoBmItens
+                .Include(i => i.RateiosUa)
+                .FirstOrDefaultAsync(i => i.Id == itemId && i.MedicaoBmId == obrigacao.MedicaoBmId)
+                ?? throw new BusinessRuleException($"Item {itemId} não pertence a esta medição.");
+
+            await RateioUaValidador.ValidarPorQuantidadeAsync(_context, dto.Linhas, item.QuantidadeMedidaNestaBm, "quantidade medida do item");
+
+            _context.MedicaoBmItemRateiosUa.RemoveRange(item.RateiosUa);
+            item.MetodoRateioUa = MetodoRateioUa.Quantidade;
+            item.RateiosUa = dto.Linhas.Select(l => new MedicaoBmItemRateioUa
+            {
+                UnidadeOrcamentariaId = l.UnidadeOrcamentariaId,
+                Quantidade = l.Quantidade,
+                DataCriacao = agora,
+            }).ToList();
+            descricaoItem = item.DescricaoNoMomento;
+        }
+
+        obrigacao.DataAtualizacao = agora;
+        await _context.SaveChangesAsync();
+
+        var depois = await MontarUaDtoAsync(obrigacao);
+        var itemAntes = antes.Itens.FirstOrDefault(i => i.ItemId == dto.ItemId);
+        var itemDepois = depois.Itens.FirstOrDefault(i => i.ItemId == dto.ItemId);
+
+        _logger.LogInformation("UAs da obrigação {ObrigacaoId} alteradas (item {Item})", id, descricaoItem);
+        if (_auditoria is not null)
+        {
+            await _auditoria.RegistrarAsync(
+                usuarioIdAtor, LogAuditoriaEntidade.Obrigacao, id, "UaAlterada",
+                $"{descricaoItem}: {ResumirLinhas(itemAntes)} → {ResumirLinhas(itemDepois)}");
+        }
+
+        return depois;
+    }
+
+    private static string ResumirLinhas(ObrigacaoUaItemDto? item) =>
+        item is null || item.Linhas.Count == 0
+            ? "(sem UA)"
+            : string.Join(", ", item.Linhas.Select(l => $"{l.Codigo} ({l.Quantidade:0.######})"));
+
+    // Fora de Rascunho o BM não aceitaria a alteração pela tela dele; pela obrigação ela vale até o pagamento.
+    private static string? MotivoBloqueioUa(Obrigacao o)
+    {
+        if (o.Cancelada)
+        {
+            return "Obrigação cancelada: não é possível alterar as UAs.";
+        }
+
+        if (o.Pago)
+        {
+            return "Obrigação já paga: não é possível alterar as UAs.";
+        }
+
+        if (o.OrdemCompra?.Status == OrdemCompraStatus.Cancelada)
+        {
+            return "Ordem de Compra cancelada: não é possível alterar as UAs.";
+        }
+
+        return null;
+    }
+
+    private async Task<ObrigacaoUaDto> MontarUaDtoAsync(Obrigacao o)
+    {
+        var dto = new ObrigacaoUaDto
+        {
+            PodeEditar = MotivoBloqueioUa(o) is null,
+            MotivoBloqueio = MotivoBloqueioUa(o),
+        };
+
+        if (o.DespesaAvulsaId is not null)
+        {
+            var despesa = await _context.DespesasAvulsas
+                .Include(d => d.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
+                .FirstAsync(d => d.Id == o.DespesaAvulsaId);
+
+            dto.Origem = "DespesaAvulsa";
+            dto.Modo = "valor";
+            dto.Itens.Add(new ObrigacaoUaItemDto
+            {
+                ItemId = null,
+                Descricao = despesa.Descricao,
+                Total = despesa.Valor,
+                ValorTotal = despesa.Valor,
+                Linhas = despesa.RateiosUa.OrderBy(r => r.UnidadeOrcamentaria.Codigo).Select(r => new ObrigacaoUaLinhaDto
+                {
+                    UnidadeOrcamentariaId = r.UnidadeOrcamentariaId,
+                    Codigo = r.UnidadeOrcamentaria.Codigo,
+                    Descricao = r.UnidadeOrcamentaria.Descricao,
+                    Quantidade = r.Valor,
+                }).ToList(),
+            });
+            dto.Resumo = dto.Itens[0].Linhas
+                .Select(l => new ObrigacaoUaResumoDto { UnidadeOrcamentariaId = l.UnidadeOrcamentariaId, Codigo = l.Codigo, Descricao = l.Descricao, Valor = l.Quantidade })
+                .ToList();
+            return dto;
+        }
+
+        if (o.OrdemCompraId is not null)
+        {
+            var itens = await _context.OrdemCompraItens
+                .Include(i => i.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
+                .Where(i => i.OrdemCompraId == o.OrdemCompraId)
+                .OrderBy(i => i.Id)
+                .ToListAsync();
+
+            dto.Origem = "OrdemCompra";
+            dto.Itens = itens.Select(i => new ObrigacaoUaItemDto
+            {
+                ItemId = i.Id,
+                Descricao = i.Descricao,
+                Unidade = i.Unidade,
+                Total = i.Quantidade,
+                ValorTotal = i.Quantidade * i.ValorUnitario,
+                Linhas = i.RateiosUa.OrderBy(r => r.UnidadeOrcamentaria.Codigo).Select(r => new ObrigacaoUaLinhaDto
+                {
+                    UnidadeOrcamentariaId = r.UnidadeOrcamentariaId,
+                    Codigo = r.UnidadeOrcamentaria.Codigo,
+                    Descricao = r.UnidadeOrcamentaria.Descricao,
+                    Quantidade = r.Quantidade,
+                }).ToList(),
+            }).ToList();
+        }
+        else
+        {
+            var itens = await _context.MedicaoBmItens
+                .Include(i => i.RateiosUa).ThenInclude(r => r.UnidadeOrcamentaria)
+                .Where(i => i.MedicaoBmId == o.MedicaoBmId && i.QuantidadeMedidaNestaBm > 0)
+                .OrderBy(i => i.Id)
+                .ToListAsync();
+
+            dto.Origem = "MedicaoBm";
+            dto.Itens = itens.Select(i => new ObrigacaoUaItemDto
+            {
+                ItemId = i.Id,
+                Descricao = i.DescricaoNoMomento,
+                Unidade = i.UnidadeNoMomento,
+                Total = i.QuantidadeMedidaNestaBm,
+                ValorTotal = i.ValorTotalItem,
+                Linhas = i.RateiosUa.OrderBy(r => r.UnidadeOrcamentaria.Codigo).Select(r => new ObrigacaoUaLinhaDto
+                {
+                    UnidadeOrcamentariaId = r.UnidadeOrcamentariaId,
+                    Codigo = r.UnidadeOrcamentaria.Codigo,
+                    Descricao = r.UnidadeOrcamentaria.Descricao,
+                    Quantidade = r.Quantidade,
+                }).ToList(),
+            }).ToList();
+        }
+
+        // Valor por UA = fração da quantidade do item rateada para ela × valor total do item.
+        dto.Resumo = dto.Itens
+            .Where(i => i.Total > 0)
+            .SelectMany(i => i.Linhas.Select(l => (Linha: l, Valor: Math.Round(i.ValorTotal * l.Quantidade / i.Total, 2))))
+            .GroupBy(x => new { x.Linha.UnidadeOrcamentariaId, x.Linha.Codigo, x.Linha.Descricao })
+            .Select(g => new ObrigacaoUaResumoDto
+            {
+                UnidadeOrcamentariaId = g.Key.UnidadeOrcamentariaId,
+                Codigo = g.Key.Codigo,
+                Descricao = g.Key.Descricao,
+                Valor = g.Sum(x => x.Valor),
+            })
+            .OrderBy(r => r.Codigo)
+            .ToList();
+
+        return dto;
+    }
+
     // --- anexos do documento de origem (medição, OC ou despesa avulsa), acessíveis a quem enxerga a obrigação ---
 
     public async Task<List<AnexoDto>> ListarAnexosAsync(int id)
