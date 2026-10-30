@@ -291,7 +291,8 @@ public class DashboardServiceTests
         int? diaFimPeriodo,
         int? diasAntecedenciaAlerta,
         bool exigeBm = true,
-        string status = "Ativo")
+        string status = "Ativo",
+        bool comBmDoPeriodoAnterior = true)
     {
         var contrato = new Contrato
         {
@@ -319,6 +320,17 @@ public class DashboardServiceTests
             DiasAntecedenciaAlerta = diasAntecedenciaAlerta,
         });
         context.SaveChanges();
+
+        // Já com a BM do período anterior lançada, para estes testes focarem no período corrente (o "atrasado" tem testes próprios).
+        if (comBmDoPeriodoAnterior)
+        {
+            context.MedicaoBms.Add(new MedicaoBm
+            {
+                ContratoId = contrato.Id, Numero = 1, PeriodoInicio = Hoje.AddMonths(-1), PeriodoFim = Hoje,
+                Status = MedicaoBmStatus.Aprovado, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime,
+            });
+            context.SaveChanges();
+        }
 
         return contrato;
     }
@@ -472,5 +484,34 @@ public class DashboardServiceTests
         Assert.Equal("Tarefa", dashboard.Pendencias[0].Origem);
         Assert.Equal("Licença", dashboard.Pendencias[1].Origem);
         Assert.True(dashboard.Pendencias[0].DiasParaVencer < dashboard.Pendencias[1].DiasParaVencer);
+    }
+
+    [Fact]
+    public async Task ObterDashboardAsync_LimitaOsAlertasDeFeriasParaNaoOcuparOPainel()
+    {
+        var (service, context) = CriarService();
+        var tempo = new FakeTimeProvider(Agora);
+        var periodoService = new PeriodoFeriasService(context, tempo, new AuditoriaService(context, tempo), NullLogger<PeriodoFeriasService>.Instance);
+        context.PoliticasFerias.Add(new PoliticaFerias
+        {
+            TipoVinculo = UsuarioTipo.Pj, DiasDireitoPorAno = 30, MaxFracionamentos = 3, DiasMinimoUltimoFracionamento = 14,
+            DiasMinimoDemaisFracionamentos = 5, DiasAntecedenciaRemarcacao = 45, DiasAntecedenciaMarcacaoCompulsoria = 30,
+            PermiteAbonoPecuniario = true, MaxDiasAbono = 10, DiasMinimosAntesFeriadoOuFimDeSemana = 2, Ativa = true,
+            DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime,
+        });
+        context.SaveChanges();
+
+        // 8 colaboradores PJ com o concessivo a ~60 dias de "hoje" (12/08/2026) e nenhuma programação: 8 alertas de férias.
+        for (var i = 1; i <= 8; i++)
+        {
+            var usuario = CriarUsuario(context, $"Colaborador {i}", new DateOnly(2024, 10, 12));
+            usuario.Tipo = UsuarioTipo.Pj;
+            context.SaveChanges();
+            await periodoService.GerarProximoPeriodoAsync(usuario.Id, null);
+        }
+
+        var dashboard = await service.ObterAsync();
+
+        Assert.Equal(5, dashboard.Pendencias.Count(p => p.Origem == "Férias"));
     }
 }

@@ -48,7 +48,8 @@ public class TarefaOcorrenciaServiceTests
         int? diasAntecedenciaAlerta,
         bool exigeBm = true,
         string status = "Ativo",
-        string fornecedorNome = "Fornecedor Teste")
+        string fornecedorNome = "Fornecedor Teste",
+        bool comBmDoPeriodoAnterior = true)
     {
         var fornecedor = new Fornecedor { Nome = fornecedorNome, Ativo = true, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime };
         context.Fornecedores.Add(fornecedor);
@@ -80,6 +81,23 @@ public class TarefaOcorrenciaServiceTests
             DiasAntecedenciaAlerta = diasAntecedenciaAlerta,
         });
         context.SaveChanges();
+
+        // Por padrão o contrato já tem a BM do período anterior lançada (fim em 01/09), para os testes do período corrente
+        // não esbarrarem no lembrete de "medição atrasada"; os testes de recuperação desligam isso.
+        if (comBmDoPeriodoAnterior)
+        {
+            context.MedicaoBms.Add(new MedicaoBm
+            {
+                ContratoId = contrato.Id,
+                Numero = 1,
+                PeriodoInicio = new DateOnly(2026, 8, 1),
+                PeriodoFim = new DateOnly(2026, 9, 1),
+                Status = MedicaoBmStatus.Aprovado,
+                DataCriacao = Agora.UtcDateTime,
+                DataAtualizacao = Agora.UtcDateTime,
+            });
+            context.SaveChanges();
+        }
 
         return contrato;
     }
@@ -170,6 +188,72 @@ public class TarefaOcorrenciaServiceTests
 
         Assert.Single(agenda.Where(a => a.ContratoId == contrato.Id));
         Assert.Equal(1, await context.TarefaOcorrencias.CountAsync(o => o.ContratoId == contrato.Id));
+    }
+
+    [Fact]
+    public async Task GarantirOcorrenciasDeMedicaoAsync_DeveAvisarComoAtrasadaQuandoOPeriodoAnteriorFechouSemBm()
+    {
+        var (service, context) = CriarService();
+        // Hoje = 04/09. Fecha dia 15, antecedência 3: o período corrente (até 15/09) ainda está longe, mas o anterior
+        // (até 15/08) já encerrou e ninguém lançou a BM — o lembrete nunca nasceu porque a Agenda não foi aberta na janela.
+        var contrato = CriarContratoComMedicao(context, "CT-008", diaFimPeriodo: 15, diasAntecedenciaAlerta: 3, fornecedorNome: "Baptista", comBmDoPeriodoAnterior: false);
+
+        var agenda = await service.ObterAgendaAsync();
+
+        var tarefa = Assert.Single(agenda.Where(a => a.ContratoId == contrato.Id));
+        Assert.StartsWith("Medição atrasada", tarefa.Titulo);
+        Assert.Contains("Baptista", tarefa.Titulo);
+        Assert.Contains("15/08/2026", tarefa.Observacao);
+        Assert.Contains("sem medição", tarefa.Observacao);
+        Assert.Equal(new DateOnly(2026, 8, 12), tarefa.DataPrevistaAtual);
+        Assert.True(tarefa.DiasParaVencer < 0);
+    }
+
+    [Fact]
+    public async Task GarantirOcorrenciasDeMedicaoAsync_NaoAvisaAtrasoQuandoUmaBmJaCobreOPeriodoAnterior()
+    {
+        var (service, context) = CriarService();
+        var contrato = CriarContratoComMedicao(context, "CT-009", diaFimPeriodo: 31, diasAntecedenciaAlerta: 2, comBmDoPeriodoAnterior: false);
+        // O período anterior fecharia em 31/08, mas a BM real terminou em 30/08 (mês de 30 x 31 dias): dentro da tolerância.
+        context.MedicaoBms.Add(new MedicaoBm
+        {
+            ContratoId = contrato.Id, Numero = 1, PeriodoInicio = new DateOnly(2026, 8, 1), PeriodoFim = new DateOnly(2026, 8, 30),
+            Status = MedicaoBmStatus.Aprovado, DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime,
+        });
+        await context.SaveChangesAsync();
+
+        var agenda = await service.ObterAgendaAsync();
+
+        Assert.Empty(agenda.Where(a => a.ContratoId == contrato.Id));
+    }
+
+    [Fact]
+    public async Task GarantirOcorrenciasDeMedicaoAsync_NaoAvisaAtrasoDePeriodoAnteriorAoInicioDoContrato()
+    {
+        var (service, context) = CriarService();
+        var contrato = CriarContratoComMedicao(context, "CT-010", diaFimPeriodo: 15, diasAntecedenciaAlerta: 3, comBmDoPeriodoAnterior: false);
+        contrato.DataInicioVigencia = new DateOnly(2026, 8, 20); // começou depois do fim do período anterior (15/08)
+        await context.SaveChangesAsync();
+
+        var agenda = await service.ObterAgendaAsync();
+
+        Assert.Empty(agenda.Where(a => a.ContratoId == contrato.Id));
+    }
+
+    [Fact]
+    public async Task GarantirOcorrenciasDeMedicaoAsync_AvisaAtrasoUmaSoVez_ENaoDuplicaComOLembreteDoPeriodoCorrente()
+    {
+        var (service, context) = CriarService();
+        // Período anterior (até 15/08) atrasado e período corrente (até 15/09) dentro da janela de 30 dias.
+        var contrato = CriarContratoComMedicao(context, "CT-011", diaFimPeriodo: 15, diasAntecedenciaAlerta: 30, comBmDoPeriodoAnterior: false);
+
+        await service.ObterAgendaAsync();
+        var agenda = await service.ObterAgendaAsync();
+
+        var doContrato = agenda.Where(a => a.ContratoId == contrato.Id).ToList();
+        Assert.Equal(2, doContrato.Count);
+        Assert.Single(doContrato, a => a.Titulo.StartsWith("Medição atrasada"));
+        Assert.Single(doContrato, a => a.Titulo.StartsWith("Iniciar medição"));
     }
 
     [Fact]

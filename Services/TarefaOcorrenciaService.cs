@@ -85,6 +85,10 @@ public class TarefaOcorrenciaService : ITarefaOcorrenciaService
     // alimentava um alerta calculado no Dashboard (ver histórico em DashboardService), agora
     // materializado como uma TarefaOcorrencia de verdade (ContratoId preenchido marca a origem).
     // Sob demanda, igual a GarantirOcorrenciasDoMesAsync: roda sempre que a agenda é consultada.
+    // O fim real de uma BM nem sempre cai no "dia fim" configurado (mês de 30 x 31 dias, primeiro período parcial):
+    // uma BM que termina até esta tolerância antes do fim esperado já cobre o período.
+    private const int ToleranciaFimBmDias = 5;
+
     public async Task GarantirOcorrenciasDeMedicaoAsync()
     {
         var hoje = DateOnly.FromDateTime(_timeProvider.GetLocalNow().DateTime);
@@ -104,12 +108,12 @@ public class TarefaOcorrenciaService : ITarefaOcorrenciaService
             .Where(c => contratoIds.Contains(c.Id) && c.Status == ContratoStatus.Ativo)
             .ToDictionaryAsync(c => c.Id);
 
-        var periodosComBm = (await _context.MedicaoBms
-                .Where(m => contratoIds.Contains(m.ContratoId))
-                .Select(m => new { m.ContratoId, m.PeriodoFim })
-                .ToListAsync())
-            .Select(m => (m.ContratoId, m.PeriodoFim))
-            .ToHashSet();
+        var bms = await _context.MedicaoBms
+            .Where(m => contratoIds.Contains(m.ContratoId))
+            .Select(m => new { m.ContratoId, m.PeriodoFim })
+            .ToListAsync();
+        var periodosComBm = bms.Select(m => (m.ContratoId, m.PeriodoFim)).ToHashSet();
+        var ultimoFimComBm = bms.GroupBy(m => m.ContratoId).ToDictionary(g => g.Key, g => g.Max(m => m.PeriodoFim));
 
         var ocorrenciasExistentes = (await _context.TarefaOcorrencias
                 .Where(o => o.ContratoId != null && contratoIds.Contains(o.ContratoId.Value))
@@ -121,6 +125,30 @@ public class TarefaOcorrenciaService : ITarefaOcorrenciaService
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
         var novasOcorrencias = new List<TarefaOcorrencia>();
 
+        // Uma ocorrência por contrato/mês de referência (inclusive as já concluídas): nunca duplica.
+        void AdicionarLembrete(Contrato contrato, DateOnly periodoFim, int antecedencia, bool atrasada)
+        {
+            var mesReferencia = new DateOnly(periodoFim.Year, periodoFim.Month, 1);
+            if (!ocorrenciasExistentes.Add((contrato.Id, mesReferencia)))
+            {
+                return;
+            }
+
+            var dataPrevista = periodoFim.AddDays(-antecedencia);
+            novasOcorrencias.Add(new TarefaOcorrencia
+            {
+                ContratoId = contrato.Id,
+                Titulo = $"{(atrasada ? "Medição atrasada" : "Iniciar medição")} — {contrato.Fornecedor.Nome}",
+                MesReferencia = mesReferencia,
+                DataPrevistaOriginal = dataPrevista,
+                DataPrevistaAtual = dataPrevista,
+                Status = TarefaOcorrenciaStatus.Pendente,
+                Observacao = $"Contrato {contrato.Numero} • período até {periodoFim:dd/MM/yyyy}{(atrasada ? " • ainda sem medição lançada" : string.Empty)}",
+                DataCriacao = agora,
+                DataAtualizacao = agora,
+            });
+        }
+
         foreach (var config in configs)
         {
             if (!contratos.TryGetValue(config.ContratoId, out var contrato))
@@ -128,39 +156,25 @@ public class TarefaOcorrenciaService : ITarefaOcorrenciaService
                 continue;
             }
 
+            var antecedencia = config.DiasAntecedenciaAlerta!.Value;
             var periodoFimAtual = PeriodoMedicaoHelper.FimDoPeriodoCorrente(hoje, config.DiaFimPeriodo!.Value);
             var diasParaVencerPeriodo = periodoFimAtual.DayNumber - hoje.DayNumber;
 
-            if (diasParaVencerPeriodo > config.DiasAntecedenciaAlerta!.Value)
+            // Período corrente: avisa quando faltam até "antecedência" dias para o fim e ainda não há BM dele.
+            if (diasParaVencerPeriodo <= antecedencia && !periodosComBm.Contains((contrato.Id, periodoFimAtual)))
             {
-                continue;
+                AdicionarLembrete(contrato, periodoFimAtual, antecedencia, atrasada: false);
             }
 
-            if (periodosComBm.Contains((contrato.Id, periodoFimAtual)))
+            // Recuperação: o lembrete só nasce quando alguém abre a Agenda/Dashboard dentro da janela. Se ninguém abriu
+            // e o período já encerrou sem BM, avisa como atrasada em vez de perder o lembrete de vez.
+            var periodoFimAnterior = PeriodoMedicaoHelper.FimDoPeriodoAnterior(periodoFimAtual, config.DiaFimPeriodo!.Value);
+            if (periodoFimAnterior >= contrato.DataInicioVigencia
+                && !periodosComBm.Contains((contrato.Id, periodoFimAnterior))
+                && !(ultimoFimComBm.TryGetValue(contrato.Id, out var ultimoFim) && ultimoFim >= periodoFimAnterior.AddDays(-ToleranciaFimBmDias)))
             {
-                continue;
+                AdicionarLembrete(contrato, periodoFimAnterior, antecedencia, atrasada: true);
             }
-
-            var mesReferencia = new DateOnly(periodoFimAtual.Year, periodoFimAtual.Month, 1);
-            if (ocorrenciasExistentes.Contains((contrato.Id, mesReferencia)))
-            {
-                continue;
-            }
-
-            var dataPrevista = periodoFimAtual.AddDays(-config.DiasAntecedenciaAlerta.Value);
-
-            novasOcorrencias.Add(new TarefaOcorrencia
-            {
-                ContratoId = contrato.Id,
-                Titulo = $"Iniciar medição — {contrato.Fornecedor.Nome}",
-                MesReferencia = mesReferencia,
-                DataPrevistaOriginal = dataPrevista,
-                DataPrevistaAtual = dataPrevista,
-                Status = TarefaOcorrenciaStatus.Pendente,
-                Observacao = $"Contrato {contrato.Numero} • período até {periodoFimAtual:dd/MM/yyyy}",
-                DataCriacao = agora,
-                DataAtualizacao = agora,
-            });
         }
 
         if (novasOcorrencias.Count > 0)

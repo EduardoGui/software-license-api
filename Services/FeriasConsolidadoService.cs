@@ -159,6 +159,10 @@ public class FeriasConsolidadoService : IFeriasConsolidadoService
     // nova do zero (mesma orientação do plano do módulo). 4 tipos, todos com Origem="Férias":
     // saldo negativo, concessivo perto de vencer, saldo sem nenhuma programação criada ainda, e
     // conflito de setor (2+ colaboradores do mesmo setor com férias aprovadas sobrepostas).
+    // "Saldo sem programação" só vira alerta quando o fim do concessivo já está a esta distância; antes disso era ruído
+    // no Dashboard ("vence em 500 dias"). Saldo negativo e concessivo perto de vencer continuam sempre alertando.
+    private const int HorizonteLembreteSemProgramacaoDias = 90;
+
     public async Task<List<PendenciaDto>> ObterAlertasAsync()
     {
         var hoje = Hoje();
@@ -221,7 +225,7 @@ public class FeriasConsolidadoService : IFeriasConsolidadoService
                     PeriodoFeriasId = periodo.Id,
                 });
             }
-            else if (!programacoesAtivasPorUsuario[usuario.Id].Any())
+            else if (diasParaVencer <= HorizonteLembreteSemProgramacaoDias && !programacoesAtivasPorUsuario[usuario.Id].Any())
             {
                 alertas.Add(new PendenciaDto
                 {

@@ -126,6 +126,8 @@ public class DashboardService : IDashboardService
     // TarefaOcorrenciaService.GarantirOcorrenciasDeMedicaoAsync) + os alertas calculados (licença,
     // contrato de locação de equipamento) numa única lista, ordenada por urgência — mesmo espírito
     // de "o que precisa da minha atenção", só que num lugar só, com a mesma aparência de tabela.
+    private const int MaxAlertasFeriasNoDashboard = 5;
+
     private static List<PendenciaDto> MontarPendencias(
         List<TarefaOcorrenciaDto> tarefasPendentes, List<VencimentoDto> proximosVencimentos,
         List<VencimentoContratoDto> proximosVencimentosContratos, List<PendenciaDto> alertasFerias)
@@ -163,7 +165,9 @@ public class DashboardService : IDashboardService
             EquipamentoId = v.EquipamentoId,
         }));
 
-        pendencias.AddRange(alertasFerias);
+        // Férias é só um dos assuntos do painel: os mais urgentes entram e o resto fica na tela de Férias, para não
+        // ocupar o lugar de medição, licença e equipamento.
+        pendencias.AddRange(alertasFerias.OrderBy(p => p.DiasParaVencer).Take(MaxAlertasFeriasNoDashboard));
 
         return pendencias.OrderBy(p => p.DiasParaVencer).Take(15).ToList();
     }

@@ -335,12 +335,27 @@ public class FeriasConsolidadoServiceTests
     }
 
     [Fact]
-    public async Task ObterAlertasAsync_DeveAlertarSaldoSemProgramacaoQuandoConcessivoAindaLonge()
+    public async Task ObterAlertasAsync_NaoDeveAlertarSaldoSemProgramacaoQuandoConcessivoAindaMuitoLonge()
     {
         var (service, periodoService, _, _, context) = CriarServicos();
         CriarPoliticaPj(context, diasAntecedenciaMarcacaoCompulsoria: 30);
-        // FimConcessivo 31/12/2027, bem longe dos 30 dias de antecedência - não é "vencendo".
+        // FimConcessivo 31/12/2027, ~200 dias à frente de "hoje": ruído no Dashboard ("vence em 500 dias"), então não alerta.
         var usuario = CriarUsuarioPj(context, new DateOnly(2026, 1, 1));
+        await periodoService.GerarProximoPeriodoAsync(usuario.Id, null);
+
+        var alertas = await service.ObterAlertasAsync();
+
+        Assert.Empty(alertas);
+    }
+
+    [Fact]
+    public async Task ObterAlertasAsync_DeveAlertarSaldoSemProgramacaoQuandoConcessivoEstaDentroDeNoventaDias()
+    {
+        var (service, periodoService, _, _, context) = CriarServicos();
+        CriarPoliticaPj(context, diasAntecedenciaMarcacaoCompulsoria: 30);
+        // InicioAquisitivo 15/08/2025 -> FimConcessivo 14/08/2027, a 60 dias de "hoje" (15/06/2027): acima dos 30 da
+        // marcação compulsória, mas dentro do horizonte de 90 dias do lembrete.
+        var usuario = CriarUsuarioPj(context, new DateOnly(2025, 8, 15));
         var periodo = await periodoService.GerarProximoPeriodoAsync(usuario.Id, null);
 
         var alertas = await service.ObterAlertasAsync();
@@ -348,6 +363,7 @@ public class FeriasConsolidadoServiceTests
         var alerta = Assert.Single(alertas);
         Assert.Equal(periodo.Id, alerta.PeriodoFeriasId);
         Assert.Contains("nenhuma programação", alerta.Observacao);
+        Assert.Equal(60, alerta.DiasParaVencer);
     }
 
     [Fact]

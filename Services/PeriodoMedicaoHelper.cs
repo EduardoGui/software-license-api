@@ -17,6 +17,13 @@ public static class PeriodoMedicaoHelper
         return fim;
     }
 
+    // Fim do período imediatamente anterior ao corrente (um mês antes, no mesmo "dia fim").
+    public static DateOnly FimDoPeriodoAnterior(DateOnly fimDoPeriodoCorrente, int diaFimPeriodo)
+    {
+        var mesAnterior = fimDoPeriodoCorrente.AddMonths(-1);
+        return ClampAoMes(mesAnterior.Year, mesAnterior.Month, diaFimPeriodo);
+    }
+
     public static DateOnly ClampAoMes(int ano, int mes, int dia) =>
         new(ano, mes, Math.Min(dia, DateTime.DaysInMonth(ano, mes)));
 }
