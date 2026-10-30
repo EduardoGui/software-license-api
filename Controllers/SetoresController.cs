@@ -16,10 +16,11 @@ public class SetoresController : ControllerBase
         _setorService = setorService;
     }
 
-    // Leitura liberada para Colaborador também: é dado de referência usado na tela de "Meus
-    // dados bancários" (seleção do próprio setor) e no formulário de Reembolso de Despesa.
+    // Leitura liberada para Colaborador e Administrativo: é dado de referência usado na tela de "Meus
+    // dados bancários" (seleção do próprio setor), no formulário de Reembolso de Despesa e nos filtros
+    // de Setor de Férias e Campanhas de Entrega (telas do DP que o Administrativo acessa).
     [HttpGet]
-    [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo},{Roles.Colaborador}")]
     public async Task<ActionResult<List<SetorDto>>> GetAll([FromQuery] SetorFiltroDto filtro)
     {
         var setores = await _setorService.GetAllAsync(filtro);
@@ -27,7 +28,7 @@ public class SetoresController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
-    [Authorize(Roles = $"{Roles.Administrador},{Roles.Colaborador}")]
+    [Authorize(Roles = $"{Roles.Administrador},{Roles.Administrativo},{Roles.Colaborador}")]
     public async Task<ActionResult<SetorDto>> GetById(int id)
     {
         var setor = await _setorService.GetByIdAsync(id);
