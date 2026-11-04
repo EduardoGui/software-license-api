@@ -157,4 +157,28 @@ public class ObrigacaoServiceTests
         Assert.Single(resultado);
         Assert.Equal(ordemCompra.Id, resultado[0].OrdemCompraId);
     }
+
+    [Fact]
+    public async Task GetAllAsync_DeveFiltrarPorUmaOuMaisEtapas()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var local = CriarLocal(context);
+        var ordemCompra = CriarOrdemCompra(context, fornecedor.Id, local.Id);
+
+        var semNf = CriarObrigacao(context, fornecedor.Id, ordemCompraId: ordemCompra.Id); // Aguardar NF
+        var comNf = CriarObrigacao(context, fornecedor.Id, ordemCompraId: ordemCompra.Id); // Criar Requisição
+        comNf.DataNf = new DateOnly(2026, 1, 10);
+        var paga = CriarObrigacao(context, fornecedor.Id, ordemCompraId: ordemCompra.Id); // Pago
+        paga.Pago = true;
+        context.SaveChanges();
+
+        var soPagas = await service.GetAllAsync(new ObrigacaoFiltroDto { Etapa = ObrigacaoEtapa.Pago });
+        var duas = await service.GetAllAsync(new ObrigacaoFiltroDto { Etapa = $"{ObrigacaoEtapa.AguardarNf},{ObrigacaoEtapa.Pago}" });
+        var todas = await service.GetAllAsync(new ObrigacaoFiltroDto());
+
+        Assert.Equal(new[] { paga.Id }, soPagas.Select(o => o.Id));
+        Assert.Equal(new[] { semNf.Id, paga.Id }.Order(), duas.Select(o => o.Id).Order());
+        Assert.Equal(3, todas.Count);
+    }
 }

@@ -81,9 +81,12 @@ public class ObrigacaoService : IObrigacaoService
         var dtos = obrigacoes.Select(o => ParaDto(o, ObterResumo(resumos, o))).ToList();
         await PreencherExigeAssinaturaMedicoesAsync(dtos);
 
-        if (!string.IsNullOrWhiteSpace(filtro.Etapa))
+        // Etapa aceita uma ou várias etapas separadas por vírgula (nenhum nome de etapa contém vírgula).
+        var etapas = (filtro.Etapa ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (etapas.Length > 0)
         {
-            dtos = dtos.Where(d => d.Etapa == filtro.Etapa).ToList();
+            dtos = dtos.Where(d => etapas.Contains(d.Etapa)).ToList();
         }
 
         return dtos;
