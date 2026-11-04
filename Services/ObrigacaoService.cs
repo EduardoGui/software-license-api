@@ -437,6 +437,81 @@ public class ObrigacaoService : IObrigacaoService
             .Distinct()
             .ToListAsync();
 
+    // --- Resumo do documento de origem (BM ou OC), somente leitura, para o modal da obrigação ---
+
+    public async Task<ObrigacaoOrigemDto> ObterOrigemAsync(int id)
+    {
+        var obrigacao = await BuscarOuFalhar(id);
+
+        if (obrigacao.MedicaoBmId is not null)
+        {
+            var bm = await _context.MedicaoBms
+                .AsNoTracking()
+                .Include(m => m.Contrato)
+                .Include(m => m.Aprovador)
+                .Include(m => m.Itens)
+                .Include(m => m.Acertos)
+                .Include(m => m.Impostos)
+                .FirstAsync(m => m.Id == obrigacao.MedicaoBmId);
+
+            var acertos = bm.Acertos.Sum(a => a.PrecoTotal);
+            var impostos = bm.Impostos.Sum(i => i.ValorTotal);
+            return new ObrigacaoOrigemDto
+            {
+                Origem = "MedicaoBm",
+                Titulo = $"BM-{bm.NumeroReferencia ?? bm.Numero.ToString("000")} — contrato {bm.Contrato.Numero}",
+                Status = bm.Status,
+                FornecedorNome = obrigacao.Fornecedor.Nome,
+                QuantidadeItens = bm.Itens.Count,
+                Observacao = bm.Observacao,
+                ValorPrincipal = bm.ValorTotalMedido + acertos - impostos,
+                ContratoId = bm.ContratoId,
+                ContratoNumero = bm.Contrato.Numero,
+                ContratoObjeto = bm.Contrato.Objeto,
+                MedicaoBmId = bm.Id,
+                PeriodoInicio = bm.PeriodoInicio,
+                PeriodoFim = bm.PeriodoFim,
+                DataEmissao = bm.DataEnvio,
+                AprovadorNome = bm.Aprovador?.Nome,
+                DataDecisao = bm.DataDecisao,
+                ObservacaoAprovador = bm.ObservacaoAprovador,
+                ValorMedido = bm.ValorTotalMedido,
+                ValorAcertos = acertos,
+                ValorImpostos = impostos,
+            };
+        }
+
+        if (obrigacao.OrdemCompraId is not null)
+        {
+            var oc = await _context.OrdensCompra
+                .AsNoTracking()
+                .Include(o => o.Local)
+                .Include(o => o.Itens)
+                .FirstAsync(o => o.Id == obrigacao.OrdemCompraId);
+
+            return new ObrigacaoOrigemDto
+            {
+                Origem = "OrdemCompra",
+                Titulo = $"OC-{oc.Numero:000} — Ordem de Compra",
+                Status = oc.Status,
+                FornecedorNome = obrigacao.Fornecedor.Nome,
+                QuantidadeItens = oc.Itens.Count,
+                Observacao = oc.ObservacoesSolicitante,
+                ValorPrincipal = oc.Itens.Sum(i => i.Quantidade * i.ValorUnitario),
+                OrdemCompraId = oc.Id,
+                Data = oc.Data,
+                Solicitante = oc.Solicitante,
+                LocalNome = oc.Local.Nome,
+                CondicaoPagamento = oc.CondicaoPagamento,
+                ValorFrete = oc.ValorFrete,
+                LocalEntrega = oc.LocalEntrega,
+                PrazoEntrega = oc.PrazoEntrega,
+            };
+        }
+
+        throw new BusinessRuleException("Esta obrigação não tem BM nem Ordem de Compra de origem.");
+    }
+
     // --- UAs (rateio) do documento de origem: exibidas e editáveis pela obrigação até ela ser paga ou cancelada ---
 
     public async Task<ObrigacaoUaDto> ObterUnidadesOrcamentariasAsync(int id)

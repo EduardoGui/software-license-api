@@ -109,6 +109,14 @@ public class ObrigacoesController : ControllerBase
         return Ok(obrigacao);
     }
 
+    // Resumo somente leitura do BM ou da OC de origem (o Administrativo não acessa os endpoints de Contratos).
+    [HttpGet("{id:int}/origem")]
+    public async Task<ActionResult<ObrigacaoOrigemDto>> ObterOrigem(int id)
+    {
+        var origem = await _obrigacaoService.ObterOrigemAsync(id);
+        return Ok(origem);
+    }
+
     // UAs (rateio) do documento de origem; quem enxerga a obrigação pode consultar e, até o pagamento, alterar.
     [HttpGet("{id:int}/unidades-orcamentarias")]
     public async Task<ActionResult<ObrigacaoUaDto>> ObterUnidadesOrcamentarias(int id)
