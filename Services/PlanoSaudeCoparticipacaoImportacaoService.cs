@@ -25,6 +25,9 @@ public class PlanoSaudeCoparticipacaoImportacaoService : IPlanoSaudeCoparticipac
 {
     private static readonly CultureInfo PtBr = new("pt-BR");
 
+    // Nome (normalizado) da única aba lida do arquivo de coparticipações.
+    private const string AbaImportada = "HOPE";
+
     private readonly AppDbContext _context;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<PlanoSaudeCoparticipacaoImportacaoService> _logger;
@@ -138,11 +141,11 @@ public class PlanoSaudeCoparticipacaoImportacaoService : IPlanoSaudeCoparticipac
             throw new BusinessRuleException("Mês deve estar entre 1 e 12.");
         }
 
-        var (pessoas, competencias, linhasIgnoradas) = LerArquivo(arquivo);
+        var (pessoas, competencias, linhasIgnoradas, abasIgnoradas) = LerArquivo(arquivo);
         if (pessoas.Count == 0)
         {
             throw new BusinessRuleException(
-                "Não encontrei coparticipações no arquivo. Envie a planilha de coparticipações (.xlsx) com as colunas PARENTESCO (TI/DE), NOME e VALOR (ou COPART).");
+                "Não encontrei coparticipações na aba \"HOPE\" do arquivo. Envie a planilha de coparticipações (.xlsx) com a aba HOPE e as colunas PARENTESCO (TI/DE), NOME e VALOR (ou COPART).");
         }
 
         var inicioMes = new DateOnly(ano, mes, 1);
@@ -292,6 +295,11 @@ public class PlanoSaudeCoparticipacaoImportacaoService : IPlanoSaudeCoparticipac
             Coparticipacao = PlanoSaudeImportacaoService.Arredondar(plano.Itens.Sum(i => i.Coparticipacao)),
         };
 
+        if (abasIgnoradas.Count > 0)
+        {
+            previa.Avisos.Add($"Só a aba \"HOPE\" é importada; ignoradas: {string.Join(", ", abasIgnoradas)}.");
+        }
+
         if (competencias.Count > 0)
         {
             var texto = string.Join(", ", competencias.OrderBy(c => c).Select(c => $"{c.Mes:00}/{c.Ano}"));
@@ -341,8 +349,9 @@ public class PlanoSaudeCoparticipacaoImportacaoService : IPlanoSaudeCoparticipac
 
     // --- leitura do xlsx ---
 
-    private static (List<PessoaArquivo> Pessoas, HashSet<(int Ano, int Mes)> Competencias, int LinhasIgnoradas) LerArquivo(Stream arquivo)
+    private static (List<PessoaArquivo> Pessoas, HashSet<(int Ano, int Mes)> Competencias, int LinhasIgnoradas, List<string> AbasIgnoradas) LerArquivo(Stream arquivo)
     {
+        var abasIgnoradas = new List<string>();
         var pessoas = new Dictionary<string, PessoaArquivo>();
         var competencias = new HashSet<(int Ano, int Mes)>();
         var ignoradas = 0;
@@ -361,6 +370,13 @@ public class PlanoSaudeCoparticipacaoImportacaoService : IPlanoSaudeCoparticipac
         {
             foreach (var aba in workbook.Worksheets)
             {
+                // Só a aba da HOPE interessa: as demais abas do arquivo (SPE, SPE 2, ISEC...) são de outras empresas do contrato da operadora.
+                if (PlanoSaudeImportacaoService.Normalizar(aba.Name) != AbaImportada)
+                {
+                    abasIgnoradas.Add(aba.Name.Trim());
+                    continue;
+                }
+
                 var cabecalho = aba.FirstRowUsed();
                 if (cabecalho is null)
                 {
@@ -435,7 +451,7 @@ public class PlanoSaudeCoparticipacaoImportacaoService : IPlanoSaudeCoparticipac
             }
         }
 
-        return (pessoas.Values.ToList(), competencias, ignoradas);
+        return (pessoas.Values.ToList(), competencias, ignoradas, abasIgnoradas);
     }
 
     private static string TituloNome(string nomeNormalizado)

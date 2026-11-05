@@ -89,18 +89,22 @@ public class PlanoSaudeCoparticipacaoImportacaoServiceTests
         return ms;
     }
 
-    private static MemoryStream Planilha(params Linha[] linhas) => Planilha(("SPE", "VALOR", linhas));
+    private static MemoryStream Planilha(params Linha[] linhas) => Planilha(("HOPE", "VALOR", linhas));
 
     [Fact]
-    public async Task PreviaAsync_DeveSomarPorPessoaEntreLinhasEAbasCasandoTitularEDependentePorNome()
+    public async Task PreviaAsync_DeveLerSoAAbaHopeSomandoPorPessoaECasandoTitularEDependentePorNome()
     {
         var (service, context) = CriarService();
         var ana = CriarUsuario(context, "Ana Souza");
         var maria = CriarDependente(context, ana.Id, "Maria Souza");
         var arquivo = Planilha(
-            ("SPE", "VALOR", [new Linha("TI", "ANA SOUZA", 10.10m), new Linha("TI", "ANA SOUZA", 20m)]),
-            // Outra aba, outro cabeçalho; o dependente vem com o MO do titular (como acontece no arquivo real) e o nome sem acento/caixa.
-            ("HOPE", " COPART  ", [new Linha("TI", "Ana Souza", 5m), new Linha("DE", "MARIA SOUZA", 7.5m, Mo: "90000001"), new Linha("DE", "MARIA SOUZA", 2.5m)]));
+            // Cabeçalho "COPART" com espaços; o dependente vem com o MO do titular (como no arquivo real) e o nome sem acento/caixa.
+            ("hope", " COPART  ", [
+                new Linha("TI", "ANA SOUZA", 10.10m), new Linha("TI", "Ana Souza", 20m), new Linha("TI", "ANA SOUZA", 5m),
+                new Linha("DE", "MARIA SOUZA", 7.5m, Mo: "90000001"), new Linha("DE", "MARIA SOUZA", 2.5m)]),
+            // Abas de outras empresas são ignoradas por inteiro, mesmo com nome que casaria com o cadastro.
+            ("SPE", "VALOR", [new Linha("TI", "ANA SOUZA", 999m)]),
+            ("ISEC", "VALOR", [new Linha("DE", "MARIA SOUZA", 888m)]));
 
         var previa = await service.PreviaAsync(arquivo, 2026, 10);
 
@@ -108,6 +112,7 @@ public class PlanoSaudeCoparticipacaoImportacaoServiceTests
         Assert.Equal((1, 1), (previa.Importavel.Titulares, previa.Importavel.Dependentes));
         Assert.Equal(45.1m, previa.Importavel.Coparticipacao); // 10,10 + 20 + 5 + 7,50 + 2,50
         Assert.Equal(45.1m, previa.Arquivo.Coparticipacao);
+        Assert.Contains(previa.Avisos, a => a.Contains("Só a aba \"HOPE\"") && a.Contains("SPE") && a.Contains("ISEC"));
         Assert.Empty(previa.DependentesNaoImportados);
         Assert.Empty(await context.PlanoSaudeCustos.ToListAsync()); // prévia não grava
         Assert.Equal(maria.Id, (await context.Dependentes.SingleAsync()).Id);
@@ -286,5 +291,10 @@ public class PlanoSaudeCoparticipacaoImportacaoServiceTests
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => service.PreviaAsync(ms, 2026, 10));
         Assert.Contains("PARENTESCO", ex.Message);
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.PreviaAsync(Planilha(new Linha("TI", "ANA", 1m)), 2026, 13));
+
+        // Arquivo sem a aba HOPE: nada a importar.
+        var semHope = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => service.PreviaAsync(Planilha(("SPE", "VALOR", [new Linha("TI", "ANA SOUZA", 10m)])), 2026, 10));
+        Assert.Contains("aba \"HOPE\"", semHope.Message);
     }
 }
