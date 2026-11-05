@@ -326,6 +326,7 @@ public class ReembolsoDespesaServiceTests
         var tipo = CriarTipoDespesa(context);
         var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
         await service.EnviarAsync(criado.Id);
+        emailSender.Reiniciar(); // descarta o aviso aos aprovadores do envio; o teste é só do e-mail ao financeiro
 
         context.EmailsNotificacaoReembolso.Add(new EmailNotificacaoReembolso
         {
@@ -370,6 +371,7 @@ public class ReembolsoDespesaServiceTests
         dto.LocalId = local.Id;
         var criado = await service.CreateAsync(usuario.Id, dto);
         await service.EnviarAsync(criado.Id);
+        emailSender.Reiniciar(); // descarta o aviso aos aprovadores do envio; o teste é só do e-mail ao financeiro
 
         context.EmailsNotificacaoReembolso.Add(new EmailNotificacaoReembolso
         {
@@ -401,6 +403,7 @@ public class ReembolsoDespesaServiceTests
         var tipo = CriarTipoDespesa(context);
         var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
         await service.EnviarAsync(criado.Id);
+        emailSender.Reiniciar(); // descarta o aviso aos aprovadores do envio; o teste é só do e-mail ao financeiro
 
         var aprovado = await service.AprovarAsync(criado.Id, aprovador.Id);
 
@@ -838,6 +841,7 @@ public class ReembolsoDespesaServiceTests
         dto.Conteudo = new byte[10 * 1024 * 1024];
         await service.AdicionarAnexoItemAsync(criado.Id, criado.Itens[0].Id, dto);
         await service.EnviarAsync(criado.Id);
+        emailSender.Reiniciar(); // descarta o aviso aos aprovadores do envio; o teste é só do e-mail ao financeiro
 
         context.EmailsNotificacaoReembolso.Add(new EmailNotificacaoReembolso
         {
@@ -869,5 +873,180 @@ public class ReembolsoDespesaServiceTests
         Assert.True(await service.EhAprovadorDoSetorAsync(aprovador.Id, setor.Id));
         Assert.False(await service.EhAprovadorDoSetorAsync(naoAprovador.Id, setor.Id));
         Assert.False(await service.EhAprovadorDoSetorAsync(aprovador.Id, null));
+    }
+
+    // ---- Aprovadores pendentes e e-mail aos aprovadores ----
+
+    private sealed class EmailSenderQuebrado : IEmailSender
+    {
+        public Task EnviarAsync(string destinatario, string assunto, string corpoHtml) =>
+            throw new InvalidOperationException("falha simulada");
+
+        public Task EnviarAsync(
+            IReadOnlyList<string> destinatarios, string assunto, string corpoHtml,
+            IReadOnlyList<string>? copia = null, IReadOnlyList<EmailAnexo>? anexos = null) =>
+            throw new InvalidOperationException("falha simulada");
+    }
+
+    private static (ReembolsoDespesaService Service, AppDbContext Context) CriarServiceComSender(IEmailSender emailSender, string? baseUrl = null)
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        var context = new AppDbContext(options);
+        var configuracao = new ConfigurationBuilder()
+            .AddInMemoryCollection(baseUrl is null ? [] : new Dictionary<string, string?> { ["Frontend:BaseUrl"] = baseUrl })
+            .Build();
+        var timeProvider = new FakeTimeProvider(Agora);
+        var service = new ReembolsoDespesaService(
+            context, timeProvider, NullLogger<ReembolsoDespesaService>.Instance, configuracao, emailSender, new AuditoriaService(context, timeProvider));
+        return (service, context);
+    }
+
+    [Fact]
+    public async Task Dto_DeveTrazerAprovadoresDoSetorSoQuandoEnviadoParaAprovacao()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context, "Ana");
+        var setor = CriarSetor(context);
+        CompletarPerfil(context, usuario, setor.Id);
+        var bruno = CriarUsuario(context, "Bruno");
+        var carla = CriarUsuario(context, "Carla");
+        TornarAprovador(context, setor.Id, carla.Id);
+        TornarAprovador(context, setor.Id, bruno.Id);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
+
+        Assert.Empty(criado.AprovadoresPendentes);
+
+        var enviado = await service.EnviarAsync(criado.Id);
+        Assert.Equal(["Bruno", "Carla"], enviado.AprovadoresPendentes);
+
+        var daListagem = (await service.GetAllAsync(new ReembolsoDespesaFiltroDto { UsuarioId = usuario.Id })).Single();
+        Assert.Equal(["Bruno", "Carla"], daListagem.AprovadoresPendentes);
+
+        var pendente = (await service.GetPendentesParaAprovacaoAsync(bruno.Id)).Single();
+        Assert.Equal(["Bruno", "Carla"], pendente.AprovadoresPendentes);
+
+        var aprovado = await service.AprovarAsync(criado.Id, bruno.Id);
+        Assert.Empty(aprovado.AprovadoresPendentes);
+        Assert.Equal("Bruno", aprovado.AprovadorNome);
+        Assert.Empty((await service.GetAprovadosPorMimAsync(bruno.Id)).Single().AprovadoresPendentes);
+    }
+
+    [Fact]
+    public async Task Dto_DeveFicarVazioQuandoSetorNaoTemAprovador()
+    {
+        var (service, context, _) = CriarService();
+        var usuario = CriarUsuario(context);
+        var setor = CriarSetor(context);
+        CompletarPerfil(context, usuario, setor.Id);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id));
+
+        var enviado = await service.EnviarAsync(criado.Id);
+
+        Assert.Equal(ReembolsoDespesaStatus.EnviadoParaAprovacao, enviado.Status);
+        Assert.Empty(enviado.AprovadoresPendentes);
+    }
+
+    [Fact]
+    public async Task EnviarAsync_DeveAvisarPorEmailOsAprovadoresDoSetorSemDadosBancarios()
+    {
+        var (service, context, emailSender) = CriarService();
+        var usuario = CriarUsuario(context, "Ana");
+        var setor = CriarSetor(context);
+        CompletarPerfil(context, usuario, setor.Id);
+        var bruno = CriarUsuario(context, "Bruno");
+        var carla = CriarUsuario(context, "Carla");
+        carla.Email = "  ";
+        context.SaveChanges();
+        var outroSetor = CriarSetor(context, "Jurídico");
+        var diego = CriarUsuario(context, "Diego");
+        TornarAprovador(context, setor.Id, bruno.Id);
+        TornarAprovador(context, setor.Id, carla.Id);
+        TornarAprovador(context, outroSetor.Id, diego.Id);
+        var tipo = CriarTipoDespesa(context);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(tipo.Id, 1234.5m));
+
+        await service.EnviarAsync(criado.Id);
+
+        Assert.Equal(1, emailSender.ChamadasComAnexo);
+        Assert.Equal(["bruno@empresa.com"], emailSender.UltimosDestinatarios);
+        Assert.Null(emailSender.UltimosAnexos);
+        Assert.Contains("Ana", emailSender.UltimoAssuntoComAnexo);
+        var corpo = emailSender.UltimoCorpoComAnexo!;
+        Assert.Contains("Financeiro", corpo);
+        Assert.Contains("1.234,50", corpo);
+        Assert.Contains($"http://localhost:4200/reembolsos/{criado.Id}/detalhe", corpo);
+        Assert.DoesNotContain("Banco X", corpo);
+        Assert.DoesNotContain("12345-6", corpo);
+        Assert.DoesNotContain("ana@empresa.com", corpo);
+    }
+
+    [Fact]
+    public async Task EnviarAsync_DeveUsarFrontendBaseUrlNoLink()
+    {
+        var emailSender = new FakeEmailSender();
+        var (service, context) = CriarServiceComSender(emailSender, "https://app.hope.com/");
+        var usuario = CriarUsuario(context, "Ana");
+        var setor = CriarSetor(context);
+        CompletarPerfil(context, usuario, setor.Id);
+        TornarAprovador(context, setor.Id, CriarUsuario(context, "Bruno").Id);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(CriarTipoDespesa(context).Id));
+
+        await service.EnviarAsync(criado.Id);
+
+        Assert.Contains($"https://app.hope.com/reembolsos/{criado.Id}/detalhe", emailSender.UltimoCorpoComAnexo);
+    }
+
+    [Fact]
+    public async Task EnviarAsync_DeveAvisarDeNovoNoReenvioAposDevolucao()
+    {
+        var (service, context, emailSender) = CriarService();
+        var usuario = CriarUsuario(context, "Ana");
+        var setor = CriarSetor(context);
+        CompletarPerfil(context, usuario, setor.Id);
+        var bruno = CriarUsuario(context, "Bruno");
+        TornarAprovador(context, setor.Id, bruno.Id);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(CriarTipoDespesa(context).Id));
+        await service.EnviarAsync(criado.Id);
+        await service.DevolverAsync(criado.Id, bruno.Id, new DevolverReembolsoDespesaDto { ObservacaoAprovador = "Falta o comprovante." });
+
+        await service.EnviarAsync(criado.Id);
+
+        Assert.Equal(2, emailSender.ChamadasComAnexo);
+    }
+
+    [Fact]
+    public async Task EnviarAsync_SemAprovadorNoSetorNaoEnviaEmailMasConclui()
+    {
+        var (service, context, emailSender) = CriarService();
+        var usuario = CriarUsuario(context);
+        var setor = CriarSetor(context);
+        CompletarPerfil(context, usuario, setor.Id);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(CriarTipoDespesa(context).Id));
+
+        var enviado = await service.EnviarAsync(criado.Id);
+
+        Assert.Equal(ReembolsoDespesaStatus.EnviadoParaAprovacao, enviado.Status);
+        Assert.Equal(0, emailSender.ChamadasComAnexo);
+    }
+
+    [Fact]
+    public async Task EnviarAsync_FalhaNoEmailNaoDesfazEnvioERegistraNaAuditoria()
+    {
+        var (service, context) = CriarServiceComSender(new EmailSenderQuebrado());
+        var usuario = CriarUsuario(context, "Ana");
+        var setor = CriarSetor(context);
+        CompletarPerfil(context, usuario, setor.Id);
+        TornarAprovador(context, setor.Id, CriarUsuario(context, "Bruno").Id);
+        var criado = await service.CreateAsync(usuario.Id, CriarDto(CriarTipoDespesa(context).Id));
+
+        var enviado = await service.EnviarAsync(criado.Id);
+
+        Assert.Equal(ReembolsoDespesaStatus.EnviadoParaAprovacao, enviado.Status);
+        Assert.Equal(ReembolsoDespesaStatus.EnviadoParaAprovacao, context.ReembolsosDespesa.Single().Status);
+        var falha = context.LogsAuditoria.Single(l => l.Acao == LogAuditoriaAcao.EmailNaoEnviado);
+        Assert.Equal(criado.Id, falha.EntidadeId);
+        Assert.DoesNotContain("falha simulada", falha.Detalhe ?? string.Empty);
     }
 }

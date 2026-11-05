@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using PdfSharp.Drawing;
@@ -23,6 +25,7 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
     private readonly IConfiguration _configuration;
     private readonly IEmailSender _emailSender;
     private readonly IAuditoriaService _auditoriaService;
+    private readonly string _frontendBaseUrl;
 
     static ReembolsoDespesaService()
     {
@@ -39,6 +42,7 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         _configuration = configuration;
         _emailSender = emailSender;
         _auditoriaService = auditoriaService;
+        _frontendBaseUrl = (configuration["Frontend:BaseUrl"] ?? "http://localhost:4200").TrimEnd('/');
     }
 
     public async Task<List<ReembolsoDespesaDto>> GetAllAsync(ReembolsoDespesaFiltroDto filtro)
@@ -62,14 +66,16 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         }
 
         var reembolsos = await query.OrderByDescending(r => r.DataSolicitacao).ThenByDescending(r => r.Id).ToListAsync();
-        return reembolsos.Select(r => ParaDto(r)).ToList();
+        return await ParaDtosComAprovadoresAsync(reembolsos);
     }
 
     public async Task<ReembolsoDespesaDto> GetByIdAsync(int id)
     {
         var reembolso = await BuscarOuFalhar(id);
         var anexosPorItem = await ObterAnexosPorItemAsync(reembolso.Itens.Select(i => i.Id).ToList());
-        return ParaDto(reembolso, anexosPorItem);
+        var dto = ParaDto(reembolso, anexosPorItem);
+        await PreencherAprovadoresPendentesAsync([dto]);
+        return dto;
     }
 
     public async Task<ReembolsoDespesaDto> CreateAsync(int usuarioId, CreateReembolsoDespesaDto dto)
@@ -179,7 +185,99 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
         await _auditoriaService.RegistrarAsync(
             usuarioIdAtor, LogAuditoriaEntidade.ReembolsoDespesa, id, LogAuditoriaAcao.Enviado, $"Setor {reembolso.SetorId}");
 
+        await NotificarAprovadoresAsync(reembolso, usuarioIdAtor);
+
         return await GetByIdAsync(id);
+    }
+
+    // Avisa por e-mail os aprovadores do setor (também no reenvio após "Devolvido para revisão").
+    // O reembolso já foi enviado: nenhuma falha aqui pode desfazê-lo, só fica em log e na auditoria.
+    // O e-mail não leva dados bancários/PIX do solicitante e o log nunca recebe o conteúdo dele.
+    private async Task NotificarAprovadoresAsync(ReembolsoDespesa reembolso, int? usuarioIdAtor)
+    {
+        try
+        {
+            var emails = await _context.SetorAprovadores
+                .Where(a => a.SetorId == reembolso.SetorId)
+                .Select(a => a.Usuario.Email)
+                .ToListAsync();
+
+            var destinatarios = emails
+                .Where(e => !string.IsNullOrWhiteSpace(e))
+                .Select(e => e.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (destinatarios.Count == 0)
+            {
+                _logger.LogWarning(
+                    "Reembolso de despesa {ReembolsoId} enviado, mas o setor {SetorId} não tem aprovador com e-mail - aprovadores não avisados",
+                    reembolso.Id, reembolso.SetorId);
+                return;
+            }
+
+            var ptBr = CultureInfo.GetCultureInfo("pt-BR");
+            var valorTotal = reembolso.Itens.Sum(i => i.Valor);
+            var numero = reembolso.Id.ToString("D4");
+            var link = $"{_frontendBaseUrl}/reembolsos/{reembolso.Id}/detalhe";
+            var assunto = $"Reembolso {numero} aguardando sua aprovação - {reembolso.Usuario.Nome}";
+            var corpo = $"""
+                <p>Um reembolso de despesas foi enviado para aprovação.</p>
+                <p>Solicitante: <strong>{WebUtility.HtmlEncode(reembolso.Usuario.Nome)}</strong><br/>
+                Setor: <strong>{WebUtility.HtmlEncode(reembolso.Setor?.Nome ?? "-")}</strong><br/>
+                Reembolso: <strong>{numero}</strong><br/>
+                Data da solicitação: <strong>{reembolso.DataSolicitacao.ToString("dd/MM/yyyy", ptBr)}</strong><br/>
+                Valor total: <strong>R$ {valorTotal.ToString("N2", ptBr)}</strong><br/>
+                Itens: <strong>{reembolso.Itens.Count}</strong></p>
+                <p><a href="{link}">Abrir o reembolso para aprovar ou devolver</a></p>
+                """;
+
+            await _emailSender.EnviarAsync(destinatarios, assunto, corpo);
+
+            _logger.LogInformation(
+                "Aprovadores do setor {SetorId} avisados por e-mail sobre o reembolso {ReembolsoId} ({Quantidade} destinatário(s))",
+                reembolso.SetorId, reembolso.Id, destinatarios.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Reembolso de despesa {ReembolsoId} enviado, mas o e-mail aos aprovadores falhou", reembolso.Id);
+            await _auditoriaService.RegistrarAsync(
+                usuarioIdAtor, LogAuditoriaEntidade.ReembolsoDespesa, reembolso.Id, LogAuditoriaAcao.EmailNaoEnviado,
+                "E-mail aos aprovadores não enviado.");
+        }
+    }
+
+    private async Task<List<ReembolsoDespesaDto>> ParaDtosComAprovadoresAsync(List<ReembolsoDespesa> reembolsos)
+    {
+        var dtos = reembolsos.Select(r => ParaDto(r)).ToList();
+        await PreencherAprovadoresPendentesAsync(dtos);
+        return dtos;
+    }
+
+    // Uma única consulta para todos os setores da lista (sem N+1); só preenche quando o status é
+    // EnviadoParaAprovacao.
+    private async Task PreencherAprovadoresPendentesAsync(List<ReembolsoDespesaDto> dtos)
+    {
+        var pendentes = dtos.Where(d => d.Status == ReembolsoDespesaStatus.EnviadoParaAprovacao && d.SetorId is not null).ToList();
+        if (pendentes.Count == 0)
+        {
+            return;
+        }
+
+        var setorIds = pendentes.Select(d => d.SetorId!.Value).Distinct().ToList();
+        var aprovadores = await _context.SetorAprovadores
+            .Where(a => setorIds.Contains(a.SetorId))
+            .Select(a => new { a.SetorId, a.Usuario.Nome })
+            .ToListAsync();
+
+        var nomesPorSetor = aprovadores
+            .GroupBy(a => a.SetorId)
+            .ToDictionary(g => g.Key, g => g.Select(a => a.Nome).OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase).ToList());
+
+        foreach (var dto in pendentes)
+        {
+            dto.AprovadoresPendentes = nomesPorSetor.TryGetValue(dto.SetorId!.Value, out var nomes) ? nomes : [];
+        }
     }
 
     public async Task<ReembolsoDespesaDto> AprovarAsync(int id, int aprovadorUsuarioId)
@@ -378,7 +476,7 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
             .OrderBy(r => r.DataSolicitacao)
             .ToListAsync();
 
-        return reembolsos.Select(r => ParaDto(r)).ToList();
+        return await ParaDtosComAprovadoresAsync(reembolsos);
     }
 
     public async Task<List<ReembolsoDespesaDto>> GetAprovadosPorMimAsync(int aprovadorUsuarioId)
@@ -393,7 +491,7 @@ public class ReembolsoDespesaService : IReembolsoDespesaService
             .OrderByDescending(r => r.DataDecisao)
             .ToListAsync();
 
-        return reembolsos.Select(r => ParaDto(r)).ToList();
+        return await ParaDtosComAprovadoresAsync(reembolsos);
     }
 
     public async Task<byte[]> GerarPdfAsync(int id)

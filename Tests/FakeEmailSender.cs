@@ -12,6 +12,18 @@ public class FakeEmailSender : IEmailSender
     public IReadOnlyList<string>? UltimosDestinatarios { get; private set; }
     public IReadOnlyList<string>? UltimaCopia { get; private set; }
     public IReadOnlyList<EmailAnexo>? UltimosAnexos { get; private set; }
+    public string? UltimoAssuntoComAnexo { get; private set; }
+    public string? UltimoCorpoComAnexo { get; private set; }
+
+    public void Reiniciar()
+    {
+        ChamadasSimples = 0;
+        ChamadasComAnexo = 0;
+        UltimoDestinatarioSimples = UltimoAssuntoSimples = UltimoCorpoSimples = null;
+        UltimoAssuntoComAnexo = UltimoCorpoComAnexo = null;
+        UltimosDestinatarios = UltimaCopia = null;
+        UltimosAnexos = null;
+    }
 
     public Task EnviarAsync(string destinatario, string assunto, string corpoHtml)
     {
@@ -27,6 +39,8 @@ public class FakeEmailSender : IEmailSender
         IReadOnlyList<string>? copia = null, IReadOnlyList<EmailAnexo>? anexos = null)
     {
         ChamadasComAnexo++;
+        UltimoAssuntoComAnexo = assunto;
+        UltimoCorpoComAnexo = corpoHtml;
         UltimosDestinatarios = destinatarios;
         UltimaCopia = copia;
         UltimosAnexos = anexos;

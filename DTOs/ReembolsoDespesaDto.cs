@@ -17,6 +17,11 @@ public class ReembolsoDespesaDto
     public int? AprovadorId { get; set; }
     public string? AprovadorNome { get; set; }
     public string? ObservacaoAprovador { get; set; }
+
+    // Nomes dos aprovadores do setor, preenchido só enquanto o status é EnviadoParaAprovacao
+    // (vazio nos demais). Depois da decisão vale AprovadorNome.
+    public List<string> AprovadoresPendentes { get; set; } = [];
+
     public DateTime? DataDecisao { get; set; }
     public string? Observacao { get; set; }
     public List<ReembolsoDespesaItemDto> Itens { get; set; } = [];
