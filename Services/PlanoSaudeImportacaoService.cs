@@ -83,10 +83,11 @@ public partial class PlanoSaudeImportacaoService : IPlanoSaudeImportacaoService
             }
 
             var existente = dependente is { Id: 0 } ? null : existentes.FirstOrDefault(e => e.UsuarioId == item.Usuario.Id && e.DependenteId == dependente?.Id);
+            // A coparticipação NÃO vem mais da fatura: vem do arquivo de coparticipações (PlanoSaudeCoparticipacaoImportacaoService).
+            // Aqui só o valor mensal é gravado; a coparticipação já lançada no mês é preservada.
             if (existente is not null)
             {
                 existente.ValorMensal = item.ValorMensal;
-                existente.ValorCoparticipacao = item.Coparticipacao;
                 existente.DataAtualizacao = agora;
                 resultado.LancamentosAtualizados++;
             }
@@ -95,7 +96,7 @@ public partial class PlanoSaudeImportacaoService : IPlanoSaudeImportacaoService
                 _context.PlanoSaudeCustos.Add(new PlanoSaudeCusto
                 {
                     UsuarioId = item.Usuario.Id, Dependente = dependente, Ano = ano, Mes = mes,
-                    ValorMensal = item.ValorMensal, ValorCoparticipacao = item.Coparticipacao, DataCriacao = agora, DataAtualizacao = agora,
+                    ValorMensal = item.ValorMensal, ValorCoparticipacao = 0m, DataCriacao = agora, DataAtualizacao = agora,
                 });
                 resultado.LancamentosCriados++;
             }
@@ -152,7 +153,6 @@ public partial class PlanoSaudeImportacaoService : IPlanoSaudeImportacaoService
         public bool CriarDependente;
         public string? NomeDependenteParaCriar;
         public decimal ValorMensal;
-        public decimal Coparticipacao;
     }
 
     private sealed class PlanoAnalisado
@@ -307,19 +307,13 @@ public partial class PlanoSaudeImportacaoService : IPlanoSaudeImportacaoService
                 continue;
             }
 
-            plano.Itens.Add(new ItemImportacao
-            {
-                Usuario = usuario, IsTitular = true, ValorMensal = Arredondar(t.ValorMensal), Coparticipacao = Arredondar(t.Coparticipacao),
-            });
+            plano.Itens.Add(new ItemImportacao { Usuario = usuario, IsTitular = true, ValorMensal = Arredondar(t.ValorMensal) });
 
             var depsDoUsuario = dependentesPorUsuario.GetValueOrDefault(usuario.Id, []);
             foreach (var d in t.Dependentes.Values.OrderBy(d => d.Nome))
             {
                 var existente = depsDoUsuario.FirstOrDefault(x => Normalizar(x.Nome) == Normalizar(d.Nome));
-                var item = new ItemImportacao
-                {
-                    Usuario = usuario, IsTitular = false, ValorMensal = Arredondar(d.ValorMensal), Coparticipacao = Arredondar(d.Coparticipacao),
-                };
+                var item = new ItemImportacao { Usuario = usuario, IsTitular = false, ValorMensal = Arredondar(d.ValorMensal) };
 
                 if (existente is null)
                 {
@@ -348,7 +342,8 @@ public partial class PlanoSaudeImportacaoService : IPlanoSaudeImportacaoService
         foreach (var item in plano.Itens)
         {
             var atual = lancamentos.FirstOrDefault(l => l.UsuarioId == item.Usuario.Id && l.DependenteId == item.Dependente?.Id && !item.CriarDependente);
-            if (atual is null || (atual.ValorMensal == item.ValorMensal && atual.ValorCoparticipacao == item.Coparticipacao))
+            // Só o valor mensal é gravado por esta importação; a coparticipação atual do lançamento é preservada (aparece nos dois lados).
+            if (atual is null || atual.ValorMensal == item.ValorMensal)
             {
                 continue;
             }
@@ -357,29 +352,8 @@ public partial class PlanoSaudeImportacaoService : IPlanoSaudeImportacaoService
             {
                 Nome = item.IsTitular ? item.Usuario.Nome : $"{item.Dependente!.Nome} (dependente de {item.Usuario.Nome})",
                 ValorMensalAtual = atual.ValorMensal, CoparticipacaoAtual = atual.ValorCoparticipacao,
-                ValorMensalNovo = item.ValorMensal, CoparticipacaoNova = item.Coparticipacao,
+                ValorMensalNovo = item.ValorMensal, CoparticipacaoNova = atual.ValorCoparticipacao,
             });
-        }
-
-        // --- notas de débito já emitidas no mês: o valor da nota é um retrato congelado e não muda com a importação ---
-        var novaCoparticipacaoPorUsuario = plano.Itens.GroupBy(i => i.Usuario.Id).ToDictionary(g => g.Key, g => g.Sum(i => i.Coparticipacao));
-        var notasDoMes = await _context.NotasDebitoPj
-            .Where(n => idsUsuarios.Contains(n.UsuarioId) && n.Ano == ano && n.Mes == mes)
-            .ToListAsync();
-        var divergentes = notasDoMes
-            .Where(n => n.ValorBruto != novaCoparticipacaoPorUsuario.GetValueOrDefault(n.UsuarioId))
-            .ToList();
-        foreach (var porStatus in divergentes.GroupBy(n => n.Status).OrderBy(g => g.Key))
-        {
-            var nomes = string.Join("; ", porStatus.Select(n =>
-                $"{plano.Itens.First(i => i.Usuario.Id == n.UsuarioId).Usuario.Nome} (nota R$ {n.ValorBruto:N2} x coparticipação do arquivo R$ {novaCoparticipacaoPorUsuario[n.UsuarioId]:N2})"));
-            var orientacao = porStatus.Key switch
-            {
-                NotaDebitoPjStatus.Recebida => "já recebida(s): continua(m) como está(ão), sem alteração — confira a diferença manualmente",
-                NotaDebitoPjStatus.Enviada => "já enviada(s) ao colaborador: continua(m) como está(ão) — confira a diferença manualmente",
-                _ => "em rascunho: se o valor novo estiver certo, exclua a nota e crie de novo depois da importação",
-            };
-            previa.Avisos.Add($"{porStatus.Count()} nota(s) de débito {orientacao}: {nomes}.");
         }
 
         // --- totais e faturas ---
@@ -395,8 +369,15 @@ public partial class PlanoSaudeImportacaoService : IPlanoSaudeImportacaoService
             Titulares = plano.Itens.Count(i => i.IsTitular),
             Dependentes = plano.Itens.Count(i => !i.IsTitular),
             ValorMensal = Arredondar(plano.Itens.Sum(i => i.ValorMensal)),
-            Coparticipacao = Arredondar(plano.Itens.Sum(i => i.Coparticipacao)),
+            Coparticipacao = 0m, // a coparticipação vem do arquivo de coparticipações, não desta fatura
         };
+
+        if (previa.Arquivo.Coparticipacao > 0)
+        {
+            previa.Avisos.Add(
+                $"A coparticipação desta fatura (R$ {previa.Arquivo.Coparticipacao:N2}) não é importada: ela vem do arquivo de coparticipações " +
+                "(botão \"Importar coparticipação\"). Aqui só o valor mensal é lançado.");
+        }
 
         var numerosCadastrados = await _context.FaturasOperadoraSaude
             .Where(f => f.Ano == ano && f.Mes == mes).Select(f => f.NumeroFatura).ToListAsync();
@@ -444,7 +425,7 @@ public partial class PlanoSaudeImportacaoService : IPlanoSaudeImportacaoService
         foreach (var i in plano.Itens.OrderBy(i => i.Usuario.Id).ThenBy(i => i.Dependente?.Id ?? 0).ThenBy(i => i.NomeDependenteParaCriar))
         {
             sb.Append('|').Append(i.Usuario.Id).Append(':').Append(i.Dependente?.Id.ToString() ?? i.NomeDependenteParaCriar)
-              .Append(':').Append(i.ValorMensal.ToString(CultureInfo.InvariantCulture)).Append(':').Append(i.Coparticipacao.ToString(CultureInfo.InvariantCulture))
+              .Append(':').Append(i.ValorMensal.ToString(CultureInfo.InvariantCulture))
               .Append(':').Append(i.Dependente is { Ativo: false } ? "r" : "");
         }
 
@@ -542,7 +523,7 @@ public partial class PlanoSaudeImportacaoService : IPlanoSaudeImportacaoService
         return (linhas, faturas, competencias, ajustes);
     }
 
-    private static decimal Numero(IXLCell celula)
+    internal static decimal Numero(IXLCell celula)
     {
         if (celula.IsEmpty())
         {
@@ -572,7 +553,7 @@ public partial class PlanoSaudeImportacaoService : IPlanoSaudeImportacaoService
 
     // --- utilitários ---
 
-    private static string Normalizar(string texto)
+    internal static string Normalizar(string texto)
     {
         var decomposto = texto.Normalize(NormalizationForm.FormD);
         var sb = new StringBuilder();
@@ -591,7 +572,7 @@ public partial class PlanoSaudeImportacaoService : IPlanoSaudeImportacaoService
 
     private static string CpfFinal(string cpf) => cpf.Length >= 2 ? "***" + cpf[^2..] : string.Empty;
 
-    private static decimal Arredondar(decimal valor) => Math.Round(valor, 2, MidpointRounding.AwayFromZero);
+    internal static decimal Arredondar(decimal valor) => Math.Round(valor, 2, MidpointRounding.AwayFromZero);
 
     private static string TituloNome(string nome)
     {

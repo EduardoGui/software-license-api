@@ -124,7 +124,10 @@ public class PlanoSaudeImportacaoServiceTests
         Assert.Equal(1, previa.Importavel.Titulares);
         Assert.Equal(2, previa.Importavel.Dependentes);
         Assert.Equal(1100m, previa.Importavel.ValorMensal);
-        Assert.Equal(52.5m, previa.Importavel.Coparticipacao);
+        // A coparticipação da fatura não é importada: só informada (vem do arquivo de coparticipações).
+        Assert.Equal(0m, previa.Importavel.Coparticipacao);
+        Assert.Equal(52.5m, previa.Arquivo.Coparticipacao);
+        Assert.Contains(previa.Avisos, a => a.Contains("coparticipação desta fatura") && a.Contains("não é importada"));
         // A aba "unificada" repetida não entra na soma.
         Assert.Equal(1100m, previa.Arquivo.ValorMensal);
         var nova = Assert.Single(previa.DependentesACriar);
@@ -149,7 +152,7 @@ public class PlanoSaudeImportacaoServiceTests
 
         Assert.Equal(1, previa.Importavel.Titulares);
         Assert.Equal(621.57m, previa.Importavel.ValorMensal); // 571,57 + 100 - 50
-        Assert.Equal(14.85m, previa.Importavel.Coparticipacao);
+        Assert.Equal(0m, previa.Importavel.Coparticipacao);
     }
 
     [Fact]
@@ -190,7 +193,7 @@ public class PlanoSaudeImportacaoServiceTests
     }
 
     [Fact]
-    public async Task PreviaAsync_DeveAvisarNotasDeDebitoDoMesComValorDiferenteSemAlterarAsNotas()
+    public async Task ConfirmarAsync_NuncaMexeNasNotasDeDebitoENaoAvisaDeNotasPoisACoparticipacaoNaoVemMaisDaFatura()
     {
         var (service, context) = CriarService();
         var ana = CriarUsuario(context, "Ana Souza", "111.222.333-44");
@@ -210,9 +213,8 @@ public class PlanoSaudeImportacaoServiceTests
 
         var previa = await service.PreviaAsync(arquivo, 2026, 10);
 
-        Assert.Contains(previa.Avisos, a => a.Contains("1 nota(s) de débito já recebida(s)") && a.Contains("Ana Souza"));
-        Assert.Contains(previa.Avisos, a => a.Contains("em rascunho") && a.Contains("Bia Lima"));
-        Assert.DoesNotContain(previa.Avisos, a => a.Contains("Caio Reis"));
+        // O aviso de nota de débito divergente agora é da importação de coparticipações (é ela que muda o valor da nota).
+        Assert.DoesNotContain(previa.Avisos, a => a.Contains("nota(s) de débito"));
 
         await service.ConfirmarAsync(Planilha("10/2026",
             new Linha("T", "ANA SOUZA", "111.222.333-44", "1", Mens, Mensalidade: 500m),
@@ -306,7 +308,7 @@ public class PlanoSaudeImportacaoServiceTests
         var dependente = await context.Dependentes.SingleAsync();
         Assert.Equal("Maria da Silva e Souza", dependente.Nome);
         var titular = await context.PlanoSaudeCustos.SingleAsync(p => p.DependenteId == null);
-        Assert.Equal((500m, 40m), (titular.ValorMensal, titular.ValorCoparticipacao));
+        Assert.Equal((500m, 0m), (titular.ValorMensal, titular.ValorCoparticipacao)); // a coparticipação da fatura (40) não é gravada
         Assert.Equal(300m, (await context.PlanoSaudeCustos.SingleAsync(p => p.DependenteId == dependente.Id)).ValorMensal);
 
         // Segunda importação com valores novos: atualiza, sem duplicar, e a prévia avisa a sobrescrita.
@@ -317,7 +319,7 @@ public class PlanoSaudeImportacaoServiceTests
         };
         var previa2 = await service.PreviaAsync(Planilha("10/2026", novas), 2026, 10);
         var sobrescrita = Assert.Single(previa2.Sobrescritas.Where(s => s.Nome == "Ana Souza"));
-        Assert.Equal((500m, 40m, 520m, 0m), (sobrescrita.ValorMensalAtual, sobrescrita.CoparticipacaoAtual, sobrescrita.ValorMensalNovo, sobrescrita.CoparticipacaoNova));
+        Assert.Equal((500m, 0m, 520m, 0m), (sobrescrita.ValorMensalAtual, sobrescrita.CoparticipacaoAtual, sobrescrita.ValorMensalNovo, sobrescrita.CoparticipacaoNova));
         Assert.Empty(previa2.DependentesACriar);
 
         var resultado2 = await service.ConfirmarAsync(Planilha("10/2026", novas), 2026, 10, previa2.Assinatura);
@@ -326,6 +328,30 @@ public class PlanoSaudeImportacaoServiceTests
         Assert.Equal(2, await context.PlanoSaudeCustos.CountAsync());
         Assert.Equal(1, await context.Dependentes.CountAsync());
         Assert.Equal(ana.Id, titular.UsuarioId);
+    }
+
+    [Fact]
+    public async Task ConfirmarAsync_PreservaACoparticipacaoJaLancadaNoMes()
+    {
+        var (service, context) = CriarService();
+        var ana = CriarUsuario(context, "Ana Souza", "111.222.333-44");
+        context.PlanoSaudeCustos.Add(new PlanoSaudeCusto
+        {
+            UsuarioId = ana.Id, Ano = 2026, Mes = 10, ValorMensal = 500m, ValorCoparticipacao = 40m,
+            DataCriacao = Agora.UtcDateTime, DataAtualizacao = Agora.UtcDateTime,
+        });
+        context.SaveChanges();
+        var linhas = new[]
+        {
+            new Linha("T", "ANA SOUZA", "111.222.333-44", "100", Mens, Mensalidade: 520m),
+            new Linha("T", "ANA SOUZA", "111.222.333-44", "100", Cop, Copart: 99m),
+        };
+
+        var previa = await service.PreviaAsync(Planilha("10/2026", linhas), 2026, 10);
+        await service.ConfirmarAsync(Planilha("10/2026", linhas), 2026, 10, previa.Assinatura);
+
+        var lancamento = await context.PlanoSaudeCustos.SingleAsync();
+        Assert.Equal((520m, 40m), (lancamento.ValorMensal, lancamento.ValorCoparticipacao));
     }
 
     [Fact]

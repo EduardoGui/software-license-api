@@ -13,6 +13,8 @@ public class ImportacaoPlanoSaudePreviaDto
     public List<ImportacaoPessoaDto> TitularesAmbiguos { get; set; } = [];
     public List<ImportacaoPessoaDto> TitularesForaDoPeriodo { get; set; } = [];
     public List<ImportacaoPessoaDto> DependentesSemTitular { get; set; } = [];
+    // Só na importação de coparticipações: dependentes do arquivo que não foram casados com o cadastro (o Detalhe diz o motivo).
+    public List<ImportacaoPessoaDto> DependentesNaoImportados { get; set; } = [];
     // Linhas da fatura sem beneficiário (correções, cobranças retroativas, imposto): não são importadas, só informadas.
     public List<ImportacaoAjusteDto> AjustesSemBeneficiario { get; set; } = [];
     public List<ImportacaoDependenteNovoDto> DependentesACriar { get; set; } = [];

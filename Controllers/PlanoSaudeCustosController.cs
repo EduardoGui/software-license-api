@@ -13,12 +13,14 @@ public class PlanoSaudeCustosController : ControllerBase
     private readonly IPlanoSaudeCustoService _planoSaudeCustoService;
     private readonly IRelatorioMensalPlanoSaudeService _relatorioMensalPlanoSaudeService;
     private readonly IPlanoSaudeImportacaoService _importacaoService;
+    private readonly IPlanoSaudeCoparticipacaoImportacaoService _coparticipacaoService;
 
     public PlanoSaudeCustosController(
         IPlanoSaudeCustoService planoSaudeCustoService, IRelatorioMensalPlanoSaudeService relatorioMensalPlanoSaudeService,
-        IPlanoSaudeImportacaoService importacaoService)
+        IPlanoSaudeImportacaoService importacaoService, IPlanoSaudeCoparticipacaoImportacaoService coparticipacaoService)
     {
         _importacaoService = importacaoService;
+        _coparticipacaoService = coparticipacaoService;
         _planoSaudeCustoService = planoSaudeCustoService;
         _relatorioMensalPlanoSaudeService = relatorioMensalPlanoSaudeService;
     }
@@ -63,6 +65,40 @@ public class PlanoSaudeCustosController : ControllerBase
         await arquivo.CopyToAsync(stream);
         stream.Position = 0;
         return Ok(await _importacaoService.ConfirmarAsync(stream, ano, mes, assinatura));
+    }
+
+    // Importa o arquivo de coparticipações (xlsx). Só a coparticipação é gravada; o valor mensal vem da fatura.
+    [HttpPost("importar-coparticipacao/previa")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<ActionResult<ImportacaoPlanoSaudePreviaDto>> PreviaImportacaoCoparticipacao(IFormFile arquivo, [FromForm] int ano, [FromForm] int mes)
+    {
+        var erro = ValidarArquivo(arquivo);
+        if (erro is not null)
+        {
+            return BadRequest(new { message = erro });
+        }
+
+        using var stream = new MemoryStream();
+        await arquivo.CopyToAsync(stream);
+        stream.Position = 0;
+        return Ok(await _coparticipacaoService.PreviaAsync(stream, ano, mes));
+    }
+
+    [HttpPost("importar-coparticipacao/confirmar")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<ActionResult<ImportacaoPlanoSaudeResultadoDto>> ConfirmarImportacaoCoparticipacao(
+        IFormFile arquivo, [FromForm] int ano, [FromForm] int mes, [FromForm] string? assinatura)
+    {
+        var erro = ValidarArquivo(arquivo);
+        if (erro is not null)
+        {
+            return BadRequest(new { message = erro });
+        }
+
+        using var stream = new MemoryStream();
+        await arquivo.CopyToAsync(stream);
+        stream.Position = 0;
+        return Ok(await _coparticipacaoService.ConfirmarAsync(stream, ano, mes, assinatura));
     }
 
     private static string? ValidarArquivo(IFormFile? arquivo)
