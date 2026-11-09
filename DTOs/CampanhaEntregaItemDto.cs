@@ -8,7 +8,12 @@ public class CampanhaEntregaItemDto
     public int Quantidade { get; set; }
     public DateOnly? Validade { get; set; }
 
+    // Estoque ANTERIOR (informado na criação da campanha).
     public int? QuantidadeDisponivel { get; set; }
+    // Soma das "novas entradas de itens comprados" deste item.
+    public int QuantidadeEntradas { get; set; }
+    // Estoque total = anterior + entradas (null quando o item não controla estoque).
+    public int? EstoqueTotal { get; set; }
 
     // Quantidade já atribuída em entregas não canceladas (reservada, inclusive pendente).
     public int QuantidadeEntregue { get; set; }

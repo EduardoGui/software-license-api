@@ -371,6 +371,44 @@ namespace SoftwareLicense.Api.Migrations
                     b.ToTable("CampanhasEntrega");
                 });
 
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.CampanhaEntregaEntrada", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CampanhaEntregaItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly>("Data")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Observacao")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("Quantidade")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RegistradoPorNome")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("UsuarioId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CampanhaEntregaItemId");
+
+                    b.ToTable("CampanhaEntregaEntradas");
+                });
+
             modelBuilder.Entity("SoftwareLicense.Api.Entities.CampanhaEntregaItem", b =>
                 {
                     b.Property<int>("Id")
@@ -3730,6 +3768,17 @@ namespace SoftwareLicense.Api.Migrations
                     b.Navigation("Usuario");
                 });
 
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.CampanhaEntregaEntrada", b =>
+                {
+                    b.HasOne("SoftwareLicense.Api.Entities.CampanhaEntregaItem", "CampanhaEntregaItem")
+                        .WithMany("Entradas")
+                        .HasForeignKey("CampanhaEntregaItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CampanhaEntregaItem");
+                });
+
             modelBuilder.Entity("SoftwareLicense.Api.Entities.CampanhaEntregaItem", b =>
                 {
                     b.HasOne("SoftwareLicense.Api.Entities.CampanhaEntrega", "CampanhaEntrega")
@@ -4636,6 +4685,11 @@ namespace SoftwareLicense.Api.Migrations
                     b.Navigation("Entregas");
 
                     b.Navigation("Itens");
+                });
+
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.CampanhaEntregaItem", b =>
+                {
+                    b.Navigation("Entradas");
                 });
 
             modelBuilder.Entity("SoftwareLicense.Api.Entities.Contrato", b =>

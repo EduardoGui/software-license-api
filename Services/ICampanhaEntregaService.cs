@@ -13,6 +13,7 @@ public interface ICampanhaEntregaService
     Task<CampanhaEntregaDto> EncerrarAsync(int id);
     Task<CampanhaEntregaResumoDto> ObterResumoAsync(int campanhaId);
     Task<CampanhaEntregaDto> AtualizarItensCampanhaAsync(int campanhaId, UpdateCampanhaEntregaItensDto dto);
+    Task<CampanhaEntregaDto> RegistrarEntradaAsync(int campanhaId, CreateCampanhaEntregaEntradaDto dto, int? usuarioId);
 
     Task<List<ColaboradorDisponivelDto>> ListarColaboradoresDisponiveisAsync(int campanhaId, ColaboradorDisponivelFiltroDto filtro);
 

@@ -35,7 +35,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
 
     public async Task<List<CampanhaEntregaDto>> GetAllAsync(CampanhaEntregaFiltroDto filtro)
     {
-        var query = _context.CampanhasEntrega.Include(c => c.Itens).Include(c => c.Entregas).ThenInclude(e => e.Itens).AsQueryable();
+        var query = _context.CampanhasEntrega.Include(c => c.Itens).ThenInclude(i => i.Entradas).Include(c => c.Entregas).ThenInclude(e => e.Itens).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(filtro.Nome))
         {
@@ -413,6 +413,11 @@ public class CampanhaEntregaService : ICampanhaEntregaService
                     $"{Rotulo(item)} já está atribuído em entregas desta campanha — cancele essas entregas antes de remover o item.");
             }
 
+            if (item.Entradas.Count > 0)
+            {
+                throw new BusinessRuleException($"{Rotulo(item)} tem entradas de itens comprados registradas e não pode ser removido da campanha.");
+            }
+
             campanha.Itens.Remove(item);
             _context.CampanhaEntregaItens.Remove(item);
         }
@@ -425,10 +430,17 @@ public class CampanhaEntregaService : ICampanhaEntregaService
             {
                 var existente = campanha.Itens.First(i => i.Id == input.Id.Value);
                 var atribuido = atribuidoPorItem.GetValueOrDefault(existente.Id);
-                if (input.QuantidadeDisponivel.HasValue && input.QuantidadeDisponivel.Value < atribuido)
+                var entradas = existente.Entradas.Sum(e => e.Quantidade);
+                if (!input.QuantidadeDisponivel.HasValue && entradas > 0)
+                {
+                    throw new BusinessRuleException($"{Rotulo(existente)} tem entradas de itens comprados: informe o estoque anterior (pode ser 0) em vez de deixá-lo em branco.");
+                }
+
+                // O estoque total (anterior + entradas) não pode ficar abaixo do que já está atribuído.
+                if (input.QuantidadeDisponivel.HasValue && input.QuantidadeDisponivel.Value + entradas < atribuido)
                 {
                     throw new BusinessRuleException(
-                        $"O estoque de {Rotulo(existente)} não pode ficar abaixo de {atribuido}, que já está atribuído em entregas.");
+                        $"O estoque de {Rotulo(existente)} (anterior + entradas) não pode ficar abaixo de {atribuido}, que já está atribuído em entregas.");
                 }
 
                 existente.Descricao = input.Descricao.Trim();
@@ -467,6 +479,98 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Itens da campanha {CampanhaId} atualizados", campanhaId);
+
+        return ParaDto(campanha);
+    }
+
+    // "Nova entrada de itens comprados": soma uma remessa ao estoque dos itens da campanha, mantendo a mesma campanha.
+    // O estoque anterior não é mexido; cada entrada fica registrada (data, quantidade, observação, quem) e o saldo
+    // continua sendo calculado: anterior + entradas - atribuído. Item que ainda não existe no catálogo (ex.: tamanho novo) é criado.
+    public async Task<CampanhaEntregaDto> RegistrarEntradaAsync(int campanhaId, CreateCampanhaEntregaEntradaDto dto, int? usuarioId)
+    {
+        var campanha = await BuscarCampanhaOuFalhar(campanhaId);
+
+        if (campanha.Status == CampanhaEntregaStatus.Cancelada)
+        {
+            throw new BusinessRuleException("Não é possível dar entrada de itens em uma campanha cancelada.");
+        }
+
+        if (dto.Itens.Count == 0)
+        {
+            throw new BusinessRuleException("Informe ao menos um item.");
+        }
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        var data = dto.Data ?? throw new BusinessRuleException("Informe a data da entrada.");
+        if (data > DateOnly.FromDateTime(agora).AddDays(1))
+        {
+            throw new BusinessRuleException("A data da entrada não pode ser futura.");
+        }
+
+        // Resolve cada linha para um item do catálogo (existente ou novo) e soma linhas repetidas do mesmo item.
+        var quantidades = new List<(CampanhaEntregaItem Item, int Quantidade)>();
+        foreach (var linha in dto.Itens)
+        {
+            CampanhaEntregaItem? item;
+            if (linha.CampanhaEntregaItemId.HasValue)
+            {
+                item = campanha.Itens.FirstOrDefault(i => i.Id == linha.CampanhaEntregaItemId.Value)
+                    ?? throw new BusinessRuleException("Um dos itens informados não pertence a esta campanha.");
+            }
+            else
+            {
+                var descricao = linha.Descricao?.Trim();
+                if (string.IsNullOrEmpty(descricao))
+                {
+                    throw new BusinessRuleException("Informe a descrição do item que está entrando.");
+                }
+
+                var tamanho = string.IsNullOrWhiteSpace(linha.Tamanho) ? null : linha.Tamanho.Trim();
+                item = campanha.Itens.FirstOrDefault(i =>
+                    string.Equals(i.Descricao, descricao, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(i.Tamanho ?? string.Empty, tamanho ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+
+                if (item is null)
+                {
+                    // Item novo na campanha (ex.: tamanho que não estava na lista): nasce com estoque anterior 0 e fora do kit padrão.
+                    item = new CampanhaEntregaItem { Descricao = descricao, Tamanho = tamanho, Quantidade = 0, QuantidadeDisponivel = 0, DataCriacao = agora };
+                    campanha.Itens.Add(item);
+                }
+            }
+
+            if (item.QuantidadeDisponivel is null)
+            {
+                throw new BusinessRuleException(
+                    $"{Rotulo(item)} não controla estoque. Informe o estoque anterior (pode ser 0) no editor de itens da campanha antes de dar entrada.");
+            }
+
+            quantidades.Add((item, linha.Quantidade));
+        }
+
+        string? registradoPor = null;
+        if (usuarioId.HasValue)
+        {
+            registradoPor = await _context.Usuarios.Where(u => u.Id == usuarioId.Value).Select(u => u.Nome).FirstOrDefaultAsync();
+        }
+
+        var observacao = string.IsNullOrWhiteSpace(dto.Observacao) ? null : dto.Observacao.Trim();
+        var resumo = new List<string>();
+        foreach (var grupo in quantidades.GroupBy(q => q.Item))
+        {
+            var total = grupo.Sum(q => q.Quantidade);
+            grupo.Key.Entradas.Add(new CampanhaEntregaEntrada
+            {
+                Data = data, Quantidade = total, Observacao = observacao, UsuarioId = usuarioId, RegistradoPorNome = registradoPor, DataCriacao = agora,
+            });
+            resumo.Add($"{Rotulo(grupo.Key)} +{total}");
+        }
+
+        campanha.DataAtualizacao = agora;
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Entrada de itens comprados na campanha {CampanhaId}: {Resumo}", campanhaId, string.Join("; ", resumo));
+        var detalhe = $"Nova entrada de itens comprados ({data:dd/MM/yyyy}): {string.Join("; ", resumo)}" + (observacao is null ? string.Empty : $". Obs.: {observacao}");
+        await _auditoriaService.RegistrarAsync(usuarioId, LogAuditoriaEntidade.CampanhaEntrega, campanha.Id, LogAuditoriaAcao.EntradaItensRegistrada, detalhe);
 
         return ParaDto(campanha);
     }
@@ -970,7 +1074,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         foreach (var (itemId, quantidade) in pedidoPorItem)
         {
             var item = campanha.Itens.First(i => i.Id == itemId);
-            if (item.QuantidadeDisponivel is null)
+            if (item.EstoqueTotal is null)
             {
                 continue;
             }
@@ -981,7 +1085,8 @@ public class CampanhaEntregaService : ICampanhaEntregaService
                 .Where(ei => ei.CampanhaEntregaItemId == itemId)
                 .Sum(ei => ei.Quantidade);
 
-            var saldo = item.QuantidadeDisponivel.Value - jaAtribuido;
+            // Estoque total = anterior (criação da campanha) + novas entradas de itens comprados.
+            var saldo = item.EstoqueTotal.Value - jaAtribuido;
             if (quantidade > saldo)
             {
                 throw new BusinessRuleException($"Estoque insuficiente de {Rotulo(item)}: saldo {Math.Max(saldo, 0)}, pedido {quantidade}.");
@@ -1000,7 +1105,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
     {
         var campanha = await _context.CampanhasEntrega
             .Include(c => c.Entregas).ThenInclude(e => e.Itens)
-            .Include(c => c.Itens)
+            .Include(c => c.Itens).ThenInclude(i => i.Entradas)
             .FirstOrDefaultAsync(c => c.Id == id);
 
         if (campanha is null)
@@ -1053,10 +1158,27 @@ public class CampanhaEntregaService : ICampanhaEntregaService
                     Quantidade = i.Quantidade,
                     Validade = i.Validade,
                     QuantidadeDisponivel = i.QuantidadeDisponivel,
+                    QuantidadeEntradas = i.Entradas.Sum(e => e.Quantidade),
+                    EstoqueTotal = i.EstoqueTotal,
                     QuantidadeEntregue = quantidadeEntregue,
-                    SaldoDisponivel = i.QuantidadeDisponivel.HasValue ? i.QuantidadeDisponivel.Value - quantidadeEntregue : null,
+                    SaldoDisponivel = i.EstoqueTotal.HasValue ? i.EstoqueTotal.Value - quantidadeEntregue : null,
                 };
             }).ToList(),
+            Entradas = c.Itens
+                .SelectMany(i => i.Entradas.Select(e => new CampanhaEntregaEntradaDto
+                {
+                    Id = e.Id,
+                    CampanhaEntregaItemId = i.Id,
+                    Descricao = i.Descricao,
+                    Tamanho = i.Tamanho,
+                    Data = e.Data,
+                    Quantidade = e.Quantidade,
+                    Observacao = e.Observacao,
+                    RegistradoPorNome = e.RegistradoPorNome,
+                    DataCriacao = e.DataCriacao,
+                }))
+                .OrderByDescending(e => e.Data).ThenByDescending(e => e.Id)
+                .ToList(),
         };
     }
 

@@ -16,7 +16,13 @@ public class CampanhaEntregaItem
     // Estoque de referência pra este item (opcional - null = não controla saldo). O saldo restante é
     // sempre calculado (QuantidadeDisponivel - soma do que já foi entregue em Entregas não canceladas),
     // nunca decrementado diretamente, pra não correr risco de ficar dessincronizado.
+    // É o estoque ANTERIOR (informado na criação da campanha); as compras posteriores entram como Entradas.
     public int? QuantidadeDisponivel { get; set; }
+
+    public List<CampanhaEntregaEntrada> Entradas { get; set; } = [];
+
+    // Estoque total = anterior + entradas (null = o item não controla estoque). Calculado, não mapeado no banco.
+    public int? EstoqueTotal => QuantidadeDisponivel.HasValue ? QuantidadeDisponivel.Value + Entradas.Sum(e => e.Quantidade) : null;
 
     public DateTime DataCriacao { get; set; }
 }

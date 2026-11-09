@@ -81,6 +81,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Entrega> Entregas => Set<Entrega>();
     public DbSet<EntregaItem> EntregaItens => Set<EntregaItem>();
     public DbSet<CampanhaEntregaItem> CampanhaEntregaItens => Set<CampanhaEntregaItem>();
+    public DbSet<CampanhaEntregaEntrada> CampanhaEntregaEntradas => Set<CampanhaEntregaEntrada>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -797,6 +798,15 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(i => i.Tamanho).HasMaxLength(30);
             entity.HasIndex(i => i.CampanhaEntregaId);
             entity.HasOne(i => i.CampanhaEntrega).WithMany(c => c.Itens).HasForeignKey(i => i.CampanhaEntregaId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CampanhaEntregaEntrada>(entity =>
+        {
+            entity.Property(e => e.Observacao).HasMaxLength(500);
+            entity.Property(e => e.RegistradoPorNome).HasMaxLength(200);
+            entity.HasIndex(e => e.CampanhaEntregaItemId);
+            // Cascade só para a exclusão da campanha inteira; o service impede remover do catálogo um item que tenha entradas.
+            entity.HasOne(e => e.CampanhaEntregaItem).WithMany(i => i.Entradas).HasForeignKey(e => e.CampanhaEntregaItemId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<LogAuditoria>(entity =>

@@ -74,6 +74,13 @@ public class CampanhasEntregaController : ControllerBase
         return Ok(await _campanhaEntregaService.AtualizarItensCampanhaAsync(id, dto));
     }
 
+    // "Nova entrada de itens comprados": soma uma remessa ao estoque da campanha (anterior + entradas).
+    [HttpPost("{id:int}/entradas")]
+    public async Task<ActionResult<CampanhaEntregaDto>> RegistrarEntrada(int id, CreateCampanhaEntregaEntradaDto dto)
+    {
+        return Ok(await _campanhaEntregaService.RegistrarEntradaAsync(id, dto, User.ObterUsuarioId()));
+    }
+
     [HttpGet("{id:int}/colaboradores-disponiveis")]
     public async Task<ActionResult<List<ColaboradorDisponivelDto>>> ListarColaboradoresDisponiveis(int id, [FromQuery] ColaboradorDisponivelFiltroDto filtro)
     {
