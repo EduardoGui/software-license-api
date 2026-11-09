@@ -130,6 +130,13 @@ public class CampanhasEntregaController : ControllerBase
         return Ok(await _campanhaEntregaService.CancelarEntregaAsync(id, entregaId));
     }
 
+    // Troca/devolução de itens de uma entrega Confirmada (a entrega continua Confirmada; fica o histórico e o saldo é recalculado).
+    [HttpPost("{id:int}/entregas/{entregaId:int}/devolucoes")]
+    public async Task<ActionResult<EntregaDto>> RegistrarDevolucao(int id, int entregaId, CreateEntregaDevolucaoDto dto)
+    {
+        return Ok(await _campanhaEntregaService.RegistrarDevolucaoAsync(id, entregaId, dto, User.ObterUsuarioId()));
+    }
+
     // Uso administrativo (sem tela): desfaz a confirmação/divergência do colaborador. Só Administrador.
     [HttpPatch("{id:int}/entregas/{entregaId:int}/reverter-confirmacao")]
     [Authorize(Roles = Roles.Administrador)]

@@ -8,4 +8,8 @@ public class EntregaItemDto
     public string? Tamanho { get; set; }
     public int Quantidade { get; set; }
     public DateOnly? Validade { get; set; }
+    // Quanto deste item já foi devolvido/trocado (Quantidade é o entregue originalmente).
+    public int QuantidadeDevolvida { get; set; }
+    // Preenchido quando o item saiu numa troca/devolução (id do registro de troca).
+    public int? EntregaDevolucaoId { get; set; }
 }

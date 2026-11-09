@@ -1051,6 +1051,75 @@ namespace SoftwareLicense.Api.Migrations
                     b.ToTable("Entregas");
                 });
 
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.EntregaDevolucao", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateOnly>("Data")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime>("DataCriacao")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("EntregaId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Motivo")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Observacao")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("RegistradoPorNome")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("UsuarioId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EntregaId");
+
+                    b.ToTable("EntregaDevolucoes");
+                });
+
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.EntregaDevolucaoItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("EntregaDevolucaoId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("EntregaItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Quantidade")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("VoltaAoEstoque")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EntregaDevolucaoId");
+
+                    b.HasIndex("EntregaItemId");
+
+                    b.ToTable("EntregaDevolucaoItens");
+                });
+
             modelBuilder.Entity("SoftwareLicense.Api.Entities.EntregaItem", b =>
                 {
                     b.Property<int>("Id")
@@ -1070,6 +1139,9 @@ namespace SoftwareLicense.Api.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<int?>("EntregaDevolucaoId")
+                        .HasColumnType("integer");
+
                     b.Property<int>("EntregaId")
                         .HasColumnType("integer");
 
@@ -1086,6 +1158,8 @@ namespace SoftwareLicense.Api.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CampanhaEntregaItemId");
+
+                    b.HasIndex("EntregaDevolucaoId");
 
                     b.HasIndex("EntregaId");
 
@@ -3930,11 +4004,46 @@ namespace SoftwareLicense.Api.Migrations
                     b.Navigation("Usuario");
                 });
 
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.EntregaDevolucao", b =>
+                {
+                    b.HasOne("SoftwareLicense.Api.Entities.Entrega", "Entrega")
+                        .WithMany("Devolucoes")
+                        .HasForeignKey("EntregaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Entrega");
+                });
+
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.EntregaDevolucaoItem", b =>
+                {
+                    b.HasOne("SoftwareLicense.Api.Entities.EntregaDevolucao", "EntregaDevolucao")
+                        .WithMany("Itens")
+                        .HasForeignKey("EntregaDevolucaoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SoftwareLicense.Api.Entities.EntregaItem", "EntregaItem")
+                        .WithMany("Devolucoes")
+                        .HasForeignKey("EntregaItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("EntregaDevolucao");
+
+                    b.Navigation("EntregaItem");
+                });
+
             modelBuilder.Entity("SoftwareLicense.Api.Entities.EntregaItem", b =>
                 {
                     b.HasOne("SoftwareLicense.Api.Entities.CampanhaEntregaItem", "CampanhaEntregaItem")
                         .WithMany()
                         .HasForeignKey("CampanhaEntregaItemId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SoftwareLicense.Api.Entities.EntregaDevolucao", "EntregaDevolucao")
+                        .WithMany("ItensRetirados")
+                        .HasForeignKey("EntregaDevolucaoId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("SoftwareLicense.Api.Entities.Entrega", "Entrega")
@@ -3946,6 +4055,8 @@ namespace SoftwareLicense.Api.Migrations
                     b.Navigation("CampanhaEntregaItem");
 
                     b.Navigation("Entrega");
+
+                    b.Navigation("EntregaDevolucao");
                 });
 
             modelBuilder.Entity("SoftwareLicense.Api.Entities.Equipamento", b =>
@@ -4704,7 +4815,21 @@ namespace SoftwareLicense.Api.Migrations
 
             modelBuilder.Entity("SoftwareLicense.Api.Entities.Entrega", b =>
                 {
+                    b.Navigation("Devolucoes");
+
                     b.Navigation("Itens");
+                });
+
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.EntregaDevolucao", b =>
+                {
+                    b.Navigation("Itens");
+
+                    b.Navigation("ItensRetirados");
+                });
+
+            modelBuilder.Entity("SoftwareLicense.Api.Entities.EntregaItem", b =>
+                {
+                    b.Navigation("Devolucoes");
                 });
 
             modelBuilder.Entity("SoftwareLicense.Api.Entities.FaturaOperadoraSaude", b =>

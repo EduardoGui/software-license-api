@@ -82,6 +82,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<EntregaItem> EntregaItens => Set<EntregaItem>();
     public DbSet<CampanhaEntregaItem> CampanhaEntregaItens => Set<CampanhaEntregaItem>();
     public DbSet<CampanhaEntregaEntrada> CampanhaEntregaEntradas => Set<CampanhaEntregaEntrada>();
+    public DbSet<EntregaDevolucao> EntregaDevolucoes => Set<EntregaDevolucao>();
+    public DbSet<EntregaDevolucaoItem> EntregaDevolucaoItens => Set<EntregaDevolucaoItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -798,6 +800,25 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(i => i.Tamanho).HasMaxLength(30);
             entity.HasIndex(i => i.CampanhaEntregaId);
             entity.HasOne(i => i.CampanhaEntrega).WithMany(c => c.Itens).HasForeignKey(i => i.CampanhaEntregaId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<EntregaDevolucao>(entity =>
+        {
+            entity.Property(d => d.Motivo).IsRequired().HasMaxLength(30);
+            entity.Property(d => d.Observacao).HasMaxLength(500);
+            entity.Property(d => d.RegistradoPorNome).HasMaxLength(200);
+            entity.HasIndex(d => d.EntregaId);
+            entity.HasOne(d => d.Entrega).WithMany(e => e.Devolucoes).HasForeignKey(d => d.EntregaId).OnDelete(DeleteBehavior.Cascade);
+            // Itens retirados na troca somem junto com a entrega (cascata da entrega); aqui o vínculo só é limpo.
+            entity.HasMany(d => d.ItensRetirados).WithOne(i => i.EntregaDevolucao).HasForeignKey(i => i.EntregaDevolucaoId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<EntregaDevolucaoItem>(entity =>
+        {
+            entity.HasIndex(i => i.EntregaDevolucaoId);
+            entity.HasIndex(i => i.EntregaItemId);
+            entity.HasOne(i => i.EntregaDevolucao).WithMany(d => d.Itens).HasForeignKey(i => i.EntregaDevolucaoId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(i => i.EntregaItem).WithMany(i => i.Devolucoes).HasForeignKey(i => i.EntregaItemId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<CampanhaEntregaEntrada>(entity =>

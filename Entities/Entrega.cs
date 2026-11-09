@@ -39,4 +39,6 @@ public class Entrega
     public DateTime DataAtualizacao { get; set; }
 
     public List<EntregaItem> Itens { get; set; } = [];
+    // Trocas/devoluções registradas depois da confirmação.
+    public List<EntregaDevolucao> Devolucoes { get; set; } = [];
 }

@@ -29,4 +29,5 @@ public static class LogAuditoriaAcao
     public const string ConfirmacaoRevertida = "ConfirmacaoRevertida";
     public const string DivergenciaResolvida = "DivergenciaResolvida";
     public const string EntradaItensRegistrada = "EntradaItensRegistrada";
+    public const string DevolucaoRegistrada = "DevolucaoRegistrada";
 }

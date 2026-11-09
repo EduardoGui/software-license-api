@@ -35,7 +35,7 @@ public class CampanhaEntregaService : ICampanhaEntregaService
 
     public async Task<List<CampanhaEntregaDto>> GetAllAsync(CampanhaEntregaFiltroDto filtro)
     {
-        var query = _context.CampanhasEntrega.Include(c => c.Itens).ThenInclude(i => i.Entradas).Include(c => c.Entregas).ThenInclude(e => e.Itens).AsQueryable();
+        var query = _context.CampanhasEntrega.Include(c => c.Itens).ThenInclude(i => i.Entradas).Include(c => c.Entregas).ThenInclude(e => e.Itens).ThenInclude(i => i.Devolucoes).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(filtro.Nome))
         {
@@ -403,11 +403,19 @@ public class CampanhaEntregaService : ICampanhaEntregaService
             .SelectMany(e => e.Itens)
             .Where(ei => ei.CampanhaEntregaItemId.HasValue)
             .GroupBy(ei => ei.CampanhaEntregaItemId!.Value)
-            .ToDictionary(g => g.Key, g => g.Sum(ei => ei.Quantidade));
+            .ToDictionary(g => g.Key, g => g.Sum(ei => ei.Quantidade - ei.QuantidadeDevolvidaAoEstoque));
+
+        // Itens ligados a alguma entrega (mesmo que tudo tenha sido devolvido) não podem sair do catálogo.
+        var itensEmEntregas = campanha.Entregas
+            .Where(e => e.Status != EntregaStatus.Cancelado)
+            .SelectMany(e => e.Itens)
+            .Where(ei => ei.CampanhaEntregaItemId.HasValue)
+            .Select(ei => ei.CampanhaEntregaItemId!.Value)
+            .ToHashSet();
 
         foreach (var item in campanha.Itens.Where(i => !idsRecebidos.Contains(i.Id)).ToList())
         {
-            if (atribuidoPorItem.ContainsKey(item.Id))
+            if (itensEmEntregas.Contains(item.Id))
             {
                 throw new BusinessRuleException(
                     $"{Rotulo(item)} já está atribuído em entregas desta campanha — cancele essas entregas antes de remover o item.");
@@ -575,6 +583,117 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         return ParaDto(campanha);
     }
 
+    // Troca/devolução de itens de uma entrega Confirmada (ex.: pegou camisa G, devolveu a G e levou a P). A entrega continua
+    // Confirmada: o que voltou e o que saiu ficam registrados (EntregaDevolucao) e o saldo é recalculado — a peça devolvida
+    // que volta ao estoque libera saldo, a nova consome. Tudo numa só gravação; qualquer falha não grava nada.
+    public async Task<EntregaDto> RegistrarDevolucaoAsync(int campanhaId, int entregaId, CreateEntregaDevolucaoDto dto, int? usuarioId)
+    {
+        var campanha = await BuscarCampanhaOuFalhar(campanhaId);
+        var entrega = await BuscarEntregaOuFalhar(campanhaId, entregaId);
+
+        if (campanha.Status == CampanhaEntregaStatus.Cancelada)
+        {
+            throw new BusinessRuleException("Não é possível registrar troca/devolução em uma campanha cancelada.");
+        }
+
+        if (entrega.Status != EntregaStatus.Confirmado)
+        {
+            throw new BusinessRuleException(
+                "Só é possível registrar troca/devolução em uma entrega Confirmada. Antes da confirmação, ajuste os itens da própria entrega.");
+        }
+
+        if (!EntregaDevolucaoMotivo.Validos.Contains(dto.Motivo))
+        {
+            throw new BusinessRuleException($"Motivo inválido. Use: {string.Join(", ", EntregaDevolucaoMotivo.Validos)}.");
+        }
+
+        var agora = _timeProvider.GetUtcNow().UtcDateTime;
+        var data = dto.Data ?? throw new BusinessRuleException("Informe a data da troca/devolução.");
+        if (data > DateOnly.FromDateTime(agora).AddDays(1))
+        {
+            throw new BusinessRuleException("A data da troca/devolução não pode ser futura.");
+        }
+
+        if (dto.Devolvidos.Count == 0)
+        {
+            throw new BusinessRuleException("Informe ao menos um item devolvido.");
+        }
+
+        // Devolvido: o item precisa ser da entrega e a quantidade não pode passar do que o colaborador ainda tem.
+        var devolvidos = new List<(EntregaItem Item, int Quantidade, bool Volta)>();
+        foreach (var linha in dto.Devolvidos)
+        {
+            var item = entrega.Itens.FirstOrDefault(i => i.Id == linha.EntregaItemId)
+                ?? throw new BusinessRuleException("Um dos itens devolvidos não pertence a esta entrega.");
+            devolvidos.Add((item, linha.Quantidade, linha.VoltaAoEstoque));
+        }
+
+        foreach (var grupo in devolvidos.GroupBy(d => d.Item))
+        {
+            var pedido = grupo.Sum(d => d.Quantidade);
+            if (pedido > grupo.Key.QuantidadeAtual)
+            {
+                throw new BusinessRuleException(
+                    $"O colaborador só tem {grupo.Key.QuantidadeAtual} de {Rotulo(grupo.Key.Descricao, grupo.Key.Tamanho)}; não dá para devolver {pedido}.");
+            }
+        }
+
+        // A peça devolvida que volta ao estoque libera saldo para os itens retirados na mesma operação (ex.: trocar G por G).
+        var creditos = devolvidos
+            .Where(d => d.Volta && d.Item.CampanhaEntregaItemId.HasValue)
+            .GroupBy(d => d.Item.CampanhaEntregaItemId!.Value)
+            .ToDictionary(g => g.Key, g => g.Sum(d => d.Quantidade));
+
+        var retirados = dto.Retirados.Count == 0 ? [] : ResolverItensDaEntrega(campanha, dto.Retirados, null, creditos);
+
+        string? registradoPor = null;
+        if (usuarioId.HasValue)
+        {
+            registradoPor = await _context.Usuarios.Where(u => u.Id == usuarioId.Value).Select(u => u.Nome).FirstOrDefaultAsync();
+        }
+
+        var devolucao = new EntregaDevolucao
+        {
+            Entrega = entrega,
+            Data = data,
+            Motivo = dto.Motivo,
+            Observacao = string.IsNullOrWhiteSpace(dto.Observacao) ? null : dto.Observacao.Trim(),
+            UsuarioId = usuarioId,
+            RegistradoPorNome = registradoPor,
+            DataCriacao = agora,
+        };
+
+        foreach (var (item, quantidade, volta) in devolvidos)
+        {
+            var linha = new EntregaDevolucaoItem { EntregaDevolucao = devolucao, EntregaItem = item, Quantidade = quantidade, VoltaAoEstoque = volta };
+            devolucao.Itens.Add(linha);
+            item.Devolucoes.Add(linha);
+        }
+
+        foreach (var novo in retirados)
+        {
+            novo.EntregaId = entrega.Id;
+            novo.EntregaDevolucao = devolucao;
+            devolucao.ItensRetirados.Add(novo);
+            entrega.Itens.Add(novo);
+        }
+
+        entrega.Devolucoes.Add(devolucao);
+        entrega.DataAtualizacao = agora;
+
+        await _context.SaveChangesAsync();
+
+        var resumoDevolvidos = string.Join("; ", devolvidos.Select(d => $"{d.Quantidade}× {Rotulo(d.Item.Descricao, d.Item.Tamanho)}{(d.Volta ? string.Empty : " (descartado)")}"));
+        var resumoRetirados = string.Join("; ", retirados.Select(r => $"{r.Quantidade}× {Rotulo(r.Descricao, r.Tamanho)}"));
+        _logger.LogInformation("Troca/devolução registrada na entrega {EntregaId}: devolvido {Devolvidos}; retirado {Retirados}", entregaId, resumoDevolvidos, resumoRetirados);
+        var detalhe = $"{dto.Motivo} em {data:dd/MM/yyyy}. Devolvido: {resumoDevolvidos}"
+            + (retirados.Count > 0 ? $". Retirado: {resumoRetirados}" : string.Empty)
+            + (devolucao.Observacao is null ? string.Empty : $". Obs.: {devolucao.Observacao}");
+        await _auditoriaService.RegistrarAsync(usuarioId, LogAuditoriaEntidade.Entrega, entrega.Id, LogAuditoriaAcao.DevolucaoRegistrada, detalhe);
+
+        return ParaEntregaDto(entrega);
+    }
+
     public async Task<EntregaDto> AtualizarItensEntregaAsync(int campanhaId, int entregaId, UpdateEntregaItensDto dto)
     {
         var campanha = await BuscarCampanhaOuFalhar(campanhaId);
@@ -673,6 +792,11 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         if (entrega.Status is not (EntregaStatus.Confirmado or EntregaStatus.Divergencia))
         {
             throw new BusinessRuleException("Só é possível reverter a resposta de uma entrega Confirmada ou com Divergência registrada.");
+        }
+
+        if (entrega.Devolucoes.Count > 0)
+        {
+            throw new BusinessRuleException("Esta entrega já tem troca/devolução registrada e não pode ter a confirmação revertida.");
         }
 
         var statusAnterior = entrega.Status;
@@ -931,14 +1055,16 @@ public class CampanhaEntregaService : ICampanhaEntregaService
             Status = e.Status,
             DataEntregaFisica = e.DataEntregaFisica,
             DataConfirmacao = e.DataConfirmacao,
-            Itens = e.Itens.Select(i => new EntregaItemDto
+            Itens = e.Itens.Where(i => i.QuantidadeAtual > 0).Select(i => new EntregaItemDto
             {
                 Id = i.Id,
                 Descricao = i.Descricao,
                 Tamanho = i.Tamanho,
-                Quantidade = i.Quantidade,
+                Quantidade = i.QuantidadeAtual,
                 Validade = i.Validade,
+                EntregaDevolucaoId = i.EntregaDevolucaoId,
             }).ToList(),
+            Devolucoes = ParaDevolucoesDto(e),
         }).ToList();
     }
 
@@ -995,13 +1121,16 @@ public class CampanhaEntregaService : ICampanhaEntregaService
         .Where(i => i.Quantidade > 0)
         .ToDictionary(i => i.Id, i => i.Quantidade * quantidadeKits * quantidadeEntregas);
 
+    private static string Rotulo(string descricao, string? tamanho) => string.IsNullOrWhiteSpace(tamanho) ? descricao : $"{descricao} ({tamanho})";
+
     private static string Rotulo(CampanhaEntregaItem item) =>
         string.IsNullOrWhiteSpace(item.Tamanho) ? item.Descricao : $"{item.Descricao} ({item.Tamanho})";
 
     // Monta os EntregaItem de uma entrega a partir das linhas informadas, validando pelo tipo da campanha e pelo estoque.
     // Item a item: só itens do catálogo (sem repetir). Kit: texto livre — se casar (descrição + tamanho) com um item do
     // catálogo, liga o vínculo pra o saldo continuar valendo — ou item do catálogo.
-    private static List<EntregaItem> ResolverItensDaEntrega(CampanhaEntrega campanha, IReadOnlyList<ItemEntregaInputDto> linhas, int? ignorarEntregaId)
+    private static List<EntregaItem> ResolverItensDaEntrega(
+        CampanhaEntrega campanha, IReadOnlyList<ItemEntregaInputDto> linhas, int? ignorarEntregaId, IReadOnlyDictionary<int, int>? creditos = null)
     {
         var itens = new List<EntregaItem>();
         var pedido = new Dictionary<int, int>();
@@ -1063,13 +1192,15 @@ public class CampanhaEntregaService : ICampanhaEntregaService
             });
         }
 
-        ValidarEstoque(campanha, pedido, ignorarEntregaId);
+        ValidarEstoque(campanha, pedido, ignorarEntregaId, creditos);
         return itens;
     }
 
     // Bloqueia quando o pedido (por item do catálogo) passa do saldo: estoque - o que já está atribuído em
     // entregas não canceladas. ignorarEntregaId evita contar a própria entrega que está sendo reeditada.
-    private static void ValidarEstoque(CampanhaEntrega campanha, IReadOnlyDictionary<int, int> pedidoPorItem, int? ignorarEntregaId = null)
+    // creditos = quanto de cada item volta ao estoque na mesma operação (troca: a peça devolvida libera saldo para a nova).
+    private static void ValidarEstoque(
+        CampanhaEntrega campanha, IReadOnlyDictionary<int, int> pedidoPorItem, int? ignorarEntregaId = null, IReadOnlyDictionary<int, int>? creditos = null)
     {
         foreach (var (itemId, quantidade) in pedidoPorItem)
         {
@@ -1083,10 +1214,10 @@ public class CampanhaEntregaService : ICampanhaEntregaService
                 .Where(e => e.Status != EntregaStatus.Cancelado && e.Id != ignorarEntregaId)
                 .SelectMany(e => e.Itens)
                 .Where(ei => ei.CampanhaEntregaItemId == itemId)
-                .Sum(ei => ei.Quantidade);
+                .Sum(ei => ei.Quantidade - ei.QuantidadeDevolvidaAoEstoque);
 
-            // Estoque total = anterior (criação da campanha) + novas entradas de itens comprados.
-            var saldo = item.EstoqueTotal.Value - jaAtribuido;
+            // Estoque total = anterior (criação da campanha) + novas entradas de itens comprados; devolução que volta ao estoque libera saldo.
+            var saldo = item.EstoqueTotal.Value - jaAtribuido + (creditos?.GetValueOrDefault(itemId) ?? 0);
             if (quantidade > saldo)
             {
                 throw new BusinessRuleException($"Estoque insuficiente de {Rotulo(item)}: saldo {Math.Max(saldo, 0)}, pedido {quantidade}.");
@@ -1097,14 +1228,15 @@ public class CampanhaEntregaService : ICampanhaEntregaService
     private IQueryable<Entrega> MontarConsultaEntregas() => _context.Entregas
         .Include(e => e.Usuario).ThenInclude(u => u.Setor)
         .Include(e => e.ResponsavelEntrega)
-        .Include(e => e.Itens)
+        .Include(e => e.Itens).ThenInclude(i => i.Devolucoes)
+        .Include(e => e.Devolucoes).ThenInclude(d => d.Itens)
         .Include(e => e.CampanhaEntrega)
         .AsQueryable();
 
     private async Task<CampanhaEntrega> BuscarCampanhaOuFalhar(int id)
     {
         var campanha = await _context.CampanhasEntrega
-            .Include(c => c.Entregas).ThenInclude(e => e.Itens)
+            .Include(c => c.Entregas).ThenInclude(e => e.Itens).ThenInclude(i => i.Devolucoes)
             .Include(c => c.Itens).ThenInclude(i => i.Entradas)
             .FirstOrDefaultAsync(c => c.Id == id);
 
@@ -1146,9 +1278,10 @@ public class CampanhaEntregaService : ICampanhaEntregaService
             DataAtualizacao = c.DataAtualizacao,
             Itens = c.Itens.Select(i =>
             {
+                // Atribuído = entregue - devolvido que voltou ao estoque.
                 var quantidadeEntregue = itensEntreguesAtivos
                     .Where(ei => ei.CampanhaEntregaItemId == i.Id)
-                    .Sum(ei => ei.Quantidade);
+                    .Sum(ei => ei.Quantidade - ei.QuantidadeDevolvidaAoEstoque);
 
                 return new CampanhaEntregaItemDto
                 {
@@ -1212,8 +1345,36 @@ public class CampanhaEntregaService : ICampanhaEntregaService
             Tamanho = i.Tamanho,
             Quantidade = i.Quantidade,
             Validade = i.Validade,
+            QuantidadeDevolvida = i.QuantidadeDevolvida,
+            EntregaDevolucaoId = i.EntregaDevolucaoId,
         }).ToList(),
+        Devolucoes = ParaDevolucoesDto(e),
         DataCriacao = e.DataCriacao,
         DataAtualizacao = e.DataAtualizacao,
     };
+
+    private static List<EntregaDevolucaoDto> ParaDevolucoesDto(Entrega e) => e.Devolucoes
+        .OrderByDescending(d => d.Data).ThenByDescending(d => d.Id)
+        .Select(d => new EntregaDevolucaoDto
+        {
+            Id = d.Id,
+            Data = d.Data,
+            Motivo = d.Motivo,
+            Observacao = d.Observacao,
+            RegistradoPorNome = d.RegistradoPorNome,
+            DataCriacao = d.DataCriacao,
+            Devolvidos = d.Itens.Select(li =>
+            {
+                var item = e.Itens.FirstOrDefault(i => i.Id == li.EntregaItemId);
+                return new EntregaDevolucaoLinhaDto
+                {
+                    EntregaItemId = li.EntregaItemId, Descricao = item?.Descricao ?? string.Empty, Tamanho = item?.Tamanho,
+                    Quantidade = li.Quantidade, VoltaAoEstoque = li.VoltaAoEstoque,
+                };
+            }).ToList(),
+            Retirados = e.Itens.Where(i => i.EntregaDevolucaoId == d.Id).Select(i => new EntregaDevolucaoLinhaDto
+            {
+                EntregaItemId = i.Id, Descricao = i.Descricao, Tamanho = i.Tamanho, Quantidade = i.Quantidade,
+            }).ToList(),
+        }).ToList();
 }

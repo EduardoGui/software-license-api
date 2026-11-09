@@ -31,6 +31,8 @@ public class EntregaDto
     public string? AvisoEmail { get; set; }
 
     public List<EntregaItemDto> Itens { get; set; } = [];
+    // Histórico de trocas/devoluções (mais recentes primeiro).
+    public List<EntregaDevolucaoDto> Devolucoes { get; set; } = [];
 
     public DateTime DataCriacao { get; set; }
     public DateTime DataAtualizacao { get; set; }

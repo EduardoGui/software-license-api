@@ -10,5 +10,8 @@ public class MinhaEntregaDto
     public string Status { get; set; } = string.Empty;
     public DateOnly? DataEntregaFisica { get; set; }
     public DateTime? DataConfirmacao { get; set; }
+    // Itens que o colaborador tem hoje (já descontadas as devoluções; itens totalmente devolvidos não aparecem).
     public List<EntregaItemDto> Itens { get; set; } = [];
+    // Trocas/devoluções registradas (mais recentes primeiro).
+    public List<EntregaDevolucaoDto> Devolucoes { get; set; } = [];
 }
