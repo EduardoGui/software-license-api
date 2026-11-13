@@ -244,7 +244,7 @@ public class ContratoService : IContratoService
         var item = contrato.Itens.FirstOrDefault(i => i.Id == itemId)
             ?? throw new NotFoundException($"Item {itemId} não encontrado neste contrato.");
 
-        var (_, _, itensDeMedicoesAprovadas) = await ObterContextoSaldoAsync(contratoId);
+        var (_, _, itensDeMedicoesAprovadas, _) = await ObterContextoSaldoAsync(contratoId);
         var jaMedido = itensDeMedicoesAprovadas
             .Where(i => i.ContratoItemId == itemId && i.AditivoItemId == null)
             .Sum(i => i.QuantidadeMedidaNestaBm);
@@ -427,6 +427,7 @@ public class ContratoService : IContratoService
 
         var aditivos = await _context.Aditivos
             .Include(a => a.Itens).ThenInclude(i => i.ContratoItem)
+            .Include(a => a.Itens).ThenInclude(i => i.AditivoItemOrigem)
             .Where(a => a.ContratoId == contratoId)
             .OrderBy(a => a.Numero)
             .ToListAsync();
@@ -455,7 +456,28 @@ public class ContratoService : IContratoService
                     throw new BusinessRuleException($"Item {itemDto.ContratoItemId} não pertence a este contrato.");
                 }
             }
-            else if (string.IsNullOrWhiteSpace(itemDto.DescricaoNovoItem) || string.IsNullOrWhiteSpace(itemDto.UnidadeNovoItem) || itemDto.NovoValorUnitario is null)
+
+            AditivoItem? itemOrigem = null;
+            if (itemDto.AditivoItemOrigemId is not null)
+            {
+                if (itemDto.ContratoItemId is not null)
+                {
+                    throw new BusinessRuleException("Uma alteração de item não pode referenciar ao mesmo tempo um item do contrato e um item de aditivo anterior.");
+                }
+
+                itemOrigem = await _context.AditivoItens
+                    .Include(i => i.Aditivo)
+                    .FirstOrDefaultAsync(i => i.Id == itemDto.AditivoItemOrigemId && i.Aditivo.ContratoId == contratoId)
+                    ?? throw new BusinessRuleException($"Item de aditivo {itemDto.AditivoItemOrigemId} não pertence a este contrato.");
+
+                if (itemOrigem.ContratoItemId is not null || itemOrigem.AditivoItemOrigemId is not null)
+                {
+                    throw new BusinessRuleException("Só é possível aumentar a quantidade de um item novo criado por aditivo anterior, não de uma linha que apenas altera outro item.");
+                }
+            }
+
+            if (contratoItem is null && itemOrigem is null
+                && (string.IsNullOrWhiteSpace(itemDto.DescricaoNovoItem) || string.IsNullOrWhiteSpace(itemDto.UnidadeNovoItem) || itemDto.NovoValorUnitario is null))
             {
                 throw new BusinessRuleException("Um item novo do aditivo precisa de descrição, unidade e valor unitário.");
             }
@@ -463,9 +485,10 @@ public class ContratoService : IContratoService
             itensValidados.Add(new AditivoItem
             {
                 ContratoItem = contratoItem,
-                DescricaoNovoItem = itemDto.DescricaoNovoItem?.Trim(),
-                CodigoNovoItem = itemDto.CodigoNovoItem?.Trim(),
-                UnidadeNovoItem = itemDto.UnidadeNovoItem?.Trim(),
+                AditivoItemOrigem = itemOrigem,
+                DescricaoNovoItem = itemOrigem is null ? itemDto.DescricaoNovoItem?.Trim() : null,
+                CodigoNovoItem = itemOrigem is null ? itemDto.CodigoNovoItem?.Trim() : null,
+                UnidadeNovoItem = itemOrigem is null ? itemDto.UnidadeNovoItem?.Trim() : null,
                 DeltaQuantidade = itemDto.DeltaQuantidade,
                 NovoValorUnitario = itemDto.NovoValorUnitario,
             });
@@ -508,6 +531,7 @@ public class ContratoService : IContratoService
 
         var aditivo = await _context.Aditivos
             .Include(a => a.Itens).ThenInclude(i => i.ContratoItem)
+            .Include(a => a.Itens).ThenInclude(i => i.AditivoItemOrigem)
             .FirstOrDefaultAsync(a => a.Id == aditivoId && a.ContratoId == contratoId)
             ?? throw new NotFoundException($"Aditivo {aditivoId} não encontrado.");
 
@@ -559,7 +583,7 @@ public class ContratoService : IContratoService
             throw new BusinessRuleException("Fim do período deve ser posterior ao início do período.");
         }
 
-        var (deltasPorContratoItem, itensNovosDeAditivo, itensDeMedicoesAprovadas) = await ObterContextoSaldoAsync(contratoId);
+        var (deltasPorContratoItem, itensNovosDeAditivo, itensDeMedicoesAprovadas, deltasPorAditivoItem) = await ObterContextoSaldoAsync(contratoId);
 
         decimal JaMedido(int? contratoItemId, int? aditivoItemId) => itensDeMedicoesAprovadas
             .Where(i => i.ContratoItemId == contratoItemId && i.AditivoItemId == aditivoItemId)
@@ -609,7 +633,7 @@ public class ContratoService : IContratoService
 
         foreach (var novoItem in itensNovosDeAditivo)
         {
-            var quantidadeAtual = novoItem.DeltaQuantidade;
+            var quantidadeAtual = novoItem.DeltaQuantidade + deltasPorAditivoItem.GetValueOrDefault(novoItem.Id, 0m);
             var jaMedido = JaMedido(null, novoItem.Id);
             var valorUnitario = novoItem.NovoValorUnitario ?? 0m;
             var saldoValorAntes = SaldoValorAntesDe(null, novoItem.Id, quantidadeAtual, valorUnitario);
@@ -1020,7 +1044,7 @@ public class ContratoService : IContratoService
     public async Task<List<ContratoSaldoItemDto>> ObterSaldoAsync(int contratoId)
     {
         var contrato = await BuscarComItensOuFalhar(contratoId);
-        var (deltasPorContratoItem, itensNovosDeAditivo, itensDeMedicoesAprovadas) = await ObterContextoSaldoAsync(contratoId);
+        var (deltasPorContratoItem, itensNovosDeAditivo, itensDeMedicoesAprovadas, deltasPorAditivoItem) = await ObterContextoSaldoAsync(contratoId);
 
         decimal JaMedido(int? contratoItemId, int? aditivoItemId) => itensDeMedicoesAprovadas
             .Where(i => i.ContratoItemId == contratoItemId && i.AditivoItemId == aditivoItemId)
@@ -1065,7 +1089,7 @@ public class ContratoService : IContratoService
 
         foreach (var novoItem in itensNovosDeAditivo)
         {
-            var quantidadeAtual = novoItem.DeltaQuantidade;
+            var quantidadeAtual = novoItem.DeltaQuantidade + deltasPorAditivoItem.GetValueOrDefault(novoItem.Id, 0m);
             var valorUnitario = novoItem.NovoValorUnitario ?? 0m;
             var jaMedido = JaMedido(null, novoItem.Id);
 
@@ -1090,7 +1114,7 @@ public class ContratoService : IContratoService
     // Contexto compartilhado por CriarMedicaoBmAsync e ObterSaldoAsync: deltas de quantidade por
     // item (só Aditivos Formalizados), itens novos criados por Aditivo, e o histórico de itens de
     // BMs já Aprovados (base pra "já medido" e pro saldo de valor corrido).
-    private async Task<(Dictionary<int, decimal> DeltasPorContratoItem, List<AditivoItem> ItensNovosDeAditivo, List<MedicaoBmItem> ItensDeMedicoesAprovadas)> ObterContextoSaldoAsync(int contratoId)
+    private async Task<(Dictionary<int, decimal> DeltasPorContratoItem, List<AditivoItem> ItensNovosDeAditivo, List<MedicaoBmItem> ItensDeMedicoesAprovadas, Dictionary<int, decimal> DeltasPorAditivoItem)> ObterContextoSaldoAsync(int contratoId)
     {
         var aditivosFormalizados = await _context.Aditivos
             .Include(a => a.Itens)
@@ -1105,15 +1129,22 @@ public class ContratoService : IContratoService
 
         var itensNovosDeAditivo = aditivosFormalizados
             .SelectMany(a => a.Itens)
-            .Where(i => i.ContratoItemId == null)
+            .Where(i => i.ContratoItemId == null && i.AditivoItemOrigemId == null)
             .ToList();
+
+        // Quantidade somada por aditivos posteriores a itens novos criados por aditivo anterior.
+        var deltasPorAditivoItem = aditivosFormalizados
+            .SelectMany(a => a.Itens)
+            .Where(i => i.AditivoItemOrigemId != null)
+            .GroupBy(i => i.AditivoItemOrigemId!.Value)
+            .ToDictionary(g => g.Key, g => g.Sum(i => i.DeltaQuantidade));
 
         var itensDeMedicoesAprovadas = await _context.MedicaoBmItens
             .Include(i => i.MedicaoBm)
             .Where(i => i.MedicaoBm.ContratoId == contratoId && i.MedicaoBm.Status == MedicaoBmStatus.Aprovado)
             .ToListAsync();
 
-        return (deltasPorContratoItem, itensNovosDeAditivo, itensDeMedicoesAprovadas);
+        return (deltasPorContratoItem, itensNovosDeAditivo, itensDeMedicoesAprovadas, deltasPorAditivoItem);
     }
 
     public async Task<List<AnexoDto>> ListarAnexosMedicaoAsync(int contratoId, int medicaoId)
@@ -1361,6 +1392,8 @@ public class ContratoService : IContratoService
         Id = i.Id,
         ContratoItemId = i.ContratoItemId,
         DescricaoContratoItem = i.ContratoItem?.Descricao,
+        AditivoItemOrigemId = i.AditivoItemOrigemId,
+        DescricaoItemOrigem = i.AditivoItemOrigem?.DescricaoNovoItem,
         DescricaoNovoItem = i.DescricaoNovoItem,
         CodigoNovoItem = i.CodigoNovoItem,
         UnidadeNovoItem = i.UnidadeNovoItem,

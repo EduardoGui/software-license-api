@@ -1592,4 +1592,127 @@ public class ContratoServiceTests
         Assert.Equal(3m, itemNovo.SaldoQuantidade);
         Assert.Equal(1500m, itemNovo.SaldoValor);
     }
+
+    // Cenário real (Brain): o aditivo 1 cria o item Acer e um aditivo posterior soma quantidade a esse mesmo item.
+    private static async Task<(ContratoService Service, AppDbContext Context, ContratoDto Contrato, AditivoDto Aditivo1)> CriarContratoComItemNovoDeAditivoAsync()
+    {
+        var (service, context) = CriarService();
+        var fornecedor = CriarFornecedor(context);
+        var contrato = await service.CreateAsync(CriarDtoValido(fornecedor.Id));
+        var aditivo1 = await service.CriarAditivoAsync(contrato.Id, new CreateAditivoDto
+        {
+            Descricao = "Item novo",
+            DataAssinatura = new DateOnly(2026, 3, 1),
+            DataEfeito = new DateOnly(2026, 3, 1),
+            Itens = [new CreateAditivoItemDto { DescricaoNovoItem = "Notebook Acer", UnidadeNovoItem = "UN", DeltaQuantidade = 12m, NovoValorUnitario = 400m }],
+        });
+        await service.FormalizarAditivoAsync(contrato.Id, aditivo1.Id);
+        return (service, context, contrato, aditivo1);
+    }
+
+    private static Task<AditivoDto> CriarAditivoSomandoAsync(ContratoService service, int contratoId, int origemId, decimal delta) =>
+        service.CriarAditivoAsync(contratoId, new CreateAditivoDto
+        {
+            Descricao = "Mais notebooks",
+            DataAssinatura = new DateOnly(2026, 10, 5),
+            DataEfeito = new DateOnly(2026, 10, 5),
+            Itens = [new CreateAditivoItemDto { AditivoItemOrigemId = origemId, DeltaQuantidade = delta }],
+        });
+
+    [Fact]
+    public async Task CriarAditivoAsync_DeveAceitarSomarQuantidadeAItemNovoDeAditivoAnterior()
+    {
+        var (service, _, contrato, aditivo1) = await CriarContratoComItemNovoDeAditivoAsync();
+        var origemId = aditivo1.Itens.Single().Id;
+
+        var aditivo3 = await CriarAditivoSomandoAsync(service, contrato.Id, origemId, 18m);
+
+        var linha = aditivo3.Itens.Single();
+        Assert.Equal(origemId, linha.AditivoItemOrigemId);
+        Assert.Equal("Notebook Acer", linha.DescricaoItemOrigem);
+        Assert.Null(linha.DescricaoNovoItem);
+    }
+
+    [Fact]
+    public async Task ObterSaldoAsync_DeveSomarDeltaDeAditivoPosteriorAoItemNovo_SemCriarItemExtra()
+    {
+        var (service, _, contrato, aditivo1) = await CriarContratoComItemNovoDeAditivoAsync();
+        var aditivo3 = await CriarAditivoSomandoAsync(service, contrato.Id, aditivo1.Itens.Single().Id, 18m);
+
+        // Previsto não conta.
+        var antes = await service.ObterSaldoAsync(contrato.Id);
+        Assert.Equal(12m, antes.Single(s => s.AditivoItemId is not null).QuantidadeContratadaAtual);
+
+        await service.FormalizarAditivoAsync(contrato.Id, aditivo3.Id);
+
+        var saldo = await service.ObterSaldoAsync(contrato.Id);
+        Assert.Equal(2, saldo.Count);
+        var acer = saldo.Single(s => s.AditivoItemId is not null);
+        Assert.Equal(30m, acer.QuantidadeContratadaAtual);
+        Assert.Equal(400m, acer.ValorUnitario);
+        Assert.Equal(12000m, acer.ValorContratadoAtual);
+        Assert.Equal(12000m, acer.SaldoValor);
+    }
+
+    [Fact]
+    public async Task CriarMedicaoBmAsync_DeveUsarQuantidadeSomadaDoItemNovoDeAditivo()
+    {
+        var (service, _, contrato, aditivo1) = await CriarContratoComItemNovoDeAditivoAsync();
+        var aditivo3 = await CriarAditivoSomandoAsync(service, contrato.Id, aditivo1.Itens.Single().Id, 18m);
+        await service.FormalizarAditivoAsync(contrato.Id, aditivo3.Id);
+
+        var bm = await service.CriarMedicaoBmAsync(contrato.Id, new CreateMedicaoBmDto
+        {
+            PeriodoInicio = new DateOnly(2026, 10, 1),
+            PeriodoFim = new DateOnly(2026, 10, 31),
+        });
+
+        var linha = bm.Itens.Single(i => i.AditivoItemId is not null);
+        Assert.Equal(30m, linha.QuantidadeContratadaNoMomento);
+        Assert.Equal(12000m, linha.SaldoValorAntes);
+        Assert.Equal(2, bm.Itens.Count);
+    }
+
+    [Fact]
+    public async Task CriarAditivoAsync_DeveRejeitarOrigemDeOutroContrato()
+    {
+        var (service, context, contrato, _) = await CriarContratoComItemNovoDeAditivoAsync();
+        var fornecedor = CriarFornecedor(context, "Outro");
+        var outro = await service.CreateAsync(CriarDtoValido(fornecedor.Id, "SUB_HOPE_0002_2026"));
+        var aditivoOutro = await service.CriarAditivoAsync(outro.Id, new CreateAditivoDto
+        {
+            Descricao = "x",
+            DataAssinatura = new DateOnly(2026, 3, 1),
+            DataEfeito = new DateOnly(2026, 3, 1),
+            Itens = [new CreateAditivoItemDto { DescricaoNovoItem = "Item", UnidadeNovoItem = "UN", DeltaQuantidade = 1m, NovoValorUnitario = 10m }],
+        });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            CriarAditivoSomandoAsync(service, contrato.Id, aditivoOutro.Itens.Single().Id, 1m));
+    }
+
+    [Fact]
+    public async Task CriarAditivoAsync_DeveRejeitarOrigemQueApenasSomaOutroItem()
+    {
+        var (service, _, contrato, aditivo1) = await CriarContratoComItemNovoDeAditivoAsync();
+        var aditivo2 = await CriarAditivoSomandoAsync(service, contrato.Id, aditivo1.Itens.Single().Id, 2m);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            CriarAditivoSomandoAsync(service, contrato.Id, aditivo2.Itens.Single().Id, 1m));
+    }
+
+    [Fact]
+    public async Task CriarAditivoAsync_DeveRejeitarContratoItemEOrigemJuntos()
+    {
+        var (service, _, contrato, aditivo1) = await CriarContratoComItemNovoDeAditivoAsync();
+        var item = (await service.ObterSaldoAsync(contrato.Id)).First(s => s.ContratoItemId is not null);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CriarAditivoAsync(contrato.Id, new CreateAditivoDto
+        {
+            Descricao = "z",
+            DataAssinatura = new DateOnly(2026, 10, 5),
+            DataEfeito = new DateOnly(2026, 10, 5),
+            Itens = [new CreateAditivoItemDto { ContratoItemId = item.ContratoItemId, AditivoItemOrigemId = aditivo1.Itens.Single().Id, DeltaQuantidade = 1m }],
+        }));
+    }
 }

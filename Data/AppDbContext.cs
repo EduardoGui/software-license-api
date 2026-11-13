@@ -580,6 +580,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(i => i.AditivoId);
             entity.HasOne(i => i.Aditivo).WithMany(a => a.Itens).HasForeignKey(i => i.AditivoId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(i => i.ContratoItem).WithMany().HasForeignKey(i => i.ContratoItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(i => i.AditivoItemOrigemId);
+            entity.HasOne(i => i.AditivoItemOrigem).WithMany().HasForeignKey(i => i.AditivoItemOrigemId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<MedicaoBm>(entity =>

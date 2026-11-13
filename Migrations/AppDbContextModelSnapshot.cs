@@ -17,7 +17,7 @@ namespace SoftwareLicense.Api.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.11")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -227,6 +227,9 @@ namespace SoftwareLicense.Api.Migrations
                     b.Property<int>("AditivoId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("AditivoItemOrigemId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("CodigoNovoItem")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
@@ -253,6 +256,8 @@ namespace SoftwareLicense.Api.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AditivoId");
+
+                    b.HasIndex("AditivoItemOrigemId");
 
                     b.HasIndex("ContratoItemId");
 
@@ -3822,12 +3827,19 @@ namespace SoftwareLicense.Api.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("SoftwareLicense.Api.Entities.AditivoItem", "AditivoItemOrigem")
+                        .WithMany()
+                        .HasForeignKey("AditivoItemOrigemId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SoftwareLicense.Api.Entities.ContratoItem", "ContratoItem")
                         .WithMany()
                         .HasForeignKey("ContratoItemId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Aditivo");
+
+                    b.Navigation("AditivoItemOrigem");
 
                     b.Navigation("ContratoItem");
                 });

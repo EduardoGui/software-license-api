@@ -6,6 +6,9 @@ public class CreateAditivoItemDto
 {
     public int? ContratoItemId { get; set; }
 
+    // Soma DeltaQuantidade a um item novo criado por um aditivo anterior deste contrato.
+    public int? AditivoItemOrigemId { get; set; }
+
     [MaxLength(300)]
     public string? DescricaoNovoItem { get; set; }
 

@@ -5,6 +5,8 @@ public class AditivoItemDto
     public int Id { get; set; }
     public int? ContratoItemId { get; set; }
     public string? DescricaoContratoItem { get; set; }
+    public int? AditivoItemOrigemId { get; set; }
+    public string? DescricaoItemOrigem { get; set; }
     public string? DescricaoNovoItem { get; set; }
     public string? CodigoNovoItem { get; set; }
     public string? UnidadeNovoItem { get; set; }
