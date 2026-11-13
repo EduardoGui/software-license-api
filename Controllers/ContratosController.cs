@@ -12,10 +12,12 @@ namespace SoftwareLicense.Api.Controllers;
 public class ContratosController : ControllerBase
 {
     private readonly IContratoService _contratoService;
+    private readonly IRelatorioValidacaoContratosService _relatorioValidacaoService;
 
-    public ContratosController(IContratoService contratoService)
+    public ContratosController(IContratoService contratoService, IRelatorioValidacaoContratosService relatorioValidacaoService)
     {
         _contratoService = contratoService;
+        _relatorioValidacaoService = relatorioValidacaoService;
     }
 
     [HttpGet]
@@ -23,6 +25,24 @@ public class ContratosController : ControllerBase
     {
         var contratos = await _contratoService.GetAllAsync(filtro);
         return Ok(contratos);
+    }
+
+    // Relatório para validação com o gerente do contrato. Sem contratoIds = contratos com medição pendente na Agenda hoje.
+    [HttpGet("relatorio-validacao")]
+    public async Task<IActionResult> RelatorioValidacao([FromQuery] List<int>? contratoIds, [FromQuery] string? formato)
+    {
+        var relatorio = await _relatorioValidacaoService.GerarAsync(contratoIds);
+
+        if (string.Equals(formato, "xlsx", StringComparison.OrdinalIgnoreCase))
+        {
+            var arquivo = _relatorioValidacaoService.GerarExcel(relatorio);
+            var nomeArquivo = relatorio.Contratos.Count == 1 && !relatorio.SomentePendentes
+                ? $"relatorio-validacao-{relatorio.Contratos[0].Numero}.xlsx"
+                : $"relatorio-validacao-{relatorio.GeradoEm:yyyy-MM-dd}.xlsx";
+            return File(arquivo, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", nomeArquivo);
+        }
+
+        return Ok(relatorio);
     }
 
     [HttpGet("{id:int}")]

@@ -174,6 +174,7 @@ builder.Services.AddScoped<INotaDebitoPjService, NotaDebitoPjService>();
 builder.Services.AddScoped<IFaturaOperadoraSaudeService, FaturaOperadoraSaudeService>();
 builder.Services.AddScoped<IFornecedorService, FornecedorService>();
 builder.Services.AddScoped<IContratoService, ContratoService>();
+builder.Services.AddScoped<IRelatorioValidacaoContratosService, RelatorioValidacaoContratosService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IEscopoAcesso, EscopoAcessoHttp>();
 builder.Services.AddScoped<IOrdemCompraService, OrdemCompraService>();
